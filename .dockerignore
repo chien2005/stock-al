@@ -1,0 +1,8 @@
+node_modules
+.env
+*.log
+.git
+.gitignore
+start-bot.bat
+start-bot-silent.vbs
+README.md
