@@ -1,7 +1,7 @@
 {
   "name": "vn-stock-telegram-bot",
-  "version": "1.0.0",
-  "description": "Vietnam Stock Tracker - Auto fetch stock data and send to Telegram",
+  "version": "1.1.1",
+  "description": "Vietnam Stock Bot - Multi-AI Team System (Gemini + GPT + Contrarian)",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
@@ -11,13 +11,15 @@
     "setup": "node src/setupAutoStart.js",
     "test": "node src/test.js"
   },
-  "keywords": ["vietnam", "stock", "telegram", "bot", "tracker"],
+  "keywords": ["vietnam", "stock", "telegram", "bot", "tracker", "ai", "gemini", "gpt", "multi-agent"],
   "author": "",
   "license": "MIT",
   "dependencies": {
     "@google/generative-ai": "^0.21.0",
-    "node-cron": "^3.0.3",
+    "axios": "^1.7.7",
     "dotenv": "^16.4.5",
-    "axios": "^1.7.7"
+    "node-cron": "^3.0.3",
+    "node-telegram-bot-api": "^0.66.0",
+    "openai": "^4.0.0"
   }
 }

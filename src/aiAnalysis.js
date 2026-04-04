@@ -20,13 +20,13 @@ const { config } = require('./config');
  * @returns {string} AI analysis report (HTML format cho Telegram)
  */
 async function analyzeWithGemini(stocks) {
-  if (!config.gemini.apiKey) {
-    console.log('⚠️  Không có GEMINI_API_KEY, dùng phân tích rule-based...');
+  if (!config.geminiAI1.apiKey) {
+    console.log('⚠️  Không có GEMINI_API_KEY_AI1, dùng phân tích rule-based...');
     return null;
   }
 
   try {
-    const genAI = new GoogleGenerativeAI(config.gemini.apiKey);
+    const genAI = new GoogleGenerativeAI(config.geminiAI1.apiKey);
     const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
     // Chuẩn bị dữ liệu cho AI
@@ -299,7 +299,7 @@ async function runAiAnalysis(stocks) {
   }
 
   let footer = `\n<i>⚠️ Khuyến nghị chỉ mang tính tham khảo, không phải lời khuyên đầu tư.</i>\n`;
-  footer += `<i>📡 Dữ liệu: VPS | 🤖 AI: ${config.gemini.apiKey ? 'Gemini 2.5 Flash' : 'Rule-based'}</i>`;
+  footer += `<i>📡 Dữ liệu: VPS | 🤖 AI: ${config.geminiAI1.apiKey ? 'Gemini 2.5 Flash' : 'Rule-based'}</i>`;
 
   return header + analysisText + footer;
 }

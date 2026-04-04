@@ -1,15 +1,23 @@
 /**
  * ╔═══════════════════════════════════════════════════════════════╗
  * ║                                                               ║
- * ║     🇻🇳  VN STOCK TRACKER & TELEGRAM NOTIFIER  📊            ║
+ * ║     🇻🇳  VN STOCK BOT v1.1.1  📊                            ║
+ * ║     Multi-AI Team System                                      ║
  * ║                                                               ║
- * ║     📊 Báo giá: 10:00, 13:00, 16:00 (Thứ 2 → Thứ 6)        ║
- * ║     🤖 AI Report: 20:30 hằng ngày (Thứ 2 → Thứ 6)          ║
+ * ║     📊 Báo giá: 10:00 | 13:00 | 16:00  (T2-T6)              ║
+ * ║     🤖 AI Report: 20:30                (T2-T6)              ║
+ * ║     📅 Weekly: 8:30                    (Thứ 2)              ║
+ * ║     💬 Interactive Bot: 24/7 (chat hỏi AI)                  ║
+ * ║                                                               ║
+ * ║     🤖 AI 1: Trigger + Báo giá  (Gemini 2.5 Flash - Key 1)    ║
+ * ║     📊 AI 2: Chuyên gia        (Gemini 2.5 Pro   - Key 2)    ║
+ * ║     💬 AI 3: Chuyên gia Flash  (Gemini 2.5 Flash - Key 1)    ║
+ * ║     ⚔️  AI 4: Phản biện + Cuối ngày (Gemini 2.5 Pro - Key 2)  ║
+ * ║     🔒 Anti-spam: 60s giãn cách giữa 2 lần gọi cùng key       ║
  * ║                                                               ║
  * ╠═══════════════════════════════════════════════════════════════╣
  * ║  Source: VPS (VPBank Securities) Public API                   ║
- * ║  AI:     Google Gemini / Rule-based fallback                  ║
- * ║  Stack:  Node.js + node-cron + axios + @google/generative-ai ║
+ * ║  Stack:  Node.js + node-cron + Google Gemini (FREE)           ║
  * ╚═══════════════════════════════════════════════════════════════╝
  */
 
@@ -17,14 +25,65 @@ const cron = require('node-cron');
 const { config, validateConfig } = require('./config');
 const { fetchAllStocks } = require('./stockService');
 const { sendTelegramMessage, formatStockMessage } = require('./telegramService');
-const { runAiAnalysis } = require('./aiAnalysis');
+const { initAIEngines, runScheduledAnalysis } = require('./aiTeam');
+const { runWeeklyAnalysis } = require('./weeklyAnalysis');
+const { startBotHandler, stopBotHandler } = require('./botHandler');
 
-// ─── JOB 1: BÁO GIÁ (10h, 13h, 16h) ────────────────────
+// ─── DEDUP LOCK: Chống double message ──────────────────────
+const lastJobRun = {};
+const DEDUP_WINDOW = 4 * 60 * 1000; // 4 phút (chống double trigger)
 
 /**
- * Job báo giá: Lấy dữ liệu stock → Format → Gửi Telegram
+ * Check xem job đã chạy trong window chưa (chống double)
+ * @param {string} jobName - Tên job
+ * @returns {boolean} true nếu đã chạy gần đây (nên skip)
  */
+function isDuplicate(jobName) {
+  const now = Date.now();
+  const lastRun = lastJobRun[jobName] || 0;
+  if (now - lastRun < DEDUP_WINDOW) {
+    console.log(`⏭️  [DEDUP] ${jobName} đã chạy ${Math.round((now - lastRun) / 1000)}s trước. SKIP!`);
+    return true;
+  }
+  lastJobRun[jobName] = now;
+  return false;
+}
+
+// ─── GUARD: Check ngày giờ hợp lệ ─────────────────────────
+
+/**
+ * Check xem có phải ngày giao dịch không (T2-T6)
+ * Runtime check bổ sung cho cron expression
+ */
+function isWeekday() {
+  const now = new Date();
+  // Tạo date theo timezone Việt Nam
+  const vnTime = new Date(now.toLocaleString('en-US', { timeZone: config.timezone }));
+  const day = vnTime.getDay(); // 0=CN, 1=T2, ..., 6=T7
+  return day >= 1 && day <= 5;
+}
+
+/**
+ * Check xem có phải thứ 2 không
+ */
+function isMonday() {
+  const now = new Date();
+  const vnTime = new Date(now.toLocaleString('en-US', { timeZone: config.timezone }));
+  return vnTime.getDay() === 1;
+}
+
+// ─── JOB 1: BÁO GIÁ (10h, 13h, 16h T2-T6) ───────────────
+
 async function runStockJob() {
+  // Guard: skip nếu không phải ngày giao dịch
+  if (!isWeekday()) {
+    console.log('⏭️  [GUARD] Hôm nay T7/CN - skip báo giá');
+    return;
+  }
+
+  // Guard: chống double message
+  if (isDuplicate('stockJob')) return;
+
   const startTime = Date.now();
   console.log('\n' + '═'.repeat(55));
   console.log('📊 BÁO GIÁ CHỨNG KHOÁN...');
@@ -57,19 +116,25 @@ async function runStockJob() {
   }
 }
 
-// ─── JOB 2: AI PHÂN TÍCH (20h30) ─────────────────────────
+// ─── JOB 2: AI PHÂN TÍCH CUỐI NGÀY (20h30 T2-T6) ────────
+// AI 1 trigger → AI 4 (DeepSeek R1) phân tích → Gửi qua bot AI 4
 
-/**
- * Job AI: Lấy dữ liệu cuối ngày → AI phân tích → Gửi report Telegram
- */
 async function runAiJob() {
+  // Guard: skip nếu T7/CN
+  if (!isWeekday()) {
+    console.log('⏭️  [GUARD] Hôm nay T7/CN - skip AI report');
+    return;
+  }
+
+  // Guard: chống double
+  if (isDuplicate('aiJob')) return;
+
   const startTime = Date.now();
   console.log('\n' + '═'.repeat(55));
-  console.log('🤖 AI PHÂN TÍCH CỔ PHIẾU CUỐI NGÀY...');
+  console.log('🤖 AI 1 TRIGGER → AI 4 PHÂN TÍCH CUỐI NGÀY...');
   console.log('═'.repeat(55));
 
   try {
-    // Lấy dữ liệu cuối ngày
     const stocks = await fetchAllStocks();
 
     if (stocks.length === 0) {
@@ -78,16 +143,11 @@ async function runAiJob() {
       return;
     }
 
-    // Chạy AI analysis
-    const report = await runAiAnalysis(stocks);
-    const sent = await sendTelegramMessage(report);
+    // runScheduledAnalysis giờ tự gửi trực tiếp qua Telegram bots
+    await runScheduledAnalysis(stocks);
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+    console.log(`\n✅ BÁO CÁO CUỐI NGÀY HOÀN THÀNH! (${elapsed}s)`);
 
-    if (sent) {
-      console.log(`\n✅ AI REPORT HOÀN THÀNH! (${elapsed}s)`);
-    } else {
-      console.log(`\n⚠️ Phân tích xong nhưng gửi Telegram thất bại (${elapsed}s)`);
-    }
   } catch (error) {
     console.error('\n💥 LỖI AI:', error.message);
     try {
@@ -96,49 +156,102 @@ async function runAiJob() {
   }
 }
 
+// ─── JOB 3: WEEKLY ANALYSIS (8h30 Thứ 2) ──────────────────
+
+async function runWeeklyJob() {
+  // Guard: phải là thứ 2
+  if (!isMonday()) {
+    console.log('⏭️  [GUARD] Không phải thứ 2 - skip weekly report');
+    return;
+  }
+
+  // Guard: chống double
+  if (isDuplicate('weeklyJob')) return;
+
+  console.log('\n' + '═'.repeat(55));
+  console.log('📅 PHÂN TÍCH THỊ TRƯỜNG ĐẦU TUẦN...');
+  console.log('═'.repeat(55));
+
+  try {
+    const report = await runWeeklyAnalysis();
+    const sent = await sendTelegramMessage(report);
+
+    if (sent) {
+      console.log('\n✅ WEEKLY REPORT HOÀN THÀNH!');
+    }
+  } catch (error) {
+    console.error('\n💥 LỖI WEEKLY:', error.message);
+    try {
+      await sendTelegramMessage(`💥 VN Stock Bot lỗi weekly analysis:\n<code>${error.message}</code>`);
+    } catch (e) { /* ignore */ }
+  }
+}
+
 // ─── STARTUP ──────────────────────────────────────────────
 
 async function main() {
   console.log(`
-  ╔═══════════════════════════════════════════════════════╗
-  ║                                                       ║
-  ║   🇻🇳  VN STOCK TRACKER & TELEGRAM NOTIFIER  📊      ║
-  ║                                                       ║
-  ║   📊 Báo giá:  10:00 | 13:00 | 16:00  (T2-T6)       ║
-  ║   🤖 AI Report: 20:30              (T2-T6)           ║
-  ║                                                       ║
-  ╚═══════════════════════════════════════════════════════╝
+  ╔═══════════════════════════════════════════════════════════╗
+  ║                                                           ║
+  ║   🇻🇳  VN STOCK BOT v${config.version}  📊                       ║
+  ║   Multi-AI Team System                                    ║
+  ║                                                           ║
+  ║   📊 Báo giá:  10:00 | 13:00 | 16:00  (T2-T6)           ║
+  ║   🤖 AI Report: 20:30                 (T2-T6)           ║
+  ║   📅 Weekly:    8:30                  (Thứ 2)           ║
+  ║   💬 Interactive Bot: 24/7                                ║
+  ║                                                           ║
+  ║   🤖 AI 1: Trigger + Báo giá (Gemini Flash - Key 1)        ║
+  ║   📊 AI 2: Chuyên gia        (Gemini Pro   - Key 2)        ║
+  ║   💬 AI 3: Chuyên gia Flash  (Gemini Flash - Key 1)        ║
+  ║   ⚔️  AI 4: Phản biện + Cuoi ngày (Gemini Pro - Key 2)      ║
+  ║   🔒 Anti-spam: 60s giãn cách / key                        ║
+  ║                                                           ║
+  ╚═══════════════════════════════════════════════════════════╝
   `);
 
   // Validate config
   validateConfig();
 
-  console.log('📋 Cấu hình:');
+  // Init AI engines
+  console.log('\n🧠 Khởi tạo AI Engines...');
+  initAIEngines();
+
+  console.log('\n📋 Cấu hình:');
   console.log(`   📌 Mã theo dõi:  ${config.stockSymbols.join(', ')}`);
   console.log(`   ⏰ Báo giá:      ${config.cronSchedule}`);
   console.log(`   🤖 AI phân tích: ${config.cronAiSchedule}`);
+  console.log(`   📅 Weekly:       ${config.cronWeeklySchedule}`);
   console.log(`   🌏 Timezone:     ${config.timezone}`);
   console.log(`   📩 Chat ID:      ${config.telegram.chatId}`);
-  console.log(`   🧠 AI Engine:    ${config.gemini.apiKey ? 'Google Gemini 2.5 Flash ✅' : 'Rule-based (thêm GEMINI_API_KEY để dùng AI)'}`);
+  console.log(`   💬 Interactive:  ${config.enableInteractiveBot ? 'ON' : 'OFF'}`);
+  const hasKey1 = config.geminiAI1.apiKey;
+  const hasKey2 = config.geminiAI2.apiKey;
+  console.log(`   🔑 Key 1 (AI 1+3): ${hasKey1 ? '✅ OK' : '❌ Thiếu'}`);
+  console.log(`   🔑 Key 2 (AI 2+4): ${hasKey2 ? '✅ OK' : '❌ Thiếu'}`);
+  console.log(`   🔒 Anti-spam: 60s giãn cách / key`);
+  console.log(`   💰 Chi phí: $0 (100% FREE Gemini)`);
   console.log('');
 
   // Validate cron expressions
-  if (!cron.validate(config.cronSchedule)) {
-    console.error(`❌ Cron báo giá không hợp lệ: ${config.cronSchedule}`);
-    process.exit(1);
-  }
-  if (!cron.validate(config.cronAiSchedule)) {
-    console.error(`❌ Cron AI không hợp lệ: ${config.cronAiSchedule}`);
-    process.exit(1);
+  const cronChecks = [
+    { name: 'Báo giá', expr: config.cronSchedule },
+    { name: 'AI Report', expr: config.cronAiSchedule },
+    { name: 'Weekly', expr: config.cronWeeklySchedule },
+  ];
+
+  for (const { name, expr } of cronChecks) {
+    if (!cron.validate(expr)) {
+      console.error(`❌ Cron ${name} không hợp lệ: ${expr}`);
+      process.exit(1);
+    }
   }
 
-  // Chạy báo giá 1 lần khi khởi động (bỏ qua trên cloud để tránh spam)
-  if (!process.env.RAILWAY_ENVIRONMENT && !process.env.RENDER) {
-    console.log('🔄 Chạy báo giá lần đầu (local mode)...');
-    await runStockJob();
-  } else {
-    console.log('☁️  Cloud mode - chờ đến giờ schedule...');
-  }
+  // ═══════════════════════════════════════════════════════════
+  // BUG FIX: KHÔNG chạy job khi khởi động (gây noti dư thừa)
+  // Railway/Render restart container → trigger noti ngoài giờ
+  // ═══════════════════════════════════════════════════════════
+  console.log('☁️  Chờ đến giờ schedule (không chạy khi khởi động)...');
 
   // ─── SCHEDULE JOB 1: BÁO GIÁ (T2-T6, 10h/13h/16h) ────
   cron.schedule(config.cronSchedule, () => {
@@ -160,23 +273,46 @@ async function main() {
     timezone: config.timezone,
   });
 
+  // ─── SCHEDULE JOB 3: WEEKLY (Thứ 2, 8h30) ─────────────
+  cron.schedule(config.cronWeeklySchedule, () => {
+    const now = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
+    console.log(`\n📅 [Weekly Analysis] Cron triggered: ${now}`);
+    runWeeklyJob();
+  }, {
+    scheduled: true,
+    timezone: config.timezone,
+  });
+
+  // ─── START INTERACTIVE BOT HANDLER ─────────────────────
+  if (config.enableInteractiveBot) {
+    startBotHandler();
+  }
+
   console.log('\n' + '─'.repeat(55));
-  console.log('🟢 Bot đang chạy! Schedule đã kích hoạt:');
-  console.log(`   📊 Báo giá:  ${config.cronSchedule} (${config.timezone})`);
-  console.log(`   🤖 AI Report: ${config.cronAiSchedule} (${config.timezone})`);
-  console.log('   📅 Chỉ chạy Thứ 2 → Thứ 6');
+  console.log(`🟢 VN Stock Bot v${config.version} đang chạy!`);
+  console.log('');
+  console.log('   📊 Báo giá:     ' + config.cronSchedule + ` (${config.timezone})`);
+  console.log('   🤖 AI Report:   ' + config.cronAiSchedule + ` (${config.timezone})`);
+  console.log('   📅 Weekly:      ' + config.cronWeeklySchedule + ` (${config.timezone})`);
+  console.log('   💬 Interactive: ' + (config.enableInteractiveBot ? 'ON (polling)' : 'OFF'));
+  console.log('   📅 Chỉ chạy Thứ 2 → Thứ 6 (có double-check runtime)');
+  console.log('   🔒 Dedup lock:  4 phút (chống double message)');
   console.log('   💡 Nhấn Ctrl+C để dừng');
   console.log('─'.repeat(55) + '\n');
 }
 
-// Handle graceful shutdown
+// ─── GRACEFUL SHUTDOWN ────────────────────────────────────
+
 process.on('SIGINT', () => {
-  console.log('\n👋 Bot đã dừng. Hẹn gặp lại!');
+  console.log('\n👋 Bot đang dừng...');
+  stopBotHandler();
+  console.log('👋 Bot đã dừng. Hẹn gặp lại!');
   process.exit(0);
 });
 
 process.on('SIGTERM', () => {
-  console.log('\n👋 Bot đã dừng (SIGTERM).');
+  console.log('\n👋 Bot đang dừng (SIGTERM)...');
+  stopBotHandler();
   process.exit(0);
 });
 
