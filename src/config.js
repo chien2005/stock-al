@@ -20,14 +20,17 @@ const config = {
   // Key 1: AI 1 (báo giá) + AI 3 (flash) — luân phiên 60s
   // Key 2: AI 2 (expert) + AI 4 (phản biện) — luân phiên 60s
   geminiAI1: { apiKey: process.env.GEMINI_API_KEY_AI1 || '' },
-  geminiAI2: { apiKey: process.env.GEMINI_API_KEY_AI2 || '' },
+  geminiAI2: {
+    apiKey: process.env.GEMINI_API_KEY_AI2 || process.env.GEMINI_API_KEY_AI1 || '',
+    model: 'gemini-2.5-flash',
+  },
   geminiAI3: { 
     apiKey: process.env.GEMINI_API_KEY_AI3 || '',
     model: 'gemini-2.5-flash',
   },
   geminiAI4: {
-    apiKey: process.env.GEMINI_API_KEY_AI4 || process.env.GEMINI_API_KEY_AI2 || '',
-    model: 'gemini-2.5-pro',
+    apiKey: process.env.GEMINI_API_KEY_AI4 || process.env.GEMINI_API_KEY_AI2 || process.env.GEMINI_API_KEY_AI1 || '',
+    model: 'gemini-2.5-flash',
   },
 
   // Stock symbols
@@ -52,7 +55,7 @@ const config = {
   timezone: process.env.TZ || 'Asia/Ho_Chi_Minh',
 
   // Version
-  version: '1.1.1',
+  version: '1.2.0',
 };
 
 // Validate required config

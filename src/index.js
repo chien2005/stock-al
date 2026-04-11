@@ -23,11 +23,17 @@
 
 const cron = require('node-cron');
 const { config, validateConfig } = require('./config');
-const { fetchAllStocks } = require('./stockService');
+const { fetchAllStocks, fetchVN30Index, fetchMarketScan } = require('./stockService');
 const { sendTelegramMessage, formatStockMessage } = require('./telegramService');
 const { initAIEngines, runScheduledAnalysis } = require('./aiTeam');
 const { runWeeklyAnalysis } = require('./weeklyAnalysis');
 const { startBotHandler, stopBotHandler } = require('./botHandler');
+
+// ─── DATA CACHE: Lưu data cuối phiên (16h) cho report 20h30 ──
+let lastStockData = null;
+let lastStockDataTime = 0;
+let lastMarketScan = null;
+let lastVN30Index = null;
 
 // ─── DEDUP LOCK: Chống double message ──────────────────────
 const lastJobRun = {};
@@ -90,7 +96,11 @@ async function runStockJob() {
   console.log('═'.repeat(55));
 
   try {
-    const stocks = await fetchAllStocks();
+    // Fetch stock data + VN30 index song song
+    const [stocks, vn30Index] = await Promise.all([
+      fetchAllStocks(),
+      fetchVN30Index(),
+    ]);
 
     if (stocks.length === 0) {
       console.error('❌ Không lấy được dữ liệu nào!');
@@ -98,7 +108,31 @@ async function runStockJob() {
       return;
     }
 
-    const message = formatStockMessage(stocks);
+    // Cache data cho báo cáo cuối ngày 20h30
+    lastStockData = stocks;
+    lastStockDataTime = Date.now();
+    lastVN30Index = vn30Index;
+    console.log('   💾 Đã cache dữ liệu cho báo cáo cuối ngày');
+
+    // Format message với VN30 index
+    let message = formatStockMessage(stocks);
+    if (vn30Index) {
+      let idxMsg = '\n📊 <b>CHỈ SỐ THỊ TRƯỜNG</b>\n';
+      if (vn30Index.vn30) {
+        const v = vn30Index.vn30;
+        const icon = v.changePct > 0 ? '🟢' : v.changePct < 0 ? '🔴' : '🟡';
+        const sign = v.changePct >= 0 ? '+' : '';
+        idxMsg += `${icon} <b>VN30</b>: ${v.close} (${sign}${v.changePct}%) | KL: ${(v.volume / 1000000).toFixed(0)}M\n`;
+      }
+      if (vn30Index.vnindex) {
+        const v = vn30Index.vnindex;
+        const icon = v.changePct > 0 ? '🟢' : v.changePct < 0 ? '🔴' : '🟡';
+        const sign = v.changePct >= 0 ? '+' : '';
+        idxMsg += `${icon} <b>VNINDEX</b>: ${v.close} (${sign}${v.changePct}%) | KL: ${(v.volume / 1000000).toFixed(0)}M\n`;
+      }
+      // Chèn trước phần TỔNG KẾT
+      message = message.replace('━━━━━━━━━━━━━━━━━━━━━━\n📊 <b>TỔNG KẾT', idxMsg + '\n━━━━━━━━━━━━━━━━━━━━━━\n📊 <b>TỔNG KẾT');
+    }
     const sent = await sendTelegramMessage(message);
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
 
@@ -135,16 +169,41 @@ async function runAiJob() {
   console.log('═'.repeat(55));
 
   try {
-    const stocks = await fetchAllStocks();
+    // Ưu tiên dùng data từ cache 16h00 (giá cuối phiên chính xác)
+    // Chỉ fetch mới nếu chưa có cache trong ngày
+    let stocks;
+    const cacheAge = Date.now() - lastStockDataTime;
+    const MAX_CACHE_AGE = 8 * 60 * 60 * 1000; // 8 tiếng (đủ cho cache từ 10h/13h/16h)
 
-    if (stocks.length === 0) {
-      console.error('❌ Không lấy được dữ liệu!');
-      await sendTelegramMessage('⚠️ VN Stock Bot: Không lấy được dữ liệu để phân tích AI.');
+    if (lastStockData && lastStockData.length > 0 && cacheAge < MAX_CACHE_AGE) {
+      stocks = lastStockData;
+      const cacheTimeStr = new Date(lastStockDataTime).toLocaleString('vi-VN', { timeZone: config.timezone });
+      console.log(`   💾 Sử dụng data cache từ ${cacheTimeStr} (${Math.round(cacheAge / 60000)} phút trước)`);
+    } else {
+      console.log('   ⚠️ Không có cache, fetch data mới...');
+      stocks = await fetchAllStocks();
+    }
+
+    if (!stocks || stocks.length === 0) {
+      console.error('❌ Không có dữ liệu!');
+      await sendTelegramMessage('⚠️ VN Stock Bot: Không có dữ liệu để phân tích AI.');
       return;
     }
 
-    // runScheduledAnalysis giờ tự gửi trực tiếp qua Telegram bots
-    await runScheduledAnalysis(stocks);
+    // Fetch market scan (dòng tiền toàn thị trường)
+    console.log('\n🔍 Quét dòng tiền toàn thị trường...');
+    const trackedSymbols = config.stockSymbols;
+    const marketScan = await fetchMarketScan(trackedSymbols);
+    lastMarketScan = marketScan;
+
+    // Fetch VN30 index nếu chưa có cache
+    let vn30Index = lastVN30Index;
+    if (!vn30Index) {
+      vn30Index = await fetchVN30Index();
+    }
+
+    // runScheduledAnalysis với market scan data
+    await runScheduledAnalysis(stocks, { marketScan, vn30Index });
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
     console.log(`\n✅ BÁO CÁO CUỐI NGÀY HOÀN THÀNH! (${elapsed}s)`);
 
@@ -194,7 +253,7 @@ async function main() {
   ╔═══════════════════════════════════════════════════════════╗
   ║                                                           ║
   ║   🇻🇳  VN STOCK BOT v${config.version}  📊                       ║
-  ║   Multi-AI Team System                                    ║
+  ║   Multi-AI Team System (ALL FREE)                         ║
   ║                                                           ║
   ║   📊 Báo giá:  10:00 | 13:00 | 16:00  (T2-T6)           ║
   ║   🤖 AI Report: 20:30                 (T2-T6)           ║
@@ -202,10 +261,10 @@ async function main() {
   ║   💬 Interactive Bot: 24/7                                ║
   ║                                                           ║
   ║   🤖 AI 1: Trigger + Báo giá (Gemini Flash - Key 1)        ║
-  ║   📊 AI 2: Chuyên gia        (Gemini Pro   - Key 2)        ║
+  ║   📊 AI 2: Chuyên gia        (Gemini Flash - Key 2→1)      ║
   ║   💬 AI 3: Chuyên gia Flash  (Gemini Flash - Key 1)        ║
-  ║   ⚔️  AI 4: Phản biện + Cuoi ngày (Gemini Pro - Key 2)      ║
-  ║   🔒 Anti-spam: 60s giãn cách / key                        ║
+  ║   ⚔️  AI 4: Phản biện + Cuối ngày (Gemini Flash - Key 2→1)  ║
+  ║   🔒 Anti-spam: 15s giãn cách / key                        ║
   ║                                                           ║
   ╚═══════════════════════════════════════════════════════════╝
   `);
@@ -229,8 +288,9 @@ async function main() {
   const hasKey2 = config.geminiAI2.apiKey;
   console.log(`   🔑 Key 1 (AI 1+3): ${hasKey1 ? '✅ OK' : '❌ Thiếu'}`);
   console.log(`   🔑 Key 2 (AI 2+4): ${hasKey2 ? '✅ OK' : '❌ Thiếu'}`);
-  console.log(`   🔒 Anti-spam: 60s giãn cách / key`);
-  console.log(`   💰 Chi phí: $0 (100% FREE Gemini)`);
+  console.log(`   🔒 Anti-spam: 15s giãn cách / key`);
+  console.log(`   💾 Cache: Dùng data 16h00 cho báo cáo 20h30`);
+  console.log(`   💰 Chi phí: $0 (100% FREE Gemini Flash)`);
   console.log('');
 
   // Validate cron expressions
