@@ -419,6 +419,26 @@ async function main() {
     console.log(`   💓 Health check: http://localhost:${PORT}/health`);
   });
 
+  // ─── SELF-PING: Chống Render Free Tier ngủ (tự ping mỗi 10 phút) ──
+  const RENDER_URL = process.env.RENDER_EXTERNAL_URL || process.env.RENDER_SERVICE_URL;
+  if (RENDER_URL || process.env.RENDER) {
+    const https = require('https');
+    const pingUrl = RENDER_URL 
+      ? `${RENDER_URL}/health` 
+      : `https://vn-stock-bot-gywt.onrender.com/health`;
+    const PING_INTERVAL = 10 * 60 * 1000; // 10 phút
+    
+    setInterval(() => {
+      https.get(pingUrl, (res) => {
+        console.log(`🏓 Self-ping: ${res.statusCode} OK (${new Date().toLocaleTimeString('vi-VN', { timeZone: config.timezone })})`);
+      }).on('error', (err) => {
+        console.log(`🏓 Self-ping failed: ${err.message}`);
+      });
+    }, PING_INTERVAL);
+    
+    console.log(`   🏓 Self-ping: ${pingUrl} (mỗi 10 phút)`);
+  }
+
   console.log('\n' + '─'.repeat(55));
   console.log(`🟢 VN Stock Bot v${config.version} đang chạy!`);
   console.log('');
