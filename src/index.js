@@ -22,12 +22,16 @@
  */
 
 const cron = require('node-cron');
+const http = require('http');
 const { config, validateConfig } = require('./config');
 const { fetchAllStocks, fetchVN30Index, fetchMarketScan } = require('./stockService');
 const { sendTelegramMessage, formatStockMessage } = require('./telegramService');
 const { initAIEngines, runScheduledAnalysis } = require('./aiTeam');
 const { runWeeklyAnalysis } = require('./weeklyAnalysis');
 const { startBotHandler, stopBotHandler } = require('./botHandler');
+
+// ─── Thời điểm khởi động (cho health check) ─────────────
+const startedAt = new Date();
 
 // ─── DATA CACHE: Lưu data cuối phiên (16h) cho report 20h30 ──
 let lastStockData = null;
@@ -348,6 +352,73 @@ async function main() {
     startBotHandler();
   }
 
+  // ─── HTTP HEALTH SERVER (Render.com keep-alive) ────────
+  const PORT = process.env.PORT || 3000;
+  const server = http.createServer((req, res) => {
+    const uptime = Math.floor((Date.now() - startedAt.getTime()) / 1000);
+    const uptimeStr = `${Math.floor(uptime / 3600)}h ${Math.floor((uptime % 3600) / 60)}m ${uptime % 60}s`;
+    const vnNow = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
+
+    if (req.url === '/health') {
+      // Health check endpoint cho cron-job.org / UptimeRobot
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        status: 'ok',
+        bot: `VN Stock Bot v${config.version}`,
+        uptime: uptimeStr,
+        uptimeSeconds: uptime,
+        serverTime: vnNow,
+        stocks: config.stockSymbols.length,
+        interactive: config.enableInteractiveBot,
+      }));
+      return;
+    }
+
+    // Status page (trang chủ)
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(`
+      <!DOCTYPE html>
+      <html lang="vi">
+      <head>
+        <meta charset="UTF-8">
+        <title>VN Stock Bot v${config.version}</title>
+        <style>
+          body { font-family: 'Segoe UI', sans-serif; background: #0f0f23; color: #e0e0e0; 
+                 display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
+          .card { background: #1a1a2e; border-radius: 16px; padding: 40px; max-width: 500px;
+                  box-shadow: 0 8px 32px rgba(0,0,0,0.4); border: 1px solid #333; }
+          h1 { color: #00d4ff; margin-top: 0; }
+          .status { color: #00ff88; font-size: 18px; }
+          .info { margin: 8px 0; color: #bbb; }
+          .badge { display: inline-block; background: #00ff88; color: #000; padding: 4px 12px;
+                   border-radius: 12px; font-weight: bold; font-size: 14px; }
+        </style>
+      </head>
+      <body>
+        <div class="card">
+          <h1>🇻🇳 VN Stock Bot</h1>
+          <p class="status"><span class="badge">● ONLINE</span> v${config.version}</p>
+          <p class="info">⏱ Uptime: ${uptimeStr}</p>
+          <p class="info">🕐 Server: ${vnNow}</p>
+          <p class="info">📊 Theo dõi: ${config.stockSymbols.length} mã CP</p>
+          <p class="info">📋 Schedule: ${config.cronSchedule}</p>
+          <p class="info">🤖 AI Report: ${config.cronAiSchedule}</p>
+          <p class="info">💬 Interactive: ${config.enableInteractiveBot ? 'ON' : 'OFF'}</p>
+          <p class="info">💰 Chi phí: $0 (100% FREE)</p>
+          <hr style="border-color:#333">
+          <p style="color:#666; font-size:12px">Health check: <a href="/health" style="color:#00d4ff">/health</a></p>
+        </div>
+      </body>
+      </html>
+    `);
+  });
+
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log(`\n🌐 Health server listening on port ${PORT}`);
+    console.log(`   📍 Status page: http://localhost:${PORT}/`);
+    console.log(`   💓 Health check: http://localhost:${PORT}/health`);
+  });
+
   console.log('\n' + '─'.repeat(55));
   console.log(`🟢 VN Stock Bot v${config.version} đang chạy!`);
   console.log('');
@@ -355,6 +426,7 @@ async function main() {
   console.log('   🤖 AI Report:   ' + config.cronAiSchedule + ` (${config.timezone})`);
   console.log('   📅 Weekly:      ' + config.cronWeeklySchedule + ` (${config.timezone})`);
   console.log('   💬 Interactive: ' + (config.enableInteractiveBot ? 'ON (polling)' : 'OFF'));
+  console.log('   🌐 Health:      http://localhost:' + PORT + '/health');
   console.log('   📅 Chỉ chạy Thứ 2 → Thứ 6 (có double-check runtime)');
   console.log('   🔒 Dedup lock:  4 phút (chống double message)');
   console.log('   💡 Nhấn Ctrl+C để dừng');
