@@ -45,6 +45,12 @@ const config = {
   // Cron: AI phân tích đa chuyên gia (thứ 2-6, 20h30)
   cronAiSchedule: process.env.CRON_AI_SCHEDULE || '30 20 * * 1-5',
 
+  // Cron: Báo cáo TTCK quốc tế (thứ 2-6, 21h00)
+  cronGlobalSchedule: process.env.CRON_GLOBAL_SCHEDULE || '0 21 * * 1-5',
+
+  // Cron: Top 5 CP mua nhiều nhất (thứ 2-6, 21h30)
+  cronTopBoughtSchedule: process.env.CRON_TOP_BOUGHT_SCHEDULE || '30 21 * * 1-5',
+
   // Cron: Phân tích đầu tuần (Thứ 2, 8h30)
   cronWeeklySchedule: process.env.CRON_WEEKLY_SCHEDULE || '30 8 * * 1',
 
@@ -55,7 +61,7 @@ const config = {
   timezone: process.env.TZ || 'Asia/Ho_Chi_Minh',
 
   // Version
-  version: '1.2.0',
+  version: '2.0.0',
 };
 
 // Validate required config

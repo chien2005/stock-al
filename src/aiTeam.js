@@ -740,9 +740,296 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// ─── JOB 4: PHÂN TÍCH TTCK QUỐC TẾ (21h00) ────────────────
+
+/**
+ * Phân tích thị trường quốc tế → ảnh hưởng VN
+ * @param {Object} globalData - từ fetchAllGlobalData()
+ */
+async function runGlobalMarketAnalysis(globalData) {
+  const chatId = config.telegram.chatId;
+  const now = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
+
+  console.log('\n🌍 PHÂN TÍCH TTCK QUỐC TẾ...');
+
+  // Bước 1: Gửi bảng data tổng hợp qua Bot chính
+  const { buildGlobalMarketTelegramMessage } = require('./globalMarketService');
+  const dataMsg = buildGlobalMarketTelegramMessage(globalData);
+  await sendViaBot(config.telegram.botToken, chatId, dataMsg);
+  console.log('   📊 Đã gửi bảng data TTCK quốc tế');
+
+  // Bước 2: AI phân tích chi tiết ảnh hưởng VN
+  if (geminiAI4) {
+    try {
+      await waitForAntiSpam('key2');
+      console.log('   🌍 AI 4 đang phân tích ảnh hưởng TTCK quốc tế → VN...');
+
+      const prompt = buildGlobalAnalysisPrompt(globalData);
+      const result = await geminiAI4.generateContent(prompt);
+      const text = result.response.text();
+
+      if (text && text.trim().length > 0) {
+        const htmlReport = convertToHTML(text);
+        const aiMsg = `🌍 <b>PHÂN TÍCH TTCK QUỐC TẾ → ẢNH HƯỞNG VN</b>\n` +
+          `<i>🧠 AI 4 - Chiến lược gia toàn cầu</i>\n` +
+          `🕐 <i>${now}</i>\n` +
+          `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+          `${htmlReport}\n\n` +
+          `━━━━━━━━━━━━━━━━━━━━━━\n` +
+          `<i>⚠️ Phân tích tham khảo, không phải lời khuyên đầu tư.</i>\n` +
+          `<i>🤖 VN Stock Bot v${config.version} | Global Analysis</i>`;
+        await sendViaBot(getAI4BotToken(), chatId, aiMsg);
+        console.log(`   ✅ AI 4 đã gửi phân tích TTCK quốc tế (${text.length} chars)`);
+      }
+    } catch (error) {
+      console.error('   ❌ AI 4 lỗi phân tích quốc tế:', error.message);
+    }
+  }
+}
+
+/**
+ * Prompt cho AI phân tích TTCK quốc tế → VN
+ */
+function buildGlobalAnalysisPrompt(globalData) {
+  const { summary, fearGreed } = globalData;
+
+  return `Bạn là CHIẾN LƯỢC GIA THỊ TRƯỜNG TOÀN CẦU, chuyên gia về mối liên hệ giữa TTCK quốc tế và TTCK Việt Nam.
+
+Thời điểm: 21:00 tối Việt Nam. Phiên giao dịch VN đã kết thúc, nhưng thị trường Mỹ đang/sắp mở cửa.
+
+DỮ LIỆU TTCK QUỐC TẾ HÔM NAY:
+${summary}
+
+YÊU CẦU PHÂN TÍCH (viết chi tiết, chuyên sâu):
+
+1. 🌍 **TỔNG QUAN THỊ TRƯỜNG THẾ GIỚI** (~200 chữ):
+   - Thị trường Mỹ (S&P 500, NASDAQ, Dow): xu hướng gì? Nguyên nhân?
+   - Châu Á (Nikkei, Shanghai, Hang Seng, KOSPI): có tương đồng Mỹ không?
+   - Châu Âu: theo Mỹ hay đi riêng?
+   - Tâm lý chung: Risk-on hay Risk-off?
+
+2. 🏦 **PHÂN TÍCH NGÀNH & SECTOR ROTATION** (~200 chữ):
+   - ETF ngành nào tăng/giảm mạnh nhất? Vì sao?
+   - Dòng tiền đang chảy vào ngành nào trên thế giới?
+   - Mapping sang VN: ngành nào sẽ hưởng lợi/chịu thiệt?
+   - VD: XLF +2% → bank VN (VCB, MBB, TCB) có thể khởi sắc
+
+3. 💱 **TỶ GIÁ & HÀNG HÓA** (~100 chữ):
+   - DXY (Dollar Index): USD mạnh/yếu ảnh hưởng VN thế nào?
+   - Vàng, Dầu: tín hiệu gì cho nền kinh tế?
+   - VIX: mức độ lo ngại thị trường?
+
+4. 🔮 **DỰ BÁO TTCK VN NGÀY MAI** (~250 chữ):
+   - Dựa trên tất cả dữ liệu trên, DỰ BÁO cụ thể:
+     • VN mở cửa GAP UP hay GAP DOWN? Bao nhiêu điểm?
+     • Khả năng VNINDEX tăng/giảm: X% (ước tính)
+     • Nhóm cổ phiếu nào sẽ HƯỞNG LỢI nhất? (dựa trên sector rotation)
+     • Nhóm nào nên TRÁNH?
+   - Fear/Greed Score hiện tại: ${fearGreed.score}/100 (${fearGreed.label}) → ý nghĩa?
+   - Chiến lược: Nên MUA / BÁN / GIỮ / CHỜ?
+
+5. ⚠️ **RỦI RO CẦN CHÚ Ý** (~100 chữ):
+   - Sự kiện kinh tế/chính trị quốc tế sắp tới?
+   - Fed, lãi suất, địa chính trị?
+   - Black swan risk?
+
+FORMAT: Tiếng Việt, emoji, chuyên sâu (~900 chữ). Dùng ** để bold điểm quan trọng.
+Viết như chuyên gia tài chính quốc tế đang brief cho team đầu tư VN.
+Luôn nhắc "Đây là phân tích tham khảo, không phải lời khuyên đầu tư."`;
+}
+
+// ─── JOB 5: TOP 5 CP MUA NHIỀU NHẤT (21h30) ────────────────
+
+/**
+ * Phân tích Top 5 CP được mua nhiều nhất + dự báo
+ * @param {Object} topBoughtData - từ fetchTopBoughtStocks()
+ * @param {Object} globalData - context từ TTCK quốc tế (nếu có)
+ */
+async function runTopBoughtAnalysis(topBoughtData, globalData = null) {
+  const chatId = config.telegram.chatId;
+  const now = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
+
+  console.log('\n🏆 PHÂN TÍCH TOP CP MUA NHIỀU NHẤT...');
+
+  const { topBought, stats } = topBoughtData;
+
+  // Bước 1: Gửi bảng tổng hợp Top 5
+  const dataMsg = buildTopBoughtTelegramMessage(topBought, stats, now);
+  await sendViaBot(config.telegram.botToken, chatId, dataMsg);
+  console.log('   📊 Đã gửi bảng Top 5 CP mua nhiều nhất');
+
+  // Bước 2: AI phân tích + dự báo
+  if (geminiAI4) {
+    try {
+      await waitForAntiSpam('key2');
+      console.log('   🏆 AI 4 đang phân tích Top 5 CP...');
+
+      const prompt = buildTopBoughtPrompt(topBought, stats, globalData);
+      const result = await geminiAI4.generateContent(prompt);
+      const text = result.response.text();
+
+      if (text && text.trim().length > 0) {
+        const htmlReport = convertToHTML(text);
+        const aiMsg = `🏆 <b>PHÂN TÍCH TOP 5 CP MUA NHIỀU NHẤT</b>\n` +
+          `<i>🧠 AI 4 - Smart Money Tracker</i>\n` +
+          `🕐 <i>${now}</i>\n` +
+          `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+          `${htmlReport}\n\n` +
+          `━━━━━━━━━━━━━━━━━━━━━━\n` +
+          `<i>⚠️ Phân tích tham khảo, không phải lời khuyên đầu tư.</i>\n` +
+          `<i>🤖 VN Stock Bot v${config.version} | Smart Money Analysis</i>`;
+        await sendViaBot(getAI4BotToken(), chatId, aiMsg);
+        console.log(`   ✅ AI 4 đã gửi phân tích Top 5 (${text.length} chars)`);
+      }
+    } catch (error) {
+      console.error('   ❌ AI 4 lỗi phân tích Top 5:', error.message);
+    }
+  }
+}
+
+/**
+ * Build Telegram message cho Top 5 CP mua nhiều nhất
+ */
+function buildTopBoughtTelegramMessage(topBought, stats, now) {
+  let msg = `🏆 <b>TOP 5 CP MUA NHIỀU NHẤT HÔM NAY</b>\n`;
+  msg += `🕐 <i>${now}</i>\n`;
+  msg += `📊 <i>Quét ${stats.totalScanned} mã | Composite Score Analysis</i>\n`;
+  msg += `━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+
+  // Thống kê chung
+  msg += `📈 Tăng: ${stats.gainers} | 📉 Giảm: ${stats.losers} | TB: ${stats.avgChange >= 0 ? '+' : ''}${stats.avgChange}%\n`;
+  msg += `${stats.totalForeignNet >= 0 ? '💚' : '💔'} NN ròng tổng: <b>${stats.totalForeignNet >= 0 ? '+' : ''}${formatVolume(stats.totalForeignNet)}</b>\n\n`;
+
+  // Top 5
+  for (let i = 0; i < topBought.length; i++) {
+    const s = topBought[i];
+    const medal = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣'][i];
+    const sign = s.changePct >= 0 ? '+' : '';
+    const icon = s.changePct > 0 ? '🟢' : s.changePct < 0 ? '🔴' : '🟡';
+
+    msg += `${medal} <b>${s.symbol}</b> ${icon}\n`;
+    msg += `   💰 Giá: <b>${s.price.toLocaleString('vi-VN')}đ</b> (${sign}${s.changePct}%)\n`;
+    msg += `   📦 KLGD: ${formatVolume(s.volume)}\n`;
+
+    // Khối ngoại
+    const fIcon = s.foreignNet > 0 ? '💚' : s.foreignNet < 0 ? '💔' : '💛';
+    msg += `   ${fIcon} NN ròng: ${s.foreignNet >= 0 ? '+' : ''}${formatVolume(s.foreignNet)}`;
+    if (s.foreignNetValue > 0) {
+      msg += ` (~${formatBigValue(s.foreignNetValue)}đ)`;
+    }
+    msg += `\n`;
+
+    // Buy pressure
+    msg += `   💪 Buy Pressure: ${s.buyPressure}%\n`;
+
+    // Composite Score (progress bar)
+    const scoreBar = buildScoreBar(s.compositeScore);
+    msg += `   🎯 Score: ${scoreBar} <b>${s.compositeScore}</b>/100\n`;
+
+    // Signals
+    if (s.signals && s.signals.length > 0) {
+      msg += `   📡 ${s.signals.join(' | ')}\n`;
+    }
+
+    msg += `\n`;
+  }
+
+  msg += `<i>⏳ AI đang phân tích dự báo...</i>`;
+  return msg;
+}
+
+/**
+ * Build score progress bar
+ */
+function buildScoreBar(score) {
+  const filled = Math.round(score / 10);
+  return '█'.repeat(filled) + '░'.repeat(10 - filled);
+}
+
+/**
+ * Format giá trị lớn (tỷ VND)
+ */
+function formatBigValue(value) {
+  const abs = Math.abs(value);
+  if (abs >= 1000000000000) return (value / 1000000000000).toFixed(1) + ' nghìn tỷ';
+  if (abs >= 1000000000) return (value / 1000000000).toFixed(1) + ' tỷ';
+  if (abs >= 1000000) return (value / 1000000).toFixed(0) + ' triệu';
+  return value.toLocaleString('vi-VN');
+}
+
+/**
+ * Prompt cho AI phân tích Top 5 CP mua nhiều nhất
+ */
+function buildTopBoughtPrompt(topBought, stats, globalData = null) {
+  let topData = 'TOP 5 CP ĐƯỢC MUA NHIỀU NHẤT HÔM NAY (theo Composite Score):\n\n';
+  for (let i = 0; i < topBought.length; i++) {
+    const s = topBought[i];
+    topData += `${i + 1}. ${s.symbol}:\n`;
+    topData += `   Giá=${s.price}đ | ThayĐổi=${s.changePct >= 0 ? '+' : ''}${s.changePct}%\n`;
+    topData += `   KLGD=${s.volume} | NNMua=${s.foreignBuy} | NNBán=${s.foreignSell} | NNRòng=${s.foreignNet}\n`;
+    topData += `   GiáTrịNNRòng=${s.foreignNetValue}đ | BuyPressure=${s.buyPressure}%\n`;
+    topData += `   CompositeScore=${s.compositeScore}/100\n`;
+    if (s.signals && s.signals.length > 0) {
+      topData += `   Signals: ${s.signals.join(', ')}\n`;
+    }
+    topData += `\n`;
+  }
+
+  topData += `THỐNG KÊ THỊ TRƯỜNG:\n`;
+  topData += `- Tổng quét: ${stats.totalScanned} mã\n`;
+  topData += `- Tăng: ${stats.gainers} | Giảm: ${stats.losers}\n`;
+  topData += `- TB thay đổi: ${stats.avgChange}%\n`;
+  topData += `- NN ròng tổng: ${stats.totalForeignNet}\n`;
+
+  let globalContext = '';
+  if (globalData && globalData.summary) {
+    globalContext = `\nCONTEXT TTCK QUỐC TẾ (đã phân tích lúc 21h):\n${globalData.summary}\n`;
+  }
+
+  return `Bạn là CHUYÊN GIA SMART MONEY TRACKING chứng khoán Việt Nam. Bạn phân tích hành vi của "tay to", "cá mập", khối ngoại để tìm cơ hội đầu tư.
+
+${topData}
+${globalContext}
+
+YÊU CẦU PHÂN TÍCH CHI TIẾT (cho NHÀ ĐẦU TƯ hành động):
+
+1. 🏆 **PHÂN TÍCH TỪNG MÃ TOP 5** (~400 chữ):
+   Với MỖI mã, trả lời:
+   - Tại sao 'tay to' gom mã này? Có tin tức/sự kiện gì đặc biệt?
+   - Phân tích kỹ thuật: giá so với đỉnh/đáy gần đây, hỗ trợ/kháng cự
+   - Dự báo: Khả năng tăng bao nhiêu % trong 1-5 phiên tới?
+   - Mức giá mục tiêu (target price) ngắn hạn?
+   - Rủi ro: có phải "bull trap" (bẫy tăng giá) không?
+   - Khuyến nghị: 🟢 MUA NGAY / 🟡 MUA DẦN / 🟠 CHỜ PULLBACK / 🔴 TRÁNH
+
+2. 💰 **PHÂN TÍCH DÒNG TIỀN THÔNG MINH** (~200 chữ):
+   - "Cá mập" đang gom ở nhóm ngành nào?
+   - Có sự kiện sector rotation không? (VD: tiền chuyển từ bank sang tech)
+   - Nếu NN mua ròng + giá sideway = DẤU HIỆU TÍCH LŨY → sắp bùng nổ?
+   - Nếu NN mua ròng + giá tăng mạnh = MOMENTUM → cẩn thận chốt lời?
+
+3. 🎯 **CHIẾN LƯỢC ĐẦU TƯ NGÀY MAI** (~200 chữ):
+   - Mã nào nên MUA ở ATO (mở cửa)?
+   - Vùng giá vào hợp lý cho từng mã?
+   - Tỷ lệ phân bổ vốn gợi ý (VD: 30% VCB, 20% FPT...)?
+   - Stop loss đặt ở đâu?
+   - Take profit ở đâu?
+
+4. ⚠️ **CẢNH BÁO RỦI RO** (~100 chữ):
+   - Mã nào trong top 5 có khả năng là "bull trap"?
+   - NN gom để xả ngay hôm sau?
+   - Rủi ro macro nào ảnh hưởng?
+
+FORMAT: Tiếng Việt, emoji, chuyên sâu (~900 chữ). Dùng ** để bold điểm quan trọng. Không code block.
+Viết như chuyên gia đang tư vấn cho khách hàng VIP, TỰ TIN nhưng THẬN TRỌNG.
+Luôn nhắc "Đây là phân tích tham khảo, không phải lời khuyên đầu tư."`;
+}
+
 module.exports = {
   initAIEngines,
   runScheduledAnalysis,
   handleInteractiveQuestion,
   formatStockDataForAI,
+  runGlobalMarketAnalysis,
+  runTopBoughtAnalysis,
 };

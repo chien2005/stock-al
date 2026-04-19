@@ -1,7 +1,7 @@
 {
   "name": "vn-stock-telegram-bot",
-  "version": "1.2.0",
-  "description": "Vietnam Stock Bot - Multi-AI Team System (Gemini + GPT + Contrarian)",
+  "version": "2.0.0",
+  "description": "Vietnam Stock Bot - Multi-AI Team + Global Market System (Gemini + Yahoo Finance)",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
@@ -11,7 +11,17 @@
     "setup": "node src/setupAutoStart.js",
     "test": "node src/test.js"
   },
-  "keywords": ["vietnam", "stock", "telegram", "bot", "tracker", "ai", "gemini", "gpt", "multi-agent"],
+  "keywords": [
+    "vietnam",
+    "stock",
+    "telegram",
+    "bot",
+    "tracker",
+    "ai",
+    "gemini",
+    "gpt",
+    "multi-agent"
+  ],
   "author": "",
   "license": "MIT",
   "dependencies": {
@@ -20,6 +30,7 @@
     "dotenv": "^16.4.5",
     "node-cron": "^3.0.3",
     "node-telegram-bot-api": "^0.66.0",
-    "openai": "^4.0.0"
+    "openai": "^4.0.0",
+    "yahoo-finance2": "^3.14.0"
   }
 }

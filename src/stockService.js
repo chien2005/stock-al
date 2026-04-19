@@ -303,16 +303,65 @@ async function fetchVN30Index() {
 
 // ─── MARKET SCAN: Quét toàn thị trường ─────────────────────
 
-// VN30 components + cổ phiếu phổ biến (không trùng với tracked stocks)
+// Mở rộng: VN30 + HOSE blue-chip + Midcap + Penny đáng chú ý (~100+ mã)
 const SCAN_SYMBOLS = [
-  // VN30 components (trừ các mã đã track)
+  // ── VN30 components ──
   'ACB', 'BCM', 'BVH', 'CTG', 'GAS', 'GVR', 'HDB', 'KDH',
   'PLX', 'POW', 'SAB', 'SHB', 'SSB', 'STB', 'TCB', 'TPB',
   'VHM', 'VIB', 'VJC', 'VPB', 'VRE',
-  // Cổ phiếu phổ biến khác
+  // ── HOSE Blue-chip (ngoài VN30) ──
   'DGC', 'PNJ', 'REE', 'VND', 'HCM', 'DPM', 'DCM', 'GEX',
-  'NLG', 'SHS', 'PHR', 'HAG', 'PDR',
+  'NLG', 'PHR', 'HAG', 'PDR', 'EIB', 'LPB', 'OCB', 'MSB',
+  'DHG', 'FRT', 'VCI', 'GMD', 'VTP', 'PC1', 'NT2', 'BWE',
+  'DBC', 'HSG', 'NKG', 'TLG', 'DXG', 'KBC', 'IJC', 'HDC',
+  // ── Midcap HOSE + HNX ──
+  'SHS', 'VDS', 'CTS', 'AGG', 'DIG', 'HDG', 'KOS', 'ANV',
+  'VHC', 'IDC', 'PVT', 'PVD', 'TCH', 'HBC', 'LDG', 'CEO',
+  'TIG', 'FCN', 'SCR', 'DXS', 'NVL', 'AAA', 'GIL', 'PTB',
+  // ── Penny đáng chú ý (thanh khoản cao) ──
+  'FLC', 'ROS', 'HQC', 'OGC', 'KSB', 'CII', 'SBT', 'ASM',
+  'QBS', 'HVN', 'TSC', 'PAN', 'VOS', 'HHS', 'VGC', 'CRE',
 ];
+
+/**
+ * Parse raw VPS data thành object (dùng chung cho scan + top bought)
+ */
+function parseRawScanData(raw) {
+  const symbol = raw.sym;
+  const price = parseFloat(raw.lastPrice || 0) * 1000;
+  const refPrice = parseFloat(raw.r || 0) * 1000;
+  const volume = parseInt(raw.lot || 0);
+  const foreignBuy = parseInt(raw.fBVol || 0);
+  const foreignSell = parseInt(raw.fSVolume || 0);
+  const foreignNet = foreignBuy - foreignSell;
+  const changePct = refPrice > 0 ? parseFloat(((price - refPrice) / refPrice * 100).toFixed(2)) : 0;
+  const openPrice = parseFloat(raw.openPrice || 0) * 1000;
+  const highPrice = parseFloat(raw.highPrice || 0) * 1000;
+  const lowPrice = parseFloat(raw.lowPrice || 0) * 1000;
+
+  // Buy pressure: tỷ lệ mua NN so với tổng KL
+  const buyPressure = volume > 0 ? parseFloat((foreignBuy / volume * 100).toFixed(2)) : 0;
+  // Giá trị mua ròng NN (VND)
+  const foreignNetValue = foreignNet * price;
+
+  return {
+    symbol,
+    price,
+    refPrice,
+    change: price - refPrice,
+    changePct,
+    openPrice,
+    highPrice,
+    lowPrice,
+    volume,
+    foreignBuy,
+    foreignSell,
+    foreignNet,
+    foreignNetValue,
+    buyPressure,
+    exchange: raw.marketId === 'STO' ? 'HOSE' : (raw.marketId === 'HNO' ? 'HNX' : raw.marketId || ''),
+  };
+}
 
 /**
  * Quét thị trường rộng để tìm dòng tiền vào/ra mạnh nhất
@@ -332,31 +381,7 @@ async function fetchMarketScan(trackedSymbols = []) {
     }
 
     // Parse dữ liệu scan
-    const scanResults = [];
-    for (const raw of realtimeData) {
-      const symbol = raw.sym;
-      const price = parseFloat(raw.lastPrice || 0) * 1000;
-      const refPrice = parseFloat(raw.r || 0) * 1000;
-      const volume = parseInt(raw.lot || 0);
-      const foreignBuy = parseInt(raw.fBVol || 0);
-      const foreignSell = parseInt(raw.fSVolume || 0);
-      const foreignNet = foreignBuy - foreignSell;
-      const change = price - refPrice;
-      const changePct = refPrice > 0 ? parseFloat(((price - refPrice) / refPrice * 100).toFixed(2)) : 0;
-
-      scanResults.push({
-        symbol,
-        price,
-        refPrice,
-        change,
-        changePct,
-        volume,
-        foreignBuy,
-        foreignSell,
-        foreignNet,
-        exchange: raw.marketId === 'STO' ? 'HOSE' : (raw.marketId === 'HNO' ? 'HNX' : raw.marketId || ''),
-      });
-    }
+    const scanResults = realtimeData.map(parseRawScanData);
 
     // Sắp xếp theo dòng tiền khối ngoại (foreignNet)
     const byForeignNet = [...scanResults].sort((a, b) => b.foreignNet - a.foreignNet);
@@ -397,6 +422,120 @@ async function fetchMarketScan(trackedSymbols = []) {
   }
 }
 
+// ─── TOP BOUGHT STOCKS: Quét CP mua nhiều nhất ─────────────
+
+/**
+ * Tìm Top N cổ phiếu được MUA NHIỀU NHẤT trong ngày
+ * Kết hợp: khối ngoại mua ròng + KL giao dịch + tín hiệu giá
+ * 
+ * Composite Score = 
+ *   40% Foreign Net Value (giá trị NN mua ròng)
+ *   30% Volume Score (KL so với TB)
+ *   20% Price Momentum (% tăng giá trong phiên)
+ *   10% Buy Pressure (tỷ lệ NN mua / tổng KL)
+ * 
+ * @param {number} topN - Số lượng top (default 5)
+ * @returns {Object} { topBought: [...], scanAll: [...], stats }
+ */
+async function fetchTopBoughtStocks(topN = 5) {
+  console.log(`\n🏆 Tìm Top ${topN} CP mua nhiều nhất...`);
+  
+  try {
+    // Scan toàn bộ (bao gồm cả tracked stocks)
+    const allSymbols = [...new Set([...SCAN_SYMBOLS, ...config.stockSymbols])];
+    console.log(`   📡 Quét ${allSymbols.length} mã...`);
+
+    const realtimeData = await fetchRealtimeData(allSymbols);
+    if (!realtimeData || realtimeData.length === 0) {
+      console.error('   ❌ Không lấy được dữ liệu');
+      return null;
+    }
+
+    // Parse all
+    const allStocks = realtimeData.map(parseRawScanData);
+
+    // Chỉ lấy mã có giao dịch (volume > 0 & price > 0)
+    const activeStocks = allStocks.filter(s => s.volume > 0 && s.price > 0);
+
+    if (activeStocks.length === 0) {
+      console.log('   ⚠️ Không có mã nào giao dịch');
+      return null;
+    }
+
+    // ─── Tính Composite Score ───
+    // Normalize each factor to 0-100 range
+
+    // Max values for normalization
+    const maxForeignNetValue = Math.max(...activeStocks.map(s => Math.max(s.foreignNetValue, 0)), 1);
+    const maxVolume = Math.max(...activeStocks.map(s => s.volume), 1);
+    const maxChangePct = Math.max(...activeStocks.map(s => Math.max(s.changePct, 0)), 1);
+    const maxBuyPressure = Math.max(...activeStocks.map(s => s.buyPressure), 1);
+
+    for (const stock of activeStocks) {
+      // Factor scores (0-100)
+      const foreignScore = stock.foreignNetValue > 0
+        ? (stock.foreignNetValue / maxForeignNetValue) * 100
+        : 0;
+      const volumeScore = (stock.volume / maxVolume) * 100;
+      const momentumScore = stock.changePct > 0
+        ? (stock.changePct / maxChangePct) * 100
+        : 0;
+      const pressureScore = (stock.buyPressure / maxBuyPressure) * 100;
+
+      // Composite score (weighted)
+      stock.compositeScore = parseFloat((
+        foreignScore * 0.40 +
+        volumeScore * 0.30 +
+        momentumScore * 0.20 +
+        pressureScore * 0.10
+      ).toFixed(2));
+
+      // Tín hiệu thêm
+      stock.signals = [];
+      if (stock.foreignNet > 50000) stock.signals.push('🟢 NN mua ròng mạnh');
+      if (stock.foreignNet > 200000) stock.signals.push('🔥 NN gom hàng lớn');
+      if (stock.changePct > 3) stock.signals.push('📈 Tăng giá mạnh');
+      if (stock.changePct > 0 && stock.changePct < 1 && stock.foreignNet > 100000) {
+        stock.signals.push('🧊 Tích lũy (giá sideway + NN gom)');
+      }
+      if (stock.buyPressure > 10) stock.signals.push('💪 Áp lực mua cao');
+    }
+
+    // Sort by composite score
+    const sorted = [...activeStocks].sort((a, b) => b.compositeScore - a.compositeScore);
+    const topBought = sorted.slice(0, topN);
+
+    // Stats tổng hợp
+    const totalForeignNet = activeStocks.reduce((sum, s) => sum + s.foreignNet, 0);
+    const totalVolume = activeStocks.reduce((sum, s) => sum + s.volume, 0);
+    const gainers = activeStocks.filter(s => s.changePct > 0).length;
+    const losers = activeStocks.filter(s => s.changePct < 0).length;
+
+    console.log(`   ✅ Top ${topN} CP mua nhiều nhất:`);
+    for (let i = 0; i < topBought.length; i++) {
+      const s = topBought[i];
+      const sign = s.changePct >= 0 ? '+' : '';
+      console.log(`   ${i + 1}. ${s.symbol}: ${s.price.toLocaleString()}đ (${sign}${s.changePct}%) | NN: ${fmtVol(s.foreignNet)} | Score: ${s.compositeScore}`);
+    }
+
+    return {
+      topBought,
+      scanAll: sorted,
+      stats: {
+        totalScanned: activeStocks.length,
+        totalForeignNet,
+        totalVolume,
+        gainers,
+        losers,
+        avgChange: parseFloat((activeStocks.reduce((sum, s) => sum + s.changePct, 0) / activeStocks.length).toFixed(2)),
+      },
+    };
+  } catch (error) {
+    console.error('   ❌ Lỗi tìm top bought:', error.message);
+    return null;
+  }
+}
+
 function fmtVol(vol) {
   if (!vol) return '0';
   const absVol = Math.abs(vol);
@@ -406,4 +545,4 @@ function fmtVol(vol) {
   return sign + vol.toLocaleString('vi-VN');
 }
 
-module.exports = { fetchAllStocks, fetchRealtimeData, fetchVN30Index, fetchMarketScan };
+module.exports = { fetchAllStocks, fetchRealtimeData, fetchVN30Index, fetchMarketScan, fetchTopBoughtStocks };
