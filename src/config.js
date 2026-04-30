@@ -1,6 +1,6 @@
 /**
  * ╔═══════════════════════════════════════════════════════════╗
- * ║       🇻🇳 VN STOCK BOT - Configuration v1.1.1            ║
+ * ║       🇻🇳 VN STOCK BOT - Configuration v2.1.0            ║
  * ╚═══════════════════════════════════════════════════════════╝
  */
 
@@ -10,15 +10,13 @@ const config = {
   // Telegram - Multi-Bot (mỗi AI 1 bot riêng)
   telegram: {
     botToken: process.env.TELEGRAM_BOT_TOKEN,        // AI 1: Bot thông báo (main)
-    botTokenAI2: process.env.TELEGRAM_BOT_TOKEN_AI2, // AI 2: Chuyên gia Gemini
-    botTokenAI3: process.env.TELEGRAM_BOT_TOKEN_AI3, // AI 3: Chuyên gia GPT
+    botTokenAI2: process.env.TELEGRAM_BOT_TOKEN_AI2, // AI 2: Chuyên gia
+    botTokenAI3: process.env.TELEGRAM_BOT_TOKEN_AI3, // AI 3: Chuyên gia Flash
     botTokenAI4: process.env.TELEGRAM_BOT_TOKEN_AI4, // AI 4: AI Phản biện
     chatId: process.env.TELEGRAM_CHAT_ID,
   },
 
-  // Google Gemini Keys - ALL FREE (2 keys luân phiên chống spam)
-  // Key 1: AI 1 (báo giá) + AI 3 (flash) — luân phiên 60s
-  // Key 2: AI 2 (expert) + AI 4 (phản biện) — luân phiên 60s
+  // Google Gemini Keys - ALL FREE (fallback khi OpenRouter lỗi)
   geminiAI1: { apiKey: process.env.GEMINI_API_KEY_AI1 || '' },
   geminiAI2: {
     apiKey: process.env.GEMINI_API_KEY_AI2 || process.env.GEMINI_API_KEY_AI1 || '',
@@ -31,6 +29,25 @@ const config = {
   geminiAI4: {
     apiKey: process.env.GEMINI_API_KEY_AI4 || process.env.GEMINI_API_KEY_AI2 || process.env.GEMINI_API_KEY_AI1 || '',
     model: 'gemini-2.5-flash',
+  },
+
+  // ═══════════════════════════════════════════════════════════
+  // OpenRouter (FREE models) - 1 API key, mỗi AI dùng model khác nhau
+  // Đăng ký miễn phí: https://openrouter.ai/keys
+  // Rate limit: ~20 req/min, ~200 req/day
+  // ═══════════════════════════════════════════════════════════
+  openRouter: {
+    apiKey: process.env.OPENROUTER_API_KEY || '',
+    baseURL: 'https://openrouter.ai/api/v1',
+
+    // AI 2: Chuyên gia phân tích - dùng model lớn, reasoning tốt
+    modelAI2: process.env.OPENROUTER_MODEL_AI2 || 'google/gemma-4-31b:free',
+
+    // AI 3: Flash expert - dùng model nhanh, ngắn gọn
+    modelAI3: process.env.OPENROUTER_MODEL_AI3 || 'nvidia/nemotron-3-super:free',
+
+    // AI 4: Phản biện - dùng model khác hoàn toàn để đa dạng góc nhìn
+    modelAI4: process.env.OPENROUTER_MODEL_AI4 || 'openrouter/free',
   },
 
   // Stock symbols
@@ -61,7 +78,7 @@ const config = {
   timezone: process.env.TZ || 'Asia/Ho_Chi_Minh',
 
   // Version
-  version: '2.0.0',
+  version: '2.2.0',
 };
 
 // Validate required config
@@ -74,8 +91,7 @@ function validateConfig() {
   // Warnings (non-fatal)
   const warnings = [];
   if (!config.geminiAI1.apiKey) warnings.push('⚠️  Missing GEMINI_API_KEY_AI1');
-  if (!config.geminiAI2.apiKey) warnings.push('⚠️  Missing GEMINI_API_KEY_AI2');
-  if (!config.geminiAI3.apiKey) warnings.push('⚠️  Missing GEMINI_API_KEY_AI3');
+  if (!config.openRouter.apiKey) warnings.push('⚠️  Missing OPENROUTER_API_KEY - AI 2/3/4 dùng Gemini fallback');
   if (!config.telegram.botTokenAI2) warnings.push('⚠️  Missing TELEGRAM_BOT_TOKEN_AI2 - AI 2 dùng bot chính');
   if (!config.telegram.botTokenAI3) warnings.push('⚠️  Missing TELEGRAM_BOT_TOKEN_AI3 - AI 3 dùng bot chính');
   if (!config.telegram.botTokenAI4) warnings.push('⚠️  Missing TELEGRAM_BOT_TOKEN_AI4 - AI 4 dùng bot chính');

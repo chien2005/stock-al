@@ -57,7 +57,7 @@ async function fetchRealtimeData(symbols) {
 async function fetchHistoryData(symbol) {
   try {
     const now = Math.floor(Date.now() / 1000);
-    const from = now - 86400 * 30; // 30 ngày trước
+    const from = now - 86400 * 60; // 60 ngày trước (cần >= 35 cho MACD, 50 cho SMA50)
     const url = `${VPS_API.history}?symbol=${symbol}&resolution=D&from=${from}&to=${now}`;
 
     const response = await axios.get(url, {
@@ -196,6 +196,19 @@ function parseVPSData(raw, history) {
     historyPrices = history.c.slice(-5).map(p => Math.round(p * 1000));
   }
 
+  // Raw history data cho Predictive Engine (giữ nguyên đơn vị gốc: nghìn đồng)
+  let historyData = null;
+  if (history && history.c && history.c.length >= 14) {
+    historyData = {
+      c: history.c,           // Giá đóng cửa
+      o: history.o || [],      // Giá mở cửa
+      h: history.h || [],      // Giá cao nhất
+      l: history.l || [],      // Giá thấp nhất
+      v: history.v || [],      // Khối lượng
+      t: history.t || [],      // Timestamps
+    };
+  }
+
   return {
     symbol,
     error: false,
@@ -228,6 +241,8 @@ function parseVPSData(raw, history) {
     boardId: raw.boardId || '',
     // Lịch sử giá 5 phiên
     historyPrices,
+    // Full history cho Predictive Engine
+    historyData,
   };
 }
 
