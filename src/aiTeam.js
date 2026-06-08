@@ -142,7 +142,7 @@ function splitMessage(msg, maxLen) {
 // Dữ liệu lấy từ cache 16h00 (giá cuối phiên chính xác)
 
 async function runScheduledAnalysis(stocks, extraData = {}) {
-  const { marketScan, vn30Index } = extraData;
+  const { marketScan, vn30Index, liquidity } = extraData;
   const stockData = formatStockDataForAI(stocks);
   const now = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
   const chatId = config.telegram.chatId;
@@ -150,7 +150,7 @@ async function runScheduledAnalysis(stocks, extraData = {}) {
   console.log('\n🏢 BÁO CÁO CUỐI NGÀY...');
 
   // Bước 1: AI 1 gửi bảng giá tóm tắt (dữ liệu từ cache 16h00)
-  const summaryMsg = buildQuickSummary(stocks, now, vn30Index);
+  const summaryMsg = buildQuickSummary(stocks, now, vn30Index, liquidity);
   await sendViaBot(config.telegram.botToken, chatId, summaryMsg);
   console.log('   📊 AI 1 đã gửi bảng giá tóm tắt');
 
@@ -162,7 +162,7 @@ async function runScheduledAnalysis(stocks, extraData = {}) {
       await waitForAntiSpam('gemini_key2'); // AI 4 dùng Key 2
       console.log('   ⚔️ AI 4 (Gemini Flash) đang phân tích cuối ngày...');
 
-      const prompt = buildEndOfDayPrompt(stockData, stocks, { marketScan, vn30Index });
+      const prompt = buildEndOfDayPrompt(stockData, stocks, { marketScan, vn30Index, liquidity });
 
       const result = await geminiAI4.generateContent(prompt);
       const text = result.response.text();
@@ -202,7 +202,7 @@ async function runScheduledAnalysis(stocks, extraData = {}) {
  * Bao gồm cả data từ market scan (dòng tiền toàn thị trường)
  */
 function buildEndOfDayPrompt(stockData, stocks, extraData = {}) {
-  const { marketScan, vn30Index } = extraData;
+  const { marketScan, vn30Index, liquidity } = extraData;
 
   // Tính toán thêm context cho AI
   const validStocks = stocks.filter(s => !s.error);
@@ -237,6 +237,12 @@ function buildEndOfDayPrompt(stockData, stocks, extraData = {}) {
     }
   }
 
+  // Market liquidity context
+  let liquidityContext = '';
+  if (liquidity) {
+    liquidityContext = `\nTHANH KHOẢN TOÀN THỊ TRƯỜNG: Tổng cộng ${liquidity.total.toFixed(2)} tỷ VNĐ (Trong đó HOSE=${liquidity.hose.toFixed(2)} tỷ, HNX=${liquidity.hnx.toFixed(2)} tỷ, UPCOM=${liquidity.upcom.toFixed(2)} tỷ)`;
+  }
+
   // Market scan context (dòng tiền toàn thị trường)
   let marketScanContext = '';
   if (marketScan) {
@@ -266,6 +272,7 @@ function buildEndOfDayPrompt(stockData, stocks, extraData = {}) {
 DỮ LIỆU DANH MỤC THEO DÕI (giá cuối phiên 16h00):
 ${stockData}
 ${vn30Context}
+${liquidityContext}
 
 THỐNG KÊ NHANH:
 - Tăng: ${gainers.length} mã | Giảm: ${losers.length} mã
@@ -331,7 +338,7 @@ FORMAT: Tiếng Việt, emoji, phân tích chi tiết (~1200 chữ). Dùng ** đ
 Viết như một chuyên gia tài chính đang tư vấn cho khách hàng VIP, nhưng luôn nhắc "Đây là phân tích tham khảo, không phải lời khuyên đầu tư."`;
 }
 
-function buildQuickSummary(stocks, now, vn30Index) {
+function buildQuickSummary(stocks, now, vn30Index, liquidity = null) {
   const valid = stocks.filter(s => !s.error);
   const gainers = valid.filter(s => s.changePct > 0).length;
   const losers = valid.filter(s => s.changePct < 0).length;
@@ -339,6 +346,9 @@ function buildQuickSummary(stocks, now, vn30Index) {
 
   let msg = `📊 <b>TỔNG HỢP CUỐI NGÀY</b>\n`;
   msg += `🕐 <i>${now}</i>\n`;
+  if (liquidity) {
+    msg += `💸 <b>Tổng thanh khoản TTCK VN</b>: <code>${liquidity.total.toLocaleString('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} tỷ</code> (HOSE: ${liquidity.hose.toLocaleString('vi-VN', { maximumFractionDigits: 1 })} tỷ, HNX: ${liquidity.hnx.toLocaleString('vi-VN', { maximumFractionDigits: 1 })} tỷ, UPCOM: ${liquidity.upcom.toLocaleString('vi-VN', { maximumFractionDigits: 1 })} tỷ)\n`;
+  }
   msg += `━━━━━━━━━━━━━━━━━━━━━━\n`;
 
   // Chỉ số thị trường

@@ -25,7 +25,7 @@
 const cron = require('node-cron');
 const http = require('http');
 const { config, validateConfig } = require('./config');
-const { fetchAllStocks, fetchVN30Index, fetchMarketScan, fetchTopBoughtStocks } = require('./stockService');
+const { fetchAllStocks, fetchVN30Index, fetchMarketScan, fetchTopBoughtStocks, fetchMarketLiquidity } = require('./stockService');
 const { sendTelegramMessage, formatStockMessage } = require('./telegramService');
 const { initAIEngines, runScheduledAnalysis, runDailyGlobalSummaryReport } = require('./aiTeam');
 const { runWeeklyAnalysis } = require('./weeklyAnalysis');
@@ -40,6 +40,7 @@ let lastStockData = null;
 let lastStockDataTime = 0;
 let lastMarketScan = null;
 let lastVN30Index = null;
+let lastLiquidity = null;
 
 // ─── DEDUP LOCK: Chống double message ──────────────────────
 const lastJobRun = {};
@@ -106,10 +107,11 @@ async function runStockJob() {
   console.log('═'.repeat(55));
 
   try {
-    // Fetch stock data + VN30 index song song
-    const [stocks, vn30Index] = await Promise.all([
+    // Fetch stock data + VN30 index + liquidity song song
+    const [stocks, vn30Index, liquidity] = await Promise.all([
       fetchAllStocks(),
       fetchVN30Index(),
+      fetchMarketLiquidity(),
     ]);
 
     if (stocks.length === 0) {
@@ -123,10 +125,11 @@ async function runStockJob() {
     lastStockData = stocks;
     lastStockDataTime = Date.now();
     lastVN30Index = vn30Index;
+    lastLiquidity = liquidity;
     console.log('   💾 Đã cache dữ liệu cho báo cáo cuối ngày');
 
     // Format message với VN30 index
-    let message = formatStockMessage(stocks);
+    let message = formatStockMessage(stocks, liquidity);
     if (vn30Index) {
       let idxMsg = '\n📊 <b>CHỈ SỐ THỊ TRƯỜNG</b>\n';
       if (vn30Index.vn30) {
@@ -190,6 +193,7 @@ async function runAfterCloseJob() {
       lastStockData = await fetchAllStocks();
       lastStockDataTime = Date.now();
       lastVN30Index = await fetchVN30Index();
+      lastLiquidity = await fetchMarketLiquidity();
     }
 
     if (!lastStockData || lastStockData.length === 0) {
@@ -199,7 +203,7 @@ async function runAfterCloseJob() {
     }
 
     // Gọi AI phân tích với data thật
-    await runScheduledAnalysis(lastStockData, { vn30Index: lastVN30Index });
+    await runScheduledAnalysis(lastStockData, { vn30Index: lastVN30Index, liquidity: lastLiquidity });
 
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
     jobLastSuccess['afterCloseJob'] = Date.now();
@@ -236,6 +240,7 @@ async function runAiJob() {
     // Ưu tiên dùng data từ cache 16h00 (giá cuối phiên chính xác)
     // Chỉ fetch mới nếu chưa có cache trong ngày
     let stocks;
+    let liquidity = lastLiquidity;
     const cacheAge = Date.now() - lastStockDataTime;
     const MAX_CACHE_AGE = 8 * 60 * 60 * 1000; // 8 tiếng (đủ cho cache từ 10h/13h/16h)
 
@@ -246,6 +251,7 @@ async function runAiJob() {
     } else {
       console.log('   ⚠️ Không có cache, fetch data mới...');
       stocks = await fetchAllStocks();
+      liquidity = await fetchMarketLiquidity();
     }
 
     if (!stocks || stocks.length === 0) {
@@ -266,8 +272,8 @@ async function runAiJob() {
       vn30Index = await fetchVN30Index();
     }
 
-    // runScheduledAnalysis với market scan data
-    await runScheduledAnalysis(stocks, { marketScan, vn30Index });
+    // runScheduledAnalysis với market scan data và liquidity
+    await runScheduledAnalysis(stocks, { marketScan, vn30Index, liquidity });
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
     jobLastSuccess['aiJob'] = Date.now();
     console.log(`\n✅ BÁO CÁO CUỐI NGÀY HOÀN THÀNH! (${elapsed}s)`);

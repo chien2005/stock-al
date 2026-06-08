@@ -574,4 +574,50 @@ function fmtVol(vol) {
   return sign + vol.toLocaleString('vi-VN');
 }
 
-module.exports = { fetchAllStocks, fetchRealtimeData, fetchVN30Index, fetchMarketScan, fetchTopBoughtStocks };
+/**
+ * Lấy thanh khoản tổng TTCK Việt Nam (HOSE, HNX, UPCOM) realtime từ VPS index detail API
+ * @returns {Object|null}
+ */
+async function fetchMarketLiquidity() {
+  try {
+    const url = 'https://bgapidatafeed.vps.com.vn/getlistindexdetail/10,02,03';
+    const response = await axios.get(url, {
+      headers: HEADERS,
+      timeout: 10000,
+    });
+
+    if (!response.data || !Array.isArray(response.data)) {
+      return null;
+    }
+
+    let hoseVal = 0;
+    let hnxVal = 0;
+    let upcomVal = 0;
+
+    for (const item of response.data) {
+      const val = parseFloat(item.value || 0) / 1000; // Quy ra tỷ VNĐ
+      if (item.mc === '10') {
+        hoseVal = val;
+      } else if (item.mc === '02') {
+        hnxVal = val;
+      } else if (item.mc === '03') {
+        upcomVal = val;
+      }
+    }
+
+    const totalVal = hoseVal + hnxVal + upcomVal;
+
+    return {
+      hose: hoseVal,
+      hnx: hnxVal,
+      upcom: upcomVal,
+      total: totalVal,
+    };
+  } catch (error) {
+    console.error('⚠️  Lỗi khi lấy thanh khoản tổng TTCK VN:', error.message);
+    return null;
+  }
+}
+
+module.exports = { fetchAllStocks, fetchRealtimeData, fetchVN30Index, fetchMarketScan, fetchTopBoughtStocks, fetchMarketLiquidity };
+

@@ -47,13 +47,16 @@ async function sendTelegramMessage(message) {
  * @param {Array} stocks - Danh sách thông tin stock
  * @returns {string} Message HTML formatted
  */
-function formatStockMessage(stocks) {
+function formatStockMessage(stocks, liquidity = null) {
   const now = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
   const weekday = new Date().toLocaleDateString('vi-VN', { weekday: 'long', timeZone: config.timezone });
 
   let msg = '';
   msg += `📊 <b>BÁO CÁO CHỨNG KHOÁN VIỆT NAM</b>\n`;
   msg += `🗓 ${weekday}, ${now}\n`;
+  if (liquidity) {
+    msg += `💸 <b>Tổng thanh khoản TTCK VN</b>: <code>${liquidity.total.toLocaleString('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} tỷ</code> (HOSE: ${liquidity.hose.toLocaleString('vi-VN', { maximumFractionDigits: 1 })} tỷ, HNX: ${liquidity.hnx.toLocaleString('vi-VN', { maximumFractionDigits: 1 })} tỷ, UPCOM: ${liquidity.upcom.toLocaleString('vi-VN', { maximumFractionDigits: 1 })} tỷ)\n`;
+  }
   msg += `━━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
   // Phân loại
