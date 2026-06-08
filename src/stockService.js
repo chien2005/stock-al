@@ -190,6 +190,13 @@ function parseVPSData(raw, history) {
     sma20 = Math.round(last20.reduce((sum, p) => sum + p, 0) / 20 * 1000);
   }
 
+  // Tính giá trung bình 50 phiên (SMA50) từ lịch sử
+  let sma50 = 0;
+  if (history && history.c && history.c.length >= 50) {
+    const last50 = history.c.slice(-50);
+    sma50 = Math.round(last50.reduce((sum, p) => sum + p, 0) / 50 * 1000);
+  }
+
   // Lấy 5 phiên gần nhất (cho AI phân tích xu hướng)
   let historyPrices = [];
   if (history && history.c && history.c.length >= 5) {
@@ -223,14 +230,17 @@ function parseVPSData(raw, history) {
     ceilingPrice,
     floorPrice,
     avgPrice,
-    // SMA20
+    // SMA20 + SMA50
     sma20,
+    sma50,
     // Khối lượng
     volume,
     avgVolume,
     // Khối ngoại
     foreignBuy,
     foreignSell,
+    foreignBuyValue: foreignBuy * price,   // Giá trị mua NN (VND)
+    foreignSellValue: foreignSell * price,  // Giá trị bán NN (VND)
     foreignNet: foreignBuy - foreignSell,
     foreignRoom,
     // Sổ lệnh
@@ -356,7 +366,9 @@ function parseRawScanData(raw) {
 
   // Buy pressure: tỷ lệ mua NN so với tổng KL
   const buyPressure = volume > 0 ? parseFloat((foreignBuy / volume * 100).toFixed(2)) : 0;
-  // Giá trị mua ròng NN (VND)
+  // Giá trị mua/bán NN (VND)
+  const foreignBuyValue = foreignBuy * price;
+  const foreignSellValue = foreignSell * price;
   const foreignNetValue = foreignNet * price;
 
   return {
@@ -372,6 +384,8 @@ function parseRawScanData(raw) {
     foreignBuy,
     foreignSell,
     foreignNet,
+    foreignBuyValue,
+    foreignSellValue,
     foreignNetValue,
     buyPressure,
     exchange: raw.marketId === 'STO' ? 'HOSE' : (raw.marketId === 'HNO' ? 'HNX' : raw.marketId || ''),

@@ -6,8 +6,7 @@
  * ║                                                               ║
  * ║     📊 Báo giá: 10:00 | 13:00 | 16:00  (T2-T6)              ║
  * ║     🤖 AI Report: 20:30                (T2-T6)              ║
- * ║     🌍 Global Market: 21:00            (T2-T6)              ║
- * ║     🏆 Top 5 Mua Nhiều: 21:30         (T2-T6)              ║
+ * ║     🌍 TTCK Quốc tế + Vàng: 21:00    (Mỗi ngày)           ║
  * ║     📅 Weekly: 8:30                    (Thứ 2)              ║
  * ║     💬 Interactive Bot: 24/7 (chat hỏi AI)                  ║
  * ║                                                               ║
@@ -28,10 +27,9 @@ const http = require('http');
 const { config, validateConfig } = require('./config');
 const { fetchAllStocks, fetchVN30Index, fetchMarketScan, fetchTopBoughtStocks } = require('./stockService');
 const { sendTelegramMessage, formatStockMessage } = require('./telegramService');
-const { initAIEngines, runScheduledAnalysis, runGlobalMarketAnalysis, runTopBoughtAnalysis } = require('./aiTeam');
+const { initAIEngines, runScheduledAnalysis, runDailyGlobalSummaryReport } = require('./aiTeam');
 const { runWeeklyAnalysis } = require('./weeklyAnalysis');
 const { startBotHandler, stopBotHandler } = require('./botHandler');
-const { fetchAllGlobalData } = require('./globalMarketService');
 const { startAlertMonitor, stopAlertMonitor, resetDailyData } = require('./alertService');
 
 // ─── Thời điểm khởi động (cho health check) ─────────────
@@ -42,7 +40,6 @@ let lastStockData = null;
 let lastStockDataTime = 0;
 let lastMarketScan = null;
 let lastVN30Index = null;
-let lastGlobalData = null;    // Cache data TTCK quốc tế cho Top 5 21h30
 
 // ─── DEDUP LOCK: Chống double message ──────────────────────
 const lastJobRun = {};
@@ -317,92 +314,38 @@ async function runWeeklyJob() {
   }
 }
 
-// ─── JOB 4: TTCK QUỐC TẾ (21h00 T2-T6) ───────────────────
-// Lấy data S&P 500, NASDAQ, Dow Jones, Nikkei, Hang Seng...
-// + ETF ngành (XLF, XLK, XLY...) + tỷ giá + Fear/Greed
-// → AI dự báo ảnh hưởng TTCK VN ngày hôm sau
+// ─── JOB 4: BÁO CÁO TTCK QUỐC TẾ + GIÁ VÀNG (21h00 MỖI NGÀY) ───
+// Lấy chỉ số TTCK Trung Quốc, Mỹ, Hàn, Indo, Thái, Nhật...
+// + Giá vàng thế giới + Giá vàng Việt Nam (1 lượng, 1 chỉ)
 
-async function runGlobalJob() {
-  // Guard: skip T7/CN
-  if (!isWeekday()) {
-    console.log('⏭️  [GUARD] Hôm nay T7/CN - skip global market report');
-    return;
-  }
+async function runDailyGlobalSummaryJob() {
+  // KHÔNG check weekday - chạy mỗi ngày kể cả T7/CN
 
   // Guard: chống double
-  if (isDuplicate('globalJob')) return;
+  if (isDuplicate('dailyGlobalSummaryJob')) return;
 
   const startTime = Date.now();
   console.log('\n' + '═'.repeat(55));
-  console.log('🌍 BÁO CÁO TTCK QUỐC TẾ...');
+  console.log('🌍 BÁO CÁO TTCK QUỐC TẾ + GIÁ VÀNG...');
   console.log('═'.repeat(55));
 
   try {
-    // Fetch toàn bộ data quốc tế (indices + ETF + currencies)
-    const globalData = await fetchAllGlobalData();
-    lastGlobalData = globalData; // Cache cho Top 5 21h30
-
-    // AI phân tích + gửi Telegram
-    await runGlobalMarketAnalysis(globalData);
+    await runDailyGlobalSummaryReport();
 
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-    jobLastSuccess['globalJob'] = Date.now();
-    console.log(`\n✅ BÁO CÁO TTCK QUỐC TẾ HOÀN THÀNH! (${elapsed}s)`);
+    jobLastSuccess['dailyGlobalSummaryJob'] = Date.now();
+    console.log(`\n✅ BÁO CÁO TTCK QUỐC TẾ + VÀNG HOÀN THÀNH! (${elapsed}s)`);
 
   } catch (error) {
-    jobLastError['globalJob'] = { time: Date.now(), message: error.message };
-    console.error('\n💥 LỖI GLOBAL:', error.message);
+    jobLastError['dailyGlobalSummaryJob'] = { time: Date.now(), message: error.message };
+    console.error('\n💥 LỖI TTCK QUỐC TẾ + VÀNG:', error.message);
     try {
-      await sendTelegramMessage(`💥 VN Stock Bot lỗi global market:\n<code>${error.message}</code>`);
+      await sendTelegramMessage(`💥 VN Stock Bot lỗi báo cáo TTCK quốc tế + vàng:\n<code>${error.message}</code>`);
     } catch (e) { /* ignore */ }
   }
 }
 
-// ─── JOB 5: TOP 5 CP MUA NHIỀU NHẤT (21h30 T2-T6) ────────
-// Quét 100+ mã → tính Composite Score → Top 5
-// Kết hợp context TTCK quốc tế từ 21h00
-// → AI dự báo khả năng tăng + chiến lược đầu tư
 
-async function runTopBoughtJob() {
-  // Guard: skip T7/CN
-  if (!isWeekday()) {
-    console.log('⏭️  [GUARD] Hôm nay T7/CN - skip top bought report');
-    return;
-  }
-
-  // Guard: chống double
-  if (isDuplicate('topBoughtJob')) return;
-
-  const startTime = Date.now();
-  console.log('\n' + '═'.repeat(55));
-  console.log('🏆 TOP 5 CP MUA NHIỀU NHẤT...');
-  console.log('═'.repeat(55));
-
-  try {
-    // Fetch top bought stocks (quét 100+ mã)
-    const topBoughtData = await fetchTopBoughtStocks(5);
-
-    if (!topBoughtData || !topBoughtData.topBought || topBoughtData.topBought.length === 0) {
-      console.error('❌ Không tìm được top CP mua nhiều!');
-      await sendTelegramMessage('⚠️ VN Stock Bot: Không tìm được top CP mua nhiều nhất.');
-      return;
-    }
-
-    // AI phân tích + gửi Telegram (truyền context global từ 21h00 nếu có)
-    await runTopBoughtAnalysis(topBoughtData, lastGlobalData);
-
-    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-    jobLastSuccess['topBoughtJob'] = Date.now();
-    console.log(`\n✅ TOP 5 CP MUA NHIỀU HOÀN THÀNH! (${elapsed}s)`);
-
-  } catch (error) {
-    jobLastError['topBoughtJob'] = { time: Date.now(), message: error.message };
-    console.error('\n💥 LỖI TOP BOUGHT:', error.message);
-    try {
-      await sendTelegramMessage(`💥 VN Stock Bot lỗi top bought:\n<code>${error.message}</code>`);
-    } catch (e) { /* ignore */ }
-  }
-}
 
 // ─── STARTUP ──────────────────────────────────────────────
 
@@ -415,8 +358,7 @@ async function main() {
   ║                                                           ║
   ║   📊 Báo giá:  10:00 | 13:00 | 16:00  (T2-T6)           ║
   ║   🤖 AI Report: 20:30                 (T2-T6)           ║
-  ║   🌍 Global:    21:00                 (T2-T6)  [NEW]    ║
-  ║   🏆 Top Mua:   21:30                 (T2-T6)  [NEW]    ║
+  ║   🌍 TTCK+Vàng: 21:00                 (Mỗi ngày)        ║
   ║   📅 Weekly:    8:30                  (Thứ 2)           ║
   ║   💬 Interactive Bot: 24/7                                ║
   ║                                                           ║
@@ -441,8 +383,7 @@ async function main() {
   console.log(`   ⏰ Báo giá:      ${config.cronSchedule}`);
   console.log(`   ⚙️ AI Cuối phiên: ${config.cronAfterCloseSchedule}`);
   console.log(`   🤖 AI phân tích: ${config.cronAiSchedule}`);
-  console.log(`   🌍 Global:       ${config.cronGlobalSchedule}`);
-  console.log(`   🏆 Top Mua:      ${config.cronTopBoughtSchedule}`);
+  console.log(`   🌍 TTCK+Vàng:    ${config.cronGlobalSchedule}`);
   console.log(`   📅 Weekly:       ${config.cronWeeklySchedule}`);
   console.log(`   🌏 Timezone:     ${config.timezone}`);
   console.log(`   📩 Chat ID:      ${config.telegram.chatId}`);
@@ -461,8 +402,7 @@ async function main() {
     { name: 'Báo giá', expr: config.cronSchedule },
     { name: 'AI Cuối phiên', expr: config.cronAfterCloseSchedule },
     { name: 'AI Report', expr: config.cronAiSchedule },
-    { name: 'Global Market', expr: config.cronGlobalSchedule },
-    { name: 'Top Bought', expr: config.cronTopBoughtSchedule },
+    { name: 'TTCK+Vàng', expr: config.cronGlobalSchedule },
     { name: 'Weekly', expr: config.cronWeeklySchedule },
   ];
 
@@ -488,8 +428,7 @@ async function main() {
       `📊 Theo dõi: ${config.stockSymbols.length} mã\n` +
       `⏰ Báo giá: ${config.cronSchedule}\n` +
       `🤖 AI Report: ${config.cronAiSchedule}\n` +
-      `🌍 Global: ${config.cronGlobalSchedule}\n` +
-      `🏆 Top Mua: ${config.cronTopBoughtSchedule}\n` +
+      `🌍 TTCK+Vàng: ${config.cronGlobalSchedule} (mỗi ngày)\n` +
       `💬 Interactive: ${config.enableInteractiveBot ? 'ON' : 'OFF'}\n` +
       `━━━━━━━━━━━━━━━━━━━━━━\n` +
       `<i>Nếu bạn thấy tin này nhiều lần → bot đang bị restart liên tục!</i>`
@@ -539,21 +478,11 @@ async function main() {
     timezone: config.timezone,
   });
 
-  // ─── SCHEDULE JOB 4: GLOBAL MARKET (T2-T6, 21h00) ─────
+  // ─── SCHEDULE JOB 4: TTCK QUỐC TẾ + VÀNG (MỖI NGÀY, 21h00) ────
   cron.schedule(config.cronGlobalSchedule, () => {
     const now = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
-    console.log(`\n🌍 [Global Market] Cron triggered: ${now}`);
-    runGlobalJob();
-  }, {
-    scheduled: true,
-    timezone: config.timezone,
-  });
-
-  // ─── SCHEDULE JOB 5: TOP BOUGHT (T2-T6, 21h30) ────────
-  cron.schedule(config.cronTopBoughtSchedule, () => {
-    const now = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
-    console.log(`\n🏆 [Top Bought] Cron triggered: ${now}`);
-    runTopBoughtJob();
+    console.log(`\n🌍 [TTCK+Vàng] Cron triggered: ${now}`);
+    runDailyGlobalSummaryJob();
   }, {
     scheduled: true,
     timezone: config.timezone,
@@ -581,8 +510,8 @@ async function main() {
 
       // Tổng hợp trạng thái jobs
       let jobStatus = '';
-      const jobs = ['stockJob', 'afterCloseJob', 'aiJob', 'globalJob', 'topBoughtJob', 'weeklyJob'];
-      const jobNames = ['Báo giá', 'AI Cuối phiên', 'AI Report', 'Global', 'Top Mua', 'Weekly'];
+      const jobs = ['stockJob', 'afterCloseJob', 'aiJob', 'dailyGlobalSummaryJob', 'weeklyJob'];
+      const jobNames = ['Báo giá', 'AI Cuối phiên', 'AI Report', 'TTCK+Vàng', 'Weekly'];
       for (let i = 0; i < jobs.length; i++) {
         const last = jobLastSuccess[jobs[i]];
         const err = jobLastError[jobs[i]];
@@ -713,14 +642,13 @@ async function main() {
   console.log(`🟢 VN Stock Bot v${config.version} đang chạy!`);
   console.log('');
   console.log('   📊 Báo giá:     ' + config.cronSchedule + ` (${config.timezone})`);
-  console.log('   🧠 AI Cuối phiên:' + config.cronAfterCloseSchedule + ` (${config.timezone}) [NEW]`);
+  console.log('   🧠 AI Cuối phiên:' + config.cronAfterCloseSchedule + ` (${config.timezone})`);
   console.log('   🤖 AI Report:   ' + config.cronAiSchedule + ` (${config.timezone})`);
-  console.log('   🌍 Global:      ' + config.cronGlobalSchedule + ` (${config.timezone}) [NEW]`);
-  console.log('   🏆 Top Mua:     ' + config.cronTopBoughtSchedule + ` (${config.timezone}) [NEW]`);
+  console.log('   🌍 TTCK+Vàng:   ' + config.cronGlobalSchedule + ` (${config.timezone}) [MỖI NGÀY]`);
   console.log('   📅 Weekly:      ' + config.cronWeeklySchedule + ` (${config.timezone})`);
   console.log('   💬 Interactive: ' + (config.enableInteractiveBot ? 'ON (polling)' : 'OFF'));
   console.log('   🌐 Health:      http://localhost:' + PORT + '/health');
-  console.log('   📅 Chỉ chạy Thứ 2 → Thứ 6 (có double-check runtime)');
+  console.log('   📅 Báo giá/AI: Thứ 2 → Thứ 6 | TTCK+Vàng: Mỗi ngày');
   console.log('   🔒 Dedup lock:  4 phút (chống double message)');
   console.log('   💡 Nhấn Ctrl+C để dừng');
   console.log('─'.repeat(55) + '\n');

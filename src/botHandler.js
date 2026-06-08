@@ -28,6 +28,10 @@ let cachedStocks = null;
 let cacheTimestamp = 0;
 const CACHE_TTL = 5 * 60 * 1000; // 5 phút
 
+// Rate-limit: tối đa 1 câu hỏi mỗi 2 phút
+const USER_COOLDOWN = 2 * 60 * 1000; // 2 phút
+const lastUserQuestion = {};
+
 // ─── INITIALIZE BOT ────────────────────────────────────────
 
 function startBotHandler() {
@@ -247,6 +251,20 @@ async function handleFreeTextMessage(msg) {
 
   // Skip too short
   if (userText.length < 3) return;
+
+  // Rate-limit: chờ 2 phút giữa các câu hỏi
+  const userId = msg.from?.id || chatId;
+  const now = Date.now();
+  const lastTime = lastUserQuestion[userId] || 0;
+  if (now - lastTime < USER_COOLDOWN) {
+    const remaining = Math.ceil((USER_COOLDOWN - (now - lastTime)) / 1000);
+    await bot.sendMessage(chatId,
+      `⏳ Vui lòng chờ ${remaining}s trước khi hỏi tiếp (tránh quá tải AI miễn phí).`,
+      { reply_to_message_id: msg.message_id }
+    );
+    return;
+  }
+  lastUserQuestion[userId] = now;
 
   console.log(`\n💬 User [${msg.from?.first_name || 'Unknown'}]: "${userText}"`);
 

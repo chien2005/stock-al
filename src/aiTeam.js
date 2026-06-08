@@ -29,9 +29,13 @@ let openRouterClient = null; // AI 2: OpenRouter FREE (primary)
 
 // Anti-spam: Track last call time per key
 const lastCallTime = {};
-const ANTI_SPAM_DELAY = 15000; // 15 giây (Gemini free rate-limit: ~15 req/min)
-const AI_CALL_TIMEOUT = 60000; // 60 giây timeout (gemini-2.5-flash cần thời gian suy nghĩ)
-const MAX_RETRIES = 3; // Retry tối đa 3 lần khi rate-limited
+const ANTI_SPAM_DELAY = 65000; // 65 giây (Gemini free rate-limit: ~2 RPM)
+const AI_CALL_TIMEOUT = 120000; // 120 giây timeout (gemini-2.5-flash cần thời gian suy nghĩ)
+const MAX_RETRIES = 2; // Retry tối đa 2 lần khi rate-limited
+const INTER_JOB_DELAY = 5000; // 5s delay giữa các bước trong cùng 1 job
+
+// Track xem có đang xử lý câu hỏi không (tránh chồng chéo)
+let _isProcessingQuestion = false;
 
 function initAIEngines() {
   // OpenRouter FREE client (1 key, dùng cho AI 2 + AI 3 + AI 4)
@@ -155,7 +159,7 @@ async function runScheduledAnalysis(stocks, extraData = {}) {
 
   if (geminiAI4) {
     try {
-      await waitForAntiSpam('key2'); // AI 4 dùng Key 2
+      await waitForAntiSpam('gemini_key2'); // AI 4 dùng Key 2
       console.log('   ⚔️ AI 4 (Gemini Flash) đang phân tích cuối ngày...');
 
       const prompt = buildEndOfDayPrompt(stockData, stocks, { marketScan, vn30Index });
@@ -359,8 +363,12 @@ function buildQuickSummary(stocks, now, vn30Index) {
   // Tổng KLGD & NN ròng
   const totalVol = valid.reduce((sum, s) => sum + (s.volume || 0), 0);
   const totalFN = valid.reduce((sum, s) => sum + (s.foreignNet || 0), 0);
+  const totalBuyVal = valid.reduce((sum, s) => sum + (s.foreignBuyValue || (s.foreignBuy || 0) * (s.price || 0)), 0);
+  const totalSellVal = valid.reduce((sum, s) => sum + (s.foreignSellValue || (s.foreignSell || 0) * (s.price || 0)), 0);
   msg += `📦 Tổng KLGD: <b>${formatVolume(totalVol)}</b>\n`;
-  msg += `${totalFN >= 0 ? '💚' : '💔'} NN ròng tổng: <b>${totalFN >= 0 ? '+' : ''}${formatVolume(totalFN)}</b>\n\n`;
+  msg += `${totalFN >= 0 ? '💚' : '💔'} NN ròng tổng: <b>${totalFN >= 0 ? '+' : ''}${formatVolume(totalFN)}</b>\n`;
+  const totalStronger = totalBuyVal > totalSellVal ? '🟢 MUA mạnh hơn' : totalBuyVal < totalSellVal ? '🔴 BÁN mạnh hơn' : '🟡 Cân bằng';
+  msg += `💵 GT Mua: <b>${formatBigValueAI(totalBuyVal)}</b> | Bán: <b>${formatBigValueAI(totalSellVal)}</b> → ${totalStronger}\n\n`;
 
   for (const s of valid) {
     const sign = s.changePct >= 0 ? '+' : '';
@@ -385,6 +393,13 @@ function buildQuickSummary(stocks, now, vn30Index) {
     if (s.foreignBuy > 0 || s.foreignSell > 0) {
       const fIcon = s.foreignNet > 0 ? '💚' : s.foreignNet < 0 ? '💔' : '💛';
       msg += `   ${fIcon} NN ròng: ${s.foreignNet >= 0 ? '+' : ''}${formatVolume(s.foreignNet)}\n`;
+      // Giá trị mua/bán
+      const buyVal = s.foreignBuyValue || (s.foreignBuy * s.price) || 0;
+      const sellVal = s.foreignSellValue || (s.foreignSell * s.price) || 0;
+      if (buyVal > 0 || sellVal > 0) {
+        const stronger = buyVal > sellVal ? '🟢 MUA mạnh' : buyVal < sellVal ? '🔴 BÁN mạnh' : '🟡 Cân bằng';
+        msg += `   💵 M ${formatBigValueAI(buyVal)} | B ${formatBigValueAI(sellVal)} → ${stronger}\n`;
+      }
     }
 
     // SMA20
@@ -405,99 +420,133 @@ function buildQuickSummary(stocks, now, vn30Index) {
 //           AI 3 (Key1) chạy song song với AI 2
 
 async function handleInteractiveQuestion(chatId, userMessage, currentStocks) {
-  const stockContext = currentStocks && currentStocks.length > 0
-    ? `\nDỮ LIỆU THỊ TRƯỜNG HIỆN TẠI:\n${formatStockDataForAI(currentStocks)}`
-    : '';
+  // Guard: tránh chồng chéo nhiều câu hỏi
+  if (_isProcessingQuestion) {
+    await sendViaBot(config.telegram.botToken, chatId,
+      `⏳ AI đang xử lý câu hỏi trước đó, vui lòng chờ 1-2 phút rồi hỏi lại.`);
+    return;
+  }
+  _isProcessingQuestion = true;
 
-  const expertPrompt = buildExpertPrompt(userMessage, stockContext);
-  const hasOpenRouter = !!openRouterClient;
+  try {
+    const stockContext = currentStocks && currentStocks.length > 0
+      ? `\nDỮ LIỆU THỊ TRƯỜNG HIỆN TẠI:\n${formatStockDataForAI(currentStocks)}`
+      : '';
 
-  let ai2Response = null;
-  let ai3Response = null;
+    const expertPrompt = buildExpertPrompt(userMessage, stockContext);
+    const hasOpenRouter = !!openRouterClient;
 
-  if (hasOpenRouter) {
-    // ─── CÓ OpenRouter → song song (khác engine, không bị rate-limit) ───
-    console.log('🔄 Step 1: AI 2 + AI 3 song song (OpenRouter)...');
+    // Kiểm tra AI 2 và AI 3 có dùng KHÁC key Gemini không
+    const ai2Key = config.geminiAI2.apiKey || '';
+    const ai3Key = config.geminiAI3.apiKey || '';
+    const keysAreDifferent = ai2Key && ai3Key && ai2Key !== ai3Key;
 
-    const [ai2Result, ai3Result] = await Promise.allSettled([
-      callAI2(expertPrompt),
-      callAI3(expertPrompt),
-    ]);
+    let ai2Response = null;
+    let ai3Response = null;
 
-    ai2Response = ai2Result.status === 'fulfilled' ? ai2Result.value : null;
-    ai3Response = ai3Result.status === 'fulfilled' ? ai3Result.value : null;
-  } else {
-    // ─── KHÔNG có OpenRouter → TUẦN TỰ để tránh rate-limit Gemini free ───
-    console.log('🔄 Step 1: AI 2 → AI 3 tuần tự (Gemini-only, tránh rate-limit)...');
+    if (hasOpenRouter) {
+      // ─── CÓ OpenRouter → song song (khác engine) ───
+      console.log('🔄 Step 1: AI 2 + AI 3 song song (OpenRouter)...');
+      const [ai2Result, ai3Result] = await Promise.allSettled([
+        callAI2(expertPrompt),
+        callAI3(expertPrompt),
+      ]);
+      ai2Response = ai2Result.status === 'fulfilled' ? ai2Result.value : null;
+      ai3Response = ai3Result.status === 'fulfilled' ? ai3Result.value : null;
 
-    // AI 2 trước (Key 2)
-    await waitForAntiSpam('key2');
-    try {
-      ai2Response = await callAI2(expertPrompt);
-    } catch (e) {
-      console.error('   ❌ AI 2 exception:', e.message);
+    } else if (keysAreDifferent) {
+      // ─── KHÁC KEY Gemini → SONG SONG (mỗi key 1 AI, an toàn) ───
+      console.log('🔄 Step 1: AI 2 (Key2) + AI 3 (Key1) SONG SONG (khác key)...');
+      await Promise.all([
+        waitForAntiSpam('gemini_key2'),
+        waitForAntiSpam('gemini_key1'),
+      ]);
+
+      const [ai2Result, ai3Result] = await Promise.allSettled([
+        callAI2(expertPrompt),
+        callAI3(expertPrompt),
+      ]);
+      ai2Response = ai2Result.status === 'fulfilled' ? ai2Result.value : null;
+      ai3Response = ai3Result.status === 'fulfilled' ? ai3Result.value : null;
+
+    } else {
+      // ─── CÙNG KEY → TUẦN TỰ, chờ 65s giữa 2 call ───
+      console.log('🔄 Step 1: AI 2 → (chờ 65s) → AI 3 tuần tự (cùng key)...');
+      await waitForAntiSpam('gemini_shared');
+      try {
+        ai2Response = await callAI2(expertPrompt);
+      } catch (e) {
+        console.error('   ❌ AI 2 exception:', e.message);
+      }
+
+      // Chờ anti-spam delay đầy đủ vì cùng key
+      console.log('   ⏳ Chờ 65s trước khi gọi AI 3 (cùng key)...');
+      await waitForAntiSpam('gemini_shared');
+      try {
+        ai3Response = await callAI3(expertPrompt);
+      } catch (e) {
+        console.error('   ❌ AI 3 exception:', e.message);
+      }
     }
 
-    // Chờ 10s giữa 2 call Gemini để tránh rate-limit free tier
-    await sleep(10000);
-
-    // AI 3 sau (Key 1 - khác key nhưng vẫn cần chờ)
-    await waitForAntiSpam('key1');
-    try {
-      ai3Response = await callAI3(expertPrompt);
-    } catch (e) {
-      console.error('   ❌ AI 3 exception:', e.message);
-    }
-  }
-
-  // ─── Gửi kết quả AI 2 ──────
-  if (ai2Response) {
-    const ai2Msg = `📊 <b>CHUYÊN GIA GEMINI</b>\n` +
-      `<i>🤖 ${config.geminiAI2.model}</i>\n` +
-      `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-      `${ai2Response}\n\n` +
-      `<i>━ Gemini Expert Analysis ━</i>`;
-    await sendViaBot(getAI2BotToken(), chatId, ai2Msg);
-    console.log('   📊 AI 2 đã gửi');
-  } else {
-    const reason = hasOpenRouter ? 'OpenRouter + Gemini đều lỗi' : 'Gemini rate-limited, thử lại sau 1 phút';
-    await sendViaBot(getAI2BotToken(), chatId, `⚠️ AI 2 không thể phân tích lúc này. (${reason})`);
-  }
-
-  await sleep(800);
-
-  // ─── Gửi kết quả AI 3 ──────
-  if (ai3Response) {
-    const ai3Msg = `💬 <b>CHUYÊN GIA GEMINI FLASH</b>\n` +
-      `<i>🤖 ${config.geminiAI3.model}</i>\n` +
-      `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-      `${ai3Response}\n\n` +
-      `<i>━ Flash Expert Analysis ━</i>`;
-    await sendViaBot(getAI3BotToken(), chatId, ai3Msg);
-    console.log('   💬 AI 3 đã gửi');
-  } else {
-    const reason = hasOpenRouter ? 'OpenRouter + Gemini đều lỗi' : 'Gemini rate-limited, thử lại sau 1 phút';
-    await sendViaBot(getAI3BotToken(), chatId, `⚠️ AI 3 không thể phân tích lúc này. (${reason})`);
-  }
-
-  // ─── STEP 2: AI 4 phản biện ───
-  if (ai2Response || ai3Response) {
-    console.log('🔄 Step 2: AI 4 phản biện (chờ anti-spam Key2)...');
-    await waitForAntiSpam('key2');
-
-    const ai4Result = await callAI4_Contrarian(userMessage, ai2Response, ai3Response, stockContext);
-
-    if (ai4Result) {
-      const ai4Msg = `⚔️ <b>AI PHẢN BIỆN</b>\n` +
-        `<i>🧠 ${config.geminiAI4.model} - Devil's Advocate</i>\n` +
+    // ─── Gửi kết quả AI 2 ──────
+    if (ai2Response) {
+      const ai2Msg = `📊 <b>CHUYÊN GIA GEMINI</b>\n` +
+        `<i>🤖 ${config.geminiAI2.model}</i>\n` +
         `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-        `${ai4Result}\n\n` +
-        `━━━━━━━━━━━━━━━━━━━━━━\n` +
-        `<i>⚠️ Tất cả khuyến nghị chỉ mang tính tham khảo.</i>\n` +
-        `<i>🤖 VN Stock Bot v${config.version} | Multi-AI Team (FREE)</i>`;
-      await sendViaBot(getAI4BotToken(), chatId, ai4Msg);
-      console.log('   ⚔️ AI 4 đã gửi phản biện');
+        `${ai2Response}\n\n` +
+        `<i>━ Gemini Expert Analysis ━</i>`;
+      await sendViaBot(getAI2BotToken(), chatId, ai2Msg);
+      console.log('   📊 AI 2 đã gửi');
+    } else {
+      await sendViaBot(getAI2BotToken(), chatId,
+        `⚠️ AI 2 không thể phân tích lúc này. Gemini free đang rate-limited, thử lại sau 2 phút.`);
     }
+
+    await sleep(INTER_JOB_DELAY);
+
+    // ─── Gửi kết quả AI 3 ──────
+    if (ai3Response) {
+      const ai3Msg = `💬 <b>CHUYÊN GIA GEMINI FLASH</b>\n` +
+        `<i>🤖 ${config.geminiAI3.model}</i>\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+        `${ai3Response}\n\n` +
+        `<i>━ Flash Expert Analysis ━</i>`;
+      await sendViaBot(getAI3BotToken(), chatId, ai3Msg);
+      console.log('   💬 AI 3 đã gửi');
+    } else {
+      await sendViaBot(getAI3BotToken(), chatId,
+        `⚠️ AI 3 không thể phân tích lúc này. Gemini free đang rate-limited, thử lại sau 2 phút.`);
+    }
+
+    // ─── STEP 2: AI 4 phản biện ───
+    if (ai2Response || ai3Response) {
+      // Xác định key AI 4 dùng để chờ anti-spam đúng
+      const ai4Key = config.geminiAI4.apiKey || '';
+      const ai4KeyId = ai4Key === ai2Key ? 'gemini_key2' : (ai4Key === ai3Key ? 'gemini_key1' : 'gemini_key4');
+
+      console.log(`🔄 Step 2: AI 4 phản biện (chờ anti-spam ${ai4KeyId})...`);
+      await waitForAntiSpam(ai4KeyId);
+
+      const ai4Result = await callAI4_Contrarian(userMessage, ai2Response, ai3Response, stockContext);
+
+      if (ai4Result) {
+        const ai4Msg = `⚔️ <b>AI PHẢN BIỆN</b>\n` +
+          `<i>🧠 ${config.geminiAI4.model} - Devil's Advocate</i>\n` +
+          `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+          `${ai4Result}\n\n` +
+          `━━━━━━━━━━━━━━━━━━━━━━\n` +
+          `<i>⚠️ Tất cả khuyến nghị chỉ mang tính tham khảo.</i>\n` +
+          `<i>🤖 VN Stock Bot v${config.version} | Multi-AI Team (FREE)</i>`;
+        await sendViaBot(getAI4BotToken(), chatId, ai4Msg);
+        console.log('   ⚔️ AI 4 đã gửi phản biện');
+      } else {
+        await sendViaBot(getAI4BotToken(), chatId,
+          `⚠️ AI 4 (Phản biện) không thể phân tích lúc này. Gemini free đang rate-limited.`);
+      }
+    }
+  } finally {
+    _isProcessingQuestion = false;
   }
 }
 
@@ -525,7 +574,7 @@ async function callAIWithRetry(aiInstance, prompt, aiName, retries = MAX_RETRIES
       const isTimeout = error.message?.includes('TIMEOUT');
       console.error(`   ❌ ${aiName} lỗi (attempt ${attempt}/${retries + 1}): ${error.message?.substring(0, 150)}`);
       if ((isRateLimit || isTimeout) && attempt <= retries) {
-        const waitTime = isRateLimit ? 20000 * attempt : 8000;
+        const waitTime = isRateLimit ? ANTI_SPAM_DELAY * attempt : 15000;
         console.log(`   🔄 ${aiName} retry ${attempt}/${retries} sau ${waitTime / 1000}s...`);
         await sleep(waitTime);
         continue;
@@ -571,8 +620,10 @@ async function callAI2(prompt) {
   const orResult = await callOpenRouter(prompt, config.openRouter.modelAI2, 'AI 2');
   if (orResult) return orResult;
 
-  if (!geminiAI2) { console.log('   ⚠️ AI 2 chưa khởi tạo'); return null; }
+  if (!geminiAI2) { console.log('   ⚠️ AI 2 chưa khởi tạo (thiếu GEMINI_API_KEY_AI2)'); return null; }
   console.log(`   🔄 AI 2 fallback → Gemini (${config.geminiAI2.model})...`);
+  // Track anti-spam cho key AI 2
+  lastCallTime['gemini_key2'] = Date.now();
   return callAIWithRetry(geminiAI2, prompt, 'AI 2');
 }
 
@@ -584,8 +635,10 @@ async function callAI3(prompt) {
   const orResult = await callOpenRouter(finalPrompt, config.openRouter.modelAI3, 'AI 3');
   if (orResult) return orResult;
 
-  if (!geminiAI3) { console.log('   ⚠️ AI 3 chưa khởi tạo'); return null; }
+  if (!geminiAI3) { console.log('   ⚠️ AI 3 chưa khởi tạo (thiếu GEMINI_API_KEY_AI3)'); return null; }
   console.log(`   🔄 AI 3 fallback → Gemini (${config.geminiAI3.model})...`);
+  // Track anti-spam cho key AI 3
+  lastCallTime['gemini_key1'] = Date.now();
   return callAIWithRetry(geminiAI3, finalPrompt, 'AI 3');
 }
 
@@ -612,8 +665,12 @@ FORMAT: Tiếng Việt, emoji, ~400 chữ. Dùng ** bold. Không code block. Nh�
   const orResult = await callOpenRouter(prompt, config.openRouter.modelAI4, 'AI 4');
   if (orResult) return orResult;
 
-  if (!geminiAI4) { console.log('   ⚠️ AI 4 chưa khởi tạo'); return null; }
+  if (!geminiAI4) { console.log('   ⚠️ AI 4 chưa khởi tạo (thiếu GEMINI_API_KEY_AI4)'); return null; }
   console.log(`   🔄 AI 4 fallback → Gemini (${config.geminiAI4.model})...`);
+  // Track anti-spam cho key AI 4
+  const ai4Key = config.geminiAI4.apiKey || '';
+  const ai4KeyId = ai4Key === (config.geminiAI2.apiKey || '') ? 'gemini_key2' : 'gemini_key4';
+  lastCallTime[ai4KeyId] = Date.now();
   return callAIWithRetry(geminiAI4, prompt, 'AI 4');
 }
 
@@ -687,7 +744,8 @@ function formatStockDataForAI(stocks, globalSentiment = 50) {
         `Mở=${s.openPrice}đ`, `Cao=${s.highPrice}đ`, `Thấp=${s.lowPrice}đ`,
         `KLGD=${s.volume}`, `KLTB20=${s.avgVolume}`,
         `NNMua=${s.foreignBuy}`, `NNBán=${s.foreignSell}`, `NNRòng=${s.foreignNet}`,
-        `SMA20=${s.sma20}đ`, `Sàn=${s.exchange}`,
+        `NNMuaGT=${s.foreignBuyValue || (s.foreignBuy * s.price)}VND`, `NNBánGT=${s.foreignSellValue || (s.foreignSell * s.price)}VND`,
+        `SMA20=${s.sma20}đ`, `SMA50=${s.sma50 || 0}đ`, `Sàn=${s.exchange}`,
       ];
       if (s.historyPrices) parts.push(`LịchSử5Ngày=[${s.historyPrices.join(',')}]`);
 
@@ -717,6 +775,18 @@ function formatVolume(vol) {
   if (absVol >= 1000000) return sign + (absVol / 1000000).toFixed(2) + 'M';
   if (absVol >= 1000) return sign + (absVol / 1000).toFixed(1) + 'K';
   return sign + vol.toLocaleString('vi-VN');
+}
+
+/**
+ * Format giá trị lớn (VND) ra tỷ/triệu cho AI report
+ */
+function formatBigValueAI(value) {
+  if (!value) return '0đ';
+  const abs = Math.abs(value);
+  const sign = value < 0 ? '-' : '';
+  if (abs >= 1000000000) return sign + (abs / 1000000000).toFixed(1) + ' tỷ';
+  if (abs >= 1000000) return sign + (abs / 1000000).toFixed(0) + ' triệu';
+  return sign + value.toLocaleString('vi-VN') + 'đ';
 }
 
 /**
@@ -878,7 +948,7 @@ async function runGlobalMarketAnalysis(globalData) {
   // Bước 2: AI phân tích chi tiết ảnh hưởng VN
   if (geminiAI4) {
     try {
-      await waitForAntiSpam('key2');
+      await waitForAntiSpam('gemini_key2');
       console.log('   🌍 AI 4 đang phân tích ảnh hưởng TTCK quốc tế → VN...');
 
       const prompt = buildGlobalAnalysisPrompt(globalData);
@@ -978,7 +1048,7 @@ async function runTopBoughtAnalysis(topBoughtData, globalData = null) {
   // Bước 2: AI phân tích + dự báo
   if (geminiAI4) {
     try {
-      await waitForAntiSpam('key2');
+      await waitForAntiSpam('gemini_key2');
       console.log('   🏆 AI 4 đang phân tích Top 5 CP...');
 
       const prompt = buildTopBoughtPrompt(topBought, stats, globalData);
@@ -1142,6 +1212,43 @@ Viết như chuyên gia đang tư vấn cho khách hàng VIP, TỰ TIN nhưng TH
 Luôn nhắc "Đây là phân tích tham khảo, không phải lời khuyên đầu tư."`;
 }
 
+// ─── JOB 21h MỚI: BÁO CÁO TTCK QUỐC TẾ + GIÁ VÀNG HÀNG NGÀY ─────────
+
+/**
+ * Báo cáo hàng ngày 21h: TTCK quốc tế + giá vàng
+ * Chạy MỖI NGÀY (kể cả T7/CN)
+ */
+async function runDailyGlobalSummaryReport() {
+  const chatId = config.telegram.chatId;
+  const now = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
+
+  console.log('\n🌍 BÁO CÁO TTCK QUỐC TẾ + GIÁ VÀNG HÀNG NGÀY...');
+
+  try {
+    const { fetchGlobalIndicesSimple, fetchGoldPrices, buildDailyGlobalSummaryMessage } = require('./globalMarketService');
+
+    // Fetch song song: chỉ số quốc tế + giá vàng
+    const [indices, goldData] = await Promise.all([
+      fetchGlobalIndicesSimple(),
+      fetchGoldPrices(),
+    ]);
+
+    // Build message
+    const msg = buildDailyGlobalSummaryMessage(indices, goldData, now);
+
+    // Gửi qua Telegram
+    await sendViaBot(config.telegram.botToken, chatId, msg);
+    console.log('   ✅ Đã gửi báo cáo TTCK quốc tế + giá vàng');
+
+  } catch (error) {
+    console.error('   ❌ Lỗi báo cáo TTCK quốc tế + vàng:', error.message);
+    try {
+      await sendViaBot(config.telegram.botToken, chatId,
+        `💥 VN Stock Bot lỗi báo cáo TTCK quốc tế:\n<code>${error.message}</code>`);
+    } catch (e) { /* ignore */ }
+  }
+}
+
 module.exports = {
   initAIEngines,
   runScheduledAnalysis,
@@ -1149,4 +1256,5 @@ module.exports = {
   formatStockDataForAI,
   runGlobalMarketAnalysis,
   runTopBoughtAnalysis,
+  runDailyGlobalSummaryReport,
 };

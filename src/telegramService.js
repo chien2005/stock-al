@@ -100,11 +100,6 @@ function formatStockMessage(stocks) {
     msg += ` H: ${fmtPrice(stock.highPrice)}`;
     msg += ` L: ${fmtPrice(stock.lowPrice)}\n`;
 
-    // Trần / Sàn / Tham chiếu
-    msg += `🔒 TC: ${fmtPrice(stock.ceilingPrice)}`;
-    msg += ` | TK: ${fmtPrice(stock.refPrice)}`;
-    msg += ` | TS: ${fmtPrice(stock.floorPrice)}\n`;
-
     // Khối lượng
     msg += `📦 KLGD: <b>${fmtVol(stock.volume)}</b>`;
     if (stock.avgVolume > 0) {
@@ -121,12 +116,30 @@ function formatStockMessage(stocks) {
       msg += `${fIcon} NN: M ${fmtVol(stock.foreignBuy)}`;
       msg += ` | B ${fmtVol(stock.foreignSell)}`;
       msg += ` | Ròng: ${fSign}${fmtVol(stock.foreignNet)}\n`;
+
+      // Giá trị Mua/Bán (tỷ VND)
+      const buyVal = (stock.foreignBuyValue || stock.foreignBuy * stock.price) || 0;
+      const sellVal = (stock.foreignSellValue || stock.foreignSell * stock.price) || 0;
+      if (buyVal > 0 || sellVal > 0) {
+        const stronger = buyVal > sellVal ? '🟢 MUA mạnh hơn' : buyVal < sellVal ? '🔴 BÁN mạnh hơn' : '🟡 Cân bằng';
+        msg += `💵 GT: M ${fmtBigValue(buyVal)} | B ${fmtBigValue(sellVal)} → ${stronger}\n`;
+      }
     }
 
     // SMA20 indicator
     if (stock.sma20 > 0) {
-      const smaStatus = stock.price > stock.sma20 ? '⬆️ Trên SMA20' : '⬇️ Dưới SMA20';
-      msg += `📋 SMA20: ${fmtPrice(stock.sma20)} ${smaStatus}\n`;
+      const sma20Pct = ((stock.price - stock.sma20) / stock.sma20 * 100).toFixed(1);
+      const sma20Icon = stock.price > stock.sma20 ? '⬆️' : '⬇️';
+      const sma20Level = Math.abs(sma20Pct) >= 15 ? '⚡' : Math.abs(sma20Pct) >= 5 ? '🔥' : '';
+      msg += `📊 SMA20: ${fmtPrice(stock.sma20)} ${sma20Icon} ${sma20Pct > 0 ? '+' : ''}${sma20Pct}%${sma20Level ? ' ' + sma20Level : ''}\n`;
+    }
+
+    // SMA50 indicator
+    if (stock.sma50 > 0) {
+      const sma50Pct = ((stock.price - stock.sma50) / stock.sma50 * 100).toFixed(1);
+      const sma50Icon = stock.price > stock.sma50 ? '⬆️' : '⬇️';
+      const sma50Level = Math.abs(sma50Pct) >= 15 ? '⚡' : Math.abs(sma50Pct) >= 5 ? '🔥' : '';
+      msg += `📉 SMA50: ${fmtPrice(stock.sma50)} ${sma50Icon} ${sma50Pct > 0 ? '+' : ''}${sma50Pct}%${sma50Level ? ' ' + sma50Level : ''}\n`;
     }
 
     // Sổ lệnh (top bid/ask)
@@ -197,6 +210,19 @@ function fmtVol(vol) {
   }
   return sign + vol.toLocaleString('vi-VN');
 }
+
+/**
+ * Format giá trị lớn (VND) ra tỷ/triệu
+ */
+function fmtBigValue(value) {
+  if (!value) return '0đ';
+  const abs = Math.abs(value);
+  const sign = value < 0 ? '-' : '';
+  if (abs >= 1000000000) return sign + (abs / 1000000000).toFixed(1) + ' tỷ';
+  if (abs >= 1000000) return sign + (abs / 1000000).toFixed(0) + ' triệu';
+  return sign + value.toLocaleString('vi-VN') + 'đ';
+}
+
 
 /**
  * Chia message thành chunks nhỏ (Telegram limit 4096 chars)

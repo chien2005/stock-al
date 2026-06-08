@@ -55,6 +55,8 @@ const GLOBAL_INDICES = [
   { symbol: '000001.SS', name: 'Shanghai',       region: '🇨🇳 Trung Quốc', sector: 'Tổng hợp' },
   { symbol: '^HSI',      name: 'Hang Seng',      region: '🇭🇰 Hồng Kông', sector: 'Tổng hợp' },
   { symbol: '^KS11',     name: 'KOSPI',          region: '🇰🇷 Hàn Quốc', sector: 'Tổng hợp' },
+  { symbol: '^JKSE',     name: 'Jakarta (IDX)',   region: '🇮🇩 Indonesia', sector: 'Tổng hợp' },
+  { symbol: '^SET.BK',   name: 'SET Index',       region: '🇹🇭 Thái Lan',  sector: 'Tổng hợp' },
   { symbol: '^STOXX50E', name: 'Euro Stoxx 50',  region: '🇪🇺 Châu Âu',  sector: 'Tổng hợp' },
   { symbol: '^FTSE',     name: 'FTSE 100',       region: '🇬🇧 Anh',      sector: 'Tổng hợp' },
 ];
@@ -576,12 +578,322 @@ function formatBigVol(vol) {
   return vol.toLocaleString();
 }
 
+// ─── JOB 21h MỚI: FETCH ĐƠN GIẢN + GIÁ VÀNG ──────────────────
+
+/**
+ * Fetch chỉ số quốc tế (đơn giản, không ETF/Fear-Greed)
+ * Dùng cho báo cáo 21h hàng ngày
+ */
+async function fetchGlobalIndicesSimple() {
+  console.log('\n🌍 Lấy dữ liệu TTCK quốc tế (đơn giản)...');
+  const results = [];
+  const symbols = GLOBAL_INDICES.map(i => i.symbol);
+
+  try {
+    const quotes = await withRetry(
+      () => yahooFinance.quote(symbols, {}, { validateResult: false }),
+      3, 2000
+    );
+    const quotesArray = Array.isArray(quotes) ? quotes : [quotes];
+
+    for (const idx of GLOBAL_INDICES) {
+      const quote = quotesArray.find(q => q && q.symbol === idx.symbol);
+      if (quote) {
+        const changePct = quote.regularMarketChangePercent || 0;
+        results.push({
+          ...idx,
+          price: quote.regularMarketPrice || 0,
+          change: quote.regularMarketChange || 0,
+          changePct: parseFloat(changePct.toFixed(2)),
+          marketState: quote.marketState || 'UNKNOWN',
+        });
+        const sign = changePct >= 0 ? '+' : '';
+        const icon = changePct > 0 ? '🟢' : changePct < 0 ? '🔴' : '🟡';
+        console.log(`   ${icon} ${idx.name}: ${(quote.regularMarketPrice || 0).toLocaleString()} (${sign}${changePct.toFixed(2)}%)`);
+      } else {
+        results.push({ ...idx, price: 0, change: 0, changePct: 0, error: true });
+        console.log(`   ⚠️ ${idx.name}: Không lấy được dữ liệu`);
+      }
+    }
+  } catch (error) {
+    console.error('   ❌ Lỗi lấy global indices:', error.message);
+    // Fallback: fetch từng cái
+    for (const idx of GLOBAL_INDICES) {
+      try {
+        const quote = await withRetry(
+          () => yahooFinance.quote(idx.symbol, {}, { validateResult: false }),
+          2, 1500
+        );
+        if (quote) {
+          results.push({
+            ...idx,
+            price: quote.regularMarketPrice || 0,
+            change: quote.regularMarketChange || 0,
+            changePct: parseFloat((quote.regularMarketChangePercent || 0).toFixed(2)),
+            marketState: quote.marketState || 'UNKNOWN',
+          });
+        }
+      } catch (e) {
+        console.error(`   ⚠️ ${idx.name}: ${e.message}`);
+        results.push({ ...idx, price: 0, changePct: 0, error: true });
+      }
+    }
+  }
+
+  console.log(`   ✅ Lấy được ${results.filter(r => !r.error).length}/${GLOBAL_INDICES.length} chỉ số`);
+  return results;
+}
+
+/**
+ * Fetch giá vàng thế giới (Yahoo Finance) + giá vàng Việt Nam (BTMC API)
+ * Bao gồm: 1 lượng, 1 chỉ, vàng nhẫn, tỷ lệ tăng/giảm
+ * @returns {Object} { world: {...}, vietnam: {...} }
+ */
+async function fetchGoldPrices() {
+  console.log('\n🥇 Lấy giá vàng...');
+  const result = { world: null, vietnam: null };
+
+  // 1. Vàng thế giới từ Yahoo Finance
+  try {
+    const goldQuote = await withRetry(
+      () => yahooFinance.quote('GC=F', {}, { validateResult: false }),
+      2, 1500
+    );
+    if (goldQuote) {
+      const changePct = goldQuote.regularMarketChangePercent || 0;
+      result.world = {
+        price: goldQuote.regularMarketPrice || 0,
+        change: goldQuote.regularMarketChange || 0,
+        changePct: parseFloat(changePct.toFixed(2)),
+        currency: 'USD/oz',
+      };
+      const sign = changePct >= 0 ? '+' : '';
+      const icon = changePct > 0 ? '🟢' : changePct < 0 ? '🔴' : '🟡';
+      console.log(`   ${icon} Vàng TG: $${(result.world.price || 0).toLocaleString()} (${sign}${changePct.toFixed(2)}%)`);
+    }
+  } catch (error) {
+    console.error('   ⚠️ Lỗi lấy giá vàng TG:', error.message);
+  }
+
+  // Lấy % thay đổi vàng TG làm tham chiếu cho VN
+  const worldGoldChangePct = result.world ? result.world.changePct : 0;
+
+  // 2. Vàng Việt Nam từ BTMC (Bảo Tín Minh Châu) API
+  try {
+    const axios = require('axios');
+    const btmcResponse = await axios.get('https://www.btmc.vn/api/BTMCAPI/getpricebtmc?key=3kd8ub1llcg9t45ber1', {
+      timeout: 10000,
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+    });
+
+    if (btmcResponse.data && btmcResponse.data.DataList && btmcResponse.data.DataList.Data) {
+      const goldItems = btmcResponse.data.DataList.Data;
+
+      let sjc1Luong = null;
+      let vangNhan1Chi = null;
+
+      for (const item of goldItems) {
+        const rows = item.DataList?.Data || [];
+        for (const row of rows) {
+          const name = (row['@n'] || row['@key'] || '').toLowerCase();
+          if (!sjc1Luong && (name.includes('sjc') || name.includes('1l') || name.includes('1 lượng'))) {
+            sjc1Luong = {
+              buy: parseFloat(row['@pb'] || 0) * 1000,
+              sell: parseFloat(row['@ps'] || 0) * 1000,
+              name: row['@n'] || 'SJC 1L',
+            };
+          }
+          if (!vangNhan1Chi && (name.includes('nhẫn') || name.includes('1 chỉ') || name.includes('1c'))) {
+            vangNhan1Chi = {
+              buy: parseFloat(row['@pb'] || 0) * 1000,
+              sell: parseFloat(row['@ps'] || 0) * 1000,
+              name: row['@n'] || 'Nhẫn 1 chỉ',
+            };
+          }
+        }
+      }
+
+      // Fallback: lấy item đầu tiên nếu không tìm thấy
+      if (!sjc1Luong && goldItems.length > 0) {
+        const firstGroup = goldItems[0];
+        const firstRows = firstGroup.DataList?.Data || [];
+        if (firstRows.length > 0) {
+          const row = firstRows[0];
+          sjc1Luong = {
+            buy: parseFloat(row['@pb'] || 0) * 1000,
+            sell: parseFloat(row['@ps'] || 0) * 1000,
+            name: row['@n'] || 'Vàng miếng',
+          };
+        }
+      }
+
+      // Tính giá 1 chỉ = 1 lượng / 10
+      let vang1Chi = null;
+      if (sjc1Luong && sjc1Luong.buy > 0) {
+        vang1Chi = {
+          buy: Math.round(sjc1Luong.buy / 10),
+          sell: Math.round(sjc1Luong.sell / 10),
+          name: 'SJC 1 chỉ',
+        };
+      }
+
+      result.vietnam = {
+        sjc1Luong,
+        vang1Chi,
+        vangNhan1Chi,
+        changePct: worldGoldChangePct,
+        source: 'BTMC',
+      };
+
+      if (sjc1Luong) console.log(`   🇻🇳 ${sjc1Luong.name}: Mua ${sjc1Luong.buy?.toLocaleString('vi-VN')}đ | Bán ${sjc1Luong.sell?.toLocaleString('vi-VN')}đ`);
+      if (vang1Chi) console.log(`   🇻🇳 ${vang1Chi.name}: Mua ${vang1Chi.buy?.toLocaleString('vi-VN')}đ | Bán ${vang1Chi.sell?.toLocaleString('vi-VN')}đ`);
+      if (vangNhan1Chi) console.log(`   🇻🇳 ${vangNhan1Chi.name}: Mua ${vangNhan1Chi.buy?.toLocaleString('vi-VN')}đ | Bán ${vangNhan1Chi.sell?.toLocaleString('vi-VN')}đ`);
+    }
+  } catch (error) {
+    console.error('   ⚠️ Lỗi lấy giá vàng VN:', error.message);
+    // Fallback: dùng giá vàng TG quy đổi
+    if (result.world) {
+      const usdVnd = 25500;
+      const troyOzToLuong = 1.20565;
+      const pricePerLuong = result.world.price * usdVnd * troyOzToLuong;
+      const pricePerChi = pricePerLuong / 10;
+      result.vietnam = {
+        sjc1Luong: {
+          buy: Math.round(pricePerLuong / 1000) * 1000,
+          sell: Math.round(pricePerLuong * 1.01 / 1000) * 1000,
+          name: 'Vàng quy đổi TG (ước)',
+        },
+        vang1Chi: {
+          buy: Math.round(pricePerChi / 1000) * 1000,
+          sell: Math.round(pricePerChi * 1.01 / 1000) * 1000,
+          name: 'Vàng 1 chỉ (ước)',
+        },
+        vangNhan1Chi: null,
+        changePct: worldGoldChangePct,
+        source: 'Quy đổi từ giá TG',
+      };
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Build Telegram message cho báo cáo 21h hàng ngày
+ * TTCK quốc tế + Giá vàng
+ */
+function buildDailyGlobalSummaryMessage(indices, goldData, now) {
+  let msg = `🌍 <b>BÁO CÁO TTCK QUỐC TẾ & GIÁ VÀNG</b>\n`;
+  msg += `🕐 <i>${now}</i>\n`;
+  msg += `━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+
+  // ─── TTCK Quốc tế ───
+  const validIndices = indices.filter(i => !i.error);
+
+  // Group by region
+  const regions = [
+    { label: '🇺🇸 <b>Mỹ</b>', filter: i => i.region.includes('Mỹ') },
+    { label: '🌏 <b>Châu Á</b>', filter: i => ['Nhật', 'Trung', 'Hồng', 'Hàn', 'Indo', 'Thái'].some(k => i.region.includes(k)) },
+    { label: '🇪🇺 <b>Châu Âu</b>', filter: i => ['Châu Âu', 'Anh'].some(k => i.region.includes(k)) },
+  ];
+
+  msg += `📊 <b>TTCK QUỐC TẾ</b>\n`;
+
+  for (const region of regions) {
+    const regionIndices = validIndices.filter(region.filter);
+    if (regionIndices.length === 0) continue;
+
+    msg += `\n${region.label}:\n`;
+    for (const idx of regionIndices) {
+      const icon = idx.changePct > 0 ? '🟢' : idx.changePct < 0 ? '🔴' : '🟡';
+      const sign = idx.changePct >= 0 ? '+' : '';
+      msg += `${icon} <b>${idx.name}</b>: ${idx.price.toLocaleString('en-US', {maximumFractionDigits: 2})} (${sign}${idx.changePct}%)\n`;
+    }
+  }
+
+  if (validIndices.length === 0) {
+    msg += `\n⚠️ <i>Dữ liệu chỉ số tạm thời không khả dụng.</i>\n`;
+  }
+
+  // Tóm tắt nhanh
+  const usIndices = validIndices.filter(i => i.region.includes('Mỹ'));
+  const asiaIndices = validIndices.filter(i => ['Nhật', 'Trung', 'Hồng', 'Hàn', 'Indo', 'Thái'].some(k => i.region.includes(k)));
+
+  if (usIndices.length > 0) {
+    const usAvg = usIndices.reduce((sum, i) => sum + i.changePct, 0) / usIndices.length;
+    const usIcon = usAvg > 0 ? '🟢' : usAvg < 0 ? '🔴' : '🟡';
+    msg += `\n${usIcon} <b>Mỹ TB:</b> ${usAvg >= 0 ? '+' : ''}${usAvg.toFixed(2)}%`;
+  }
+  if (asiaIndices.length > 0) {
+    const asiaAvg = asiaIndices.reduce((sum, i) => sum + i.changePct, 0) / asiaIndices.length;
+    const asiaIcon = asiaAvg > 0 ? '🟢' : asiaAvg < 0 ? '🔴' : '🟡';
+    msg += ` | ${asiaIcon} <b>Châu Á TB:</b> ${asiaAvg >= 0 ? '+' : ''}${asiaAvg.toFixed(2)}%`;
+  }
+  msg += `\n`;
+
+  // ─── Giá Vàng ───
+  msg += `\n━━━━━━━━━━━━━━━━━━━━━━\n`;
+  msg += `🥇 <b>GIÁ VÀNG</b>\n\n`;
+
+  // Vàng thế giới
+  if (goldData && goldData.world) {
+    const g = goldData.world;
+    const gIcon = g.changePct > 0 ? '🟢' : g.changePct < 0 ? '🔴' : '🟡';
+    const gSign = g.changePct >= 0 ? '+' : '';
+    msg += `🌐 <b>Vàng Thế Giới:</b>\n`;
+    msg += `${gIcon} $${g.price.toLocaleString('en-US', {maximumFractionDigits: 2})}/oz (${gSign}${g.changePct}%)\n\n`;
+  } else {
+    msg += `🌐 Vàng TG: <i>Không lấy được dữ liệu</i>\n\n`;
+  }
+
+  // Vàng Việt Nam
+  if (goldData && goldData.vietnam) {
+    const vn = goldData.vietnam;
+    const vnChangePct = vn.changePct || 0;
+    const vnChangeIcon = vnChangePct > 0 ? '🟢' : vnChangePct < 0 ? '🔴' : '🟡';
+    const vnChangeSign = vnChangePct >= 0 ? '+' : '';
+
+    msg += `🇻🇳 <b>Vàng Việt Nam</b> <i>(${vn.source || 'BTMC'})</i>`;
+    msg += ` ${vnChangeIcon} ${vnChangeSign}${vnChangePct}%\n`;
+
+    if (vn.sjc1Luong) {
+      msg += `💰 <b>${vn.sjc1Luong.name}:</b>\n`;
+      msg += `   Mua: <b>${vn.sjc1Luong.buy?.toLocaleString('vi-VN')}đ</b>`;
+      msg += ` | Bán: <b>${vn.sjc1Luong.sell?.toLocaleString('vi-VN')}đ</b>\n`;
+    }
+
+    if (vn.vang1Chi) {
+      msg += `💎 <b>${vn.vang1Chi.name}:</b>\n`;
+      msg += `   Mua: <b>${vn.vang1Chi.buy?.toLocaleString('vi-VN')}đ</b>`;
+      msg += ` | Bán: <b>${vn.vang1Chi.sell?.toLocaleString('vi-VN')}đ</b>\n`;
+    }
+
+    if (vn.vangNhan1Chi) {
+      msg += `💍 <b>${vn.vangNhan1Chi.name}:</b>\n`;
+      msg += `   Mua: <b>${vn.vangNhan1Chi.buy?.toLocaleString('vi-VN')}đ</b>`;
+      msg += ` | Bán: <b>${vn.vangNhan1Chi.sell?.toLocaleString('vi-VN')}đ</b>\n`;
+    }
+  } else {
+    msg += `🇻🇳 Vàng VN: <i>Không lấy được dữ liệu</i>\n`;
+  }
+
+  // Footer
+  msg += `\n━━━━━━━━━━━━━━━━━━━━━━\n`;
+  msg += `<i>📰 Cập nhật mỗi ngày lúc 21:00</i>\n`;
+  msg += `<i>🤖 VN Stock Bot | TTCK Quốc tế & Vàng</i>`;
+
+  return msg;
+}
+
 module.exports = {
   fetchAllGlobalData,
   fetchGlobalIndices,
   fetchSectorETFs,
   fetchCurrenciesAndCommodities,
   buildGlobalMarketTelegramMessage,
+  fetchGlobalIndicesSimple,
+  fetchGoldPrices,
+  buildDailyGlobalSummaryMessage,
   GLOBAL_INDICES,
   SECTOR_ETFS,
 };

@@ -51,7 +51,7 @@ const config = {
   },
 
   // Stock symbols
-  stockSymbols: (process.env.STOCK_SYMBOLS || 'VNM,FPT,VIC,HPG,MWG,MSN,VHM,TCB,VPB,MBB')
+  stockSymbols: (process.env.STOCK_SYMBOLS || 'VCB,FPT,VIC,HPG,MWG,MSN,VHM,TCB,ACB,VPB,MBB')
     .split(',')
     .map(s => s.trim().toUpperCase())
     .filter(s => s.length > 0),
@@ -65,11 +65,8 @@ const config = {
   // Cron: AI phân tích đa chuyên gia (thứ 2-6, 20h30)
   cronAiSchedule: process.env.CRON_AI_SCHEDULE || '30 20 * * 1-5',
 
-  // Cron: Báo cáo TTCK quốc tế (thứ 2-6, 21h00)
-  cronGlobalSchedule: process.env.CRON_GLOBAL_SCHEDULE || '0 21 * * 1-5',
-
-  // Cron: Top 5 CP mua nhiều nhất (thứ 2-6, 21h45 - cách Global 45 phút tránh rate-limit)
-  cronTopBoughtSchedule: process.env.CRON_TOP_BOUGHT_SCHEDULE || '45 21 * * 1-5',
+  // Cron: Báo cáo TTCK quốc tế + giá vàng (MỖI NGÀY, 21h00 - kể cả T7/CN)
+  cronGlobalSchedule: process.env.CRON_GLOBAL_SCHEDULE || '0 21 * * *',
 
   // Cron: Phân tích đầu tuần (Thứ 2, 8h30)
   cronWeeklySchedule: process.env.CRON_WEEKLY_SCHEDULE || '30 8 * * 1',
@@ -81,7 +78,7 @@ const config = {
   timezone: process.env.TZ || 'Asia/Ho_Chi_Minh',
 
   // Version
-  version: '2.3.0',
+  version: '2.4.0',
 };
 
 // Validate required config
