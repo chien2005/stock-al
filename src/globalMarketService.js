@@ -11,8 +11,7 @@
  * ╚═══════════════════════════════════════════════════════════════╝
  */
 
-const YahooFinance = require('yahoo-finance2').default;
-const yahooFinance = new YahooFinance({ suppressNotices: ['yahooSurvey'] });
+const axios = require('axios');
 
 // Cache dữ liệu lần cuối thành công (fallback khi Yahoo lỗi)
 let _lastGoodIndices = null;
@@ -47,28 +46,28 @@ async function withRetry(fn, retries = 3, delay = 2000) {
  * Chỉ số thị trường toàn cầu
  */
 const GLOBAL_INDICES = [
-  { symbol: '^GSPC',     name: 'S&P 500',       region: '🇺🇸 Mỹ',       sector: 'Tổng hợp' },
-  { symbol: '^IXIC',     name: 'NASDAQ',         region: '🇺🇸 Mỹ',       sector: 'Công nghệ' },
-  { symbol: '^DJI',      name: 'Dow Jones',      region: '🇺🇸 Mỹ',       sector: 'Blue-chip' },
-  { symbol: '^RUT',      name: 'Russell 2000',   region: '🇺🇸 Mỹ',       sector: 'Small-cap' },
-  { symbol: '^N225',     name: 'Nikkei 225',     region: '🇯🇵 Nhật',     sector: 'Tổng hợp' },
-  { symbol: '000001.SS', name: 'Shanghai',       region: '🇨🇳 Trung Quốc', sector: 'Tổng hợp' },
-  { symbol: '^HSI',      name: 'Hang Seng',      region: '🇭🇰 Hồng Kông', sector: 'Tổng hợp' },
-  { symbol: '^KS11',     name: 'KOSPI',          region: '🇰🇷 Hàn Quốc', sector: 'Tổng hợp' },
-  { symbol: '^JKSE',     name: 'Jakarta (IDX)',   region: '🇮🇩 Indonesia', sector: 'Tổng hợp' },
-  { symbol: '^SET.BK',   name: 'SET Index',       region: '🇹🇭 Thái Lan',  sector: 'Tổng hợp' },
-  { symbol: '^STOXX50E', name: 'Euro Stoxx 50',  region: '🇪🇺 Châu Âu',  sector: 'Tổng hợp' },
-  { symbol: '^FTSE',     name: 'FTSE 100',       region: '🇬🇧 Anh',      sector: 'Tổng hợp' },
+  { symbol: '.SPX',      name: 'S&P 500',       region: '🇺🇸 Mỹ',       sector: 'Tổng hợp' },
+  { symbol: '.IXIC',     name: 'NASDAQ',         region: '🇺🇸 Mỹ',       sector: 'Công nghệ' },
+  { symbol: '.DJI',      name: 'Dow Jones',      region: '🇺🇸 Mỹ',       sector: 'Blue-chip' },
+  { symbol: '.RUT',      name: 'Russell 2000',   region: '🇺🇸 Mỹ',       sector: 'Small-cap' },
+  { symbol: '.N225',     name: 'Nikkei 225',     region: '🇯🇵 Nhật',     sector: 'Tổng hợp' },
+  { symbol: '.SSEC',     name: 'Shanghai',       region: '🇨🇳 Trung Quốc', sector: 'Tổng hợp' },
+  { symbol: '.HSI',      name: 'Hang Seng',      region: '🇭🇰 Hồng Kông', sector: 'Tổng hợp' },
+  { symbol: '.KS11',     name: 'KOSPI',          region: '🇰🇷 Hàn Quốc', sector: 'Tổng hợp' },
+  { symbol: '.STI',      name: 'Singapore (STI)', region: '🇸🇬 Singapore', sector: 'Tổng hợp' },
+  { symbol: '.SETI',     name: 'SET Index',       region: '🇹🇭 Thái Lan',  sector: 'Tổng hợp' },
+  { symbol: '.STOXX50E', name: 'Euro Stoxx 50',  region: '🇪🇺 Châu Âu',  sector: 'Tổng hợp' },
+  { symbol: '.FTSE',     name: 'FTSE 100',       region: '🇬🇧 Anh',      sector: 'Tổng hợp' },
 ];
 
 /**
  * ETF ngành Mỹ → mapping sang nhóm ngành VN tương ứng
  */
 const SECTOR_ETFS = [
-  { symbol: 'XLF',  name: 'Financial',      vnSector: 'Ngân hàng',       vnStocks: 'VCB, BID, MBB, TCB, VPB, CTG, STB' },
+  { symbol: 'XLF',  name: 'Financial',      vnSector: 'Ngân hàng',       vnStocks: 'VCB, BID, MBB, TCB, ACB, VPB, CTG, STB' },
   { symbol: 'XLK',  name: 'Technology',      vnSector: 'Công nghệ',       vnStocks: 'FPT, CMG' },
   { symbol: 'XLY',  name: 'Consumer Disc.',  vnSector: 'Tiêu dùng tùy ý', vnStocks: 'MWG, PNJ' },
-  { symbol: 'XLP',  name: 'Consumer Staples',vnSector: 'Tiêu dùng TY',    vnStocks: 'VNM, MSN, SAB' },
+  { symbol: 'XLP',  name: 'Consumer Staples',vnSector: 'Tiêu dùng TY',    vnStocks: 'MSN, SAB' },
   { symbol: 'XLB',  name: 'Materials',       vnSector: 'Vật liệu/Thép',   vnStocks: 'HPG, HSG, NKG' },
   { symbol: 'XLE',  name: 'Energy',          vnSector: 'Năng lượng',       vnStocks: 'GAS, PLX, POW, PVD' },
   { symbol: 'XLV',  name: 'Healthcare',      vnSector: 'Y tế/Dược',       vnStocks: 'DHG, DMC, IMP' },
@@ -81,11 +80,11 @@ const SECTOR_ETFS = [
  * Tỷ giá & Commodities quan trọng
  */
 const CURRENCIES_COMMODITIES = [
-  { symbol: 'DX-Y.NYB',  name: 'Dollar Index (DXY)', type: 'currency' },
-  { symbol: 'GC=F',      name: 'Vàng (Gold)',         type: 'commodity' },
-  { symbol: 'CL=F',      name: 'Dầu WTI',            type: 'commodity' },
-  { symbol: '^VIX',      name: 'VIX (Fear Index)',    type: 'volatility' },
-  { symbol: 'BTC-USD',   name: 'Bitcoin',             type: 'crypto' },
+  { symbol: '@DX.1',  name: 'Dollar Index (DXY)', type: 'currency' },
+  { symbol: '@GC.1',  name: 'Vàng (Gold)',         type: 'commodity' },
+  { symbol: '@CL.1',  name: 'Dầu WTI',            type: 'commodity' },
+  { symbol: '.VIX',   name: 'VIX (Fear Index)',    type: 'volatility' },
+  { symbol: 'BTC=',   name: 'Bitcoin',             type: 'crypto' },
 ];
 
 // ─── MAIN FUNCTIONS ─────────────────────────────────────────
@@ -94,80 +93,70 @@ const CURRENCIES_COMMODITIES = [
  * Lấy dữ liệu chỉ số toàn cầu
  * @returns {Array} Danh sách chỉ số với giá + % thay đổi
  */
+async function fetchCNBCQuotes(symbols) {
+  try {
+    const url = `https://quote.cnbc.com/quote-html-webservice/quote.htm?partnerId=2&requestMethod=quick&symbolType=symbol&symbols=${symbols.join('|')}&exthrs=1&noform=1&fund=1&output=json`;
+    const response = await axios.get(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+      },
+      timeout: 10000,
+    });
+    
+    if (response.data && response.data.QuickQuoteResult && response.data.QuickQuoteResult.QuickQuote) {
+      return response.data.QuickQuoteResult.QuickQuote;
+    }
+    return [];
+  } catch (error) {
+    console.error('⚠️  Lỗi khi gọi CNBC API:', error.message);
+    return [];
+  }
+}
+
 async function fetchGlobalIndices() {
   console.log('\n🌍 Đang lấy dữ liệu TTCK quốc tế...');
   const results = [];
   const symbols = GLOBAL_INDICES.map(i => i.symbol);
   
   try {
-    const quotes = await withRetry(
-      () => yahooFinance.quote(symbols, {}, { validateResult: false }),
-      3, 2000
-    );
+    const quotes = await withRetry(() => fetchCNBCQuotes(symbols), 3, 2000);
     const quotesArray = Array.isArray(quotes) ? quotes : [quotes];
 
     for (const idx of GLOBAL_INDICES) {
       const quote = quotesArray.find(q => q && q.symbol === idx.symbol);
-      if (quote) {
-        const price = quote.regularMarketPrice || 0;
-        const change = quote.regularMarketChange || 0;
-        const changePct = quote.regularMarketChangePercent || 0;
-        const prevClose = quote.regularMarketPreviousClose || 0;
-        const open = quote.regularMarketOpen || 0;
-        const high = quote.regularMarketDayHigh || 0;
-        const low = quote.regularMarketDayLow || 0;
-        const volume = quote.regularMarketVolume || 0;
-        const marketState = quote.marketState || 'UNKNOWN';
+      if (quote && quote.last !== undefined) {
+        const price = parseFloat(quote.last) || 0;
+        const change = parseFloat(quote.change) || 0;
+        const changePct = parseFloat(quote.change_pct) || 0;
+        const prevClose = parseFloat(quote.previous_close) || 0;
+        const open = parseFloat(quote.open) || 0;
+        const high = parseFloat(quote.high) || 0;
+        const low = parseFloat(quote.low) || 0;
+        const volume = parseInt(quote.volume) || 0;
 
         results.push({
           ...idx,
           price, change,
           changePct: parseFloat(changePct.toFixed(2)),
-          prevClose, open, high, low, volume, marketState,
+          prevClose, open, high, low, volume,
+          marketState: quote.market_state || 'REGULAR',
         });
 
         const sign = changePct >= 0 ? '+' : '';
         const icon = changePct > 0 ? '🟢' : changePct < 0 ? '🔴' : '🟡';
         console.log(`   ${icon} ${idx.name}: ${price.toLocaleString()} (${sign}${changePct.toFixed(2)}%)`);
       } else {
-        console.log(`   ⚠️ ${idx.name}: Không lấy được dữ liệu`);
+        console.log(`   ⚠️  ${idx.name}: Không lấy được dữ liệu`);
         results.push({ ...idx, price: 0, change: 0, changePct: 0, error: true });
       }
     }
   } catch (error) {
-    console.error('   ❌ Lỗi lấy global indices:', error.message);
-    // Fallback: fetch từng cái
-    for (const idx of GLOBAL_INDICES) {
-      try {
-        const quote = await withRetry(
-          () => yahooFinance.quote(idx.symbol, {}, { validateResult: false }),
-          2, 1500
-        );
-        if (quote) {
-          results.push({
-            ...idx,
-            price: quote.regularMarketPrice || 0,
-            change: quote.regularMarketChange || 0,
-            changePct: parseFloat((quote.regularMarketChangePercent || 0).toFixed(2)),
-            prevClose: quote.regularMarketPreviousClose || 0,
-            open: quote.regularMarketOpen || 0,
-            high: quote.regularMarketDayHigh || 0,
-            low: quote.regularMarketDayLow || 0,
-            volume: quote.regularMarketVolume || 0,
-            marketState: quote.marketState || 'UNKNOWN',
-          });
-        }
-      } catch (e) {
-        console.error(`   ⚠️ ${idx.name}: ${e.message}`);
-        results.push({ ...idx, price: 0, changePct: 0, error: true });
-      }
-    }
+    console.error('   ❌ Lỗi lấy global indices từ CNBC:', error.message);
   }
 
   const successCount = results.filter(r => !r.error).length;
   console.log(`   ✅ Lấy được ${successCount}/${GLOBAL_INDICES.length} chỉ số`);
   
-  // Cache nếu lấy được data
   if (successCount > 0) {
     _lastGoodIndices = results;
   } else if (_lastGoodIndices) {
@@ -178,32 +167,25 @@ async function fetchGlobalIndices() {
   return results;
 }
 
-/**
- * Lấy dữ liệu ETF ngành Mỹ
- * @returns {Array} Danh sách ETF với giá + % thay đổi
- */
 async function fetchSectorETFs() {
   console.log('\n🏦 Đang lấy ETF ngành Mỹ...');
   const results = [];
   const symbols = SECTOR_ETFS.map(e => e.symbol);
 
   try {
-    const quotes = await withRetry(
-      () => yahooFinance.quote(symbols, {}, { validateResult: false }),
-      3, 2000
-    );
+    const quotes = await withRetry(() => fetchCNBCQuotes(symbols), 3, 2000);
     const quotesArray = Array.isArray(quotes) ? quotes : [quotes];
 
     for (const etf of SECTOR_ETFS) {
       const quote = quotesArray.find(q => q && q.symbol === etf.symbol);
-      if (quote) {
-        const changePct = quote.regularMarketChangePercent || 0;
+      if (quote && quote.last !== undefined) {
+        const changePct = parseFloat(quote.change_pct) || 0;
         results.push({
           ...etf,
-          price: quote.regularMarketPrice || 0,
-          change: quote.regularMarketChange || 0,
+          price: parseFloat(quote.last) || 0,
+          change: parseFloat(quote.change) || 0,
           changePct: parseFloat(changePct.toFixed(2)),
-          volume: quote.regularMarketVolume || 0,
+          volume: parseInt(quote.volume) || 0,
         });
         const sign = changePct >= 0 ? '+' : '';
         const icon = changePct > 0 ? '🟢' : changePct < 0 ? '🔴' : '🟡';
@@ -211,33 +193,12 @@ async function fetchSectorETFs() {
       }
     }
   } catch (error) {
-    console.error('   ❌ Lỗi lấy ETF batch:', error.message);
-    // Fallback one-by-one with retry
-    for (const etf of SECTOR_ETFS) {
-      try {
-        const quote = await withRetry(
-          () => yahooFinance.quote(etf.symbol, {}, { validateResult: false }),
-          2, 1500
-        );
-        if (quote) {
-          results.push({
-            ...etf,
-            price: quote.regularMarketPrice || 0,
-            change: quote.regularMarketChange || 0,
-            changePct: parseFloat((quote.regularMarketChangePercent || 0).toFixed(2)),
-            volume: quote.regularMarketVolume || 0,
-          });
-        }
-      } catch (e) {
-        console.error(`   ⚠️ ETF ${etf.symbol}: ${e.message}`);
-      }
-    }
+    console.error('   ❌ Lỗi lấy ETF từ CNBC:', error.message);
   }
 
   const successCount = results.length;
   console.log(`   ✅ Lấy được ${successCount}/${SECTOR_ETFS.length} ETF ngành`);
 
-  // Cache nếu lấy được data
   if (successCount > 0) {
     _lastGoodETFs = results;
   } else if (_lastGoodETFs) {
@@ -248,40 +209,39 @@ async function fetchSectorETFs() {
   return results;
 }
 
-/**
- * Lấy tỷ giá & commodities
- * @returns {Array}
- */
 async function fetchCurrenciesAndCommodities() {
   console.log('\n💱 Đang lấy tỷ giá & hàng hóa...');
   const results = [];
+  const symbols = CURRENCIES_COMMODITIES.map(c => c.symbol);
 
-  for (const item of CURRENCIES_COMMODITIES) {
-    try {
-      const quote = await withRetry(
-        () => yahooFinance.quote(item.symbol, {}, { validateResult: false }),
-        2, 1500
-      );
-      if (quote) {
-        const changePct = quote.regularMarketChangePercent || 0;
+  try {
+    const quotes = await withRetry(() => fetchCNBCQuotes(symbols), 3, 2000);
+    const quotesArray = Array.isArray(quotes) ? quotes : [quotes];
+
+    for (const item of CURRENCIES_COMMODITIES) {
+      const quote = quotesArray.find(q => q && q.symbol === item.symbol);
+      if (quote && quote.last !== undefined) {
+        const changePct = parseFloat(quote.change_pct) || 0;
+        const price = parseFloat(quote.last) || 0;
         results.push({
           ...item,
-          price: quote.regularMarketPrice || 0,
-          change: quote.regularMarketChange || 0,
+          price,
+          change: parseFloat(quote.change) || 0,
           changePct: parseFloat(changePct.toFixed(2)),
         });
         const sign = changePct >= 0 ? '+' : '';
         const icon = changePct > 0 ? '🟢' : changePct < 0 ? '🔴' : '🟡';
-        console.log(`   ${icon} ${item.name}: ${quote.regularMarketPrice?.toLocaleString() || 'N/A'} (${sign}${changePct.toFixed(2)}%)`);
+        console.log(`   ${icon} ${item.name}: ${price.toLocaleString()} (${sign}${changePct.toFixed(2)}%)`);
+      } else {
+        console.log(`   ⚠️  ${item.name}: Không lấy được dữ liệu`);
+        results.push({ ...item, price: 0, changePct: 0, error: true });
       }
-    } catch (error) {
-      console.error(`   ⚠️ ${item.name}: ${error.message}`);
-      results.push({ ...item, price: 0, changePct: 0, error: true });
     }
+  } catch (error) {
+    console.error('   ❌ Lỗi lấy currencies từ CNBC:', error.message);
   }
 
   const successCount = results.filter(r => !r.error).length;
-  // Cache nếu lấy được data
   if (successCount > 0) {
     _lastGoodCurrencies = results;
   } else if (_lastGoodCurrencies) {
@@ -292,32 +252,23 @@ async function fetchCurrenciesAndCommodities() {
   return results;
 }
 
-/**
- * Lấy toàn bộ dữ liệu TTCK quốc tế
- * @returns {Object} { indices, sectorETFs, currencies, summary }
- */
 async function fetchAllGlobalData() {
   const startTime = Date.now();
 
-  // Fetch TUẦN TỰ với delay để tránh Yahoo rate-limit trên server
   const indices = await fetchGlobalIndices();
-  await new Promise(r => setTimeout(r, 1500)); // delay 1.5s
+  await new Promise(r => setTimeout(r, 1000));
 
   const sectorETFs = await fetchSectorETFs();
-  await new Promise(r => setTimeout(r, 1500)); // delay 1.5s
+  await new Promise(r => setTimeout(r, 1000));
 
   const currencies = await fetchCurrenciesAndCommodities();
 
-  // Tính Fear/Greed indicators
   const fearGreed = calculateFearGreedIndicators(indices, currencies);
-
-  // Build summary
   const summary = buildGlobalSummary(indices, sectorETFs, currencies, fearGreed);
 
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
   console.log(`\n✅ Hoàn thành lấy data quốc tế (${elapsed}s)`);
 
-  // Log data quality
   const idxOK = indices.filter(i => !i.error).length;
   const etfOK = sectorETFs.length;
   const curOK = currencies.filter(c => !c.error).length;
@@ -333,18 +284,11 @@ async function fetchAllGlobalData() {
   };
 }
 
-// ─── FEAR/GREED INDICATORS ─────────────────────────────────
-
-/**
- * Tính chỉ số Fear/Greed dựa trên multi-factor
- * @returns {Object} { score: 0-100, label, factors }
- */
 function calculateFearGreedIndicators(indices, currencies) {
-  let score = 50; // Trung tính
+  let score = 50;
   const factors = [];
 
-  // Factor 1: S&P 500 performance
-  const sp500 = indices.find(i => i.symbol === '^GSPC');
+  const sp500 = indices.find(i => i.symbol === '.SPX');
   if (sp500 && !sp500.error) {
     if (sp500.changePct > 1.5) { score += 15; factors.push('🟢 S&P 500 tăng mạnh (+15)'); }
     else if (sp500.changePct > 0.5) { score += 8; factors.push('🟢 S&P 500 tăng nhẹ (+8)'); }
@@ -353,16 +297,14 @@ function calculateFearGreedIndicators(indices, currencies) {
     else { factors.push('🟡 S&P 500 sideway (0)'); }
   }
 
-  // Factor 2: NASDAQ (tech sentiment)
-  const nasdaq = indices.find(i => i.symbol === '^IXIC');
+  const nasdaq = indices.find(i => i.symbol === '.IXIC');
   if (nasdaq && !nasdaq.error) {
     if (nasdaq.changePct > 2) { score += 10; factors.push('🟢 NASDAQ tăng mạnh (+10)'); }
     else if (nasdaq.changePct < -2) { score -= 10; factors.push('🔴 NASDAQ giảm mạnh (-10)'); }
   }
 
-  // Factor 3: Asian markets (ảnh hưởng trực tiếp VN)
   const asianIndices = indices.filter(i =>
-    ['^N225', '000001.SS', '^HSI', '^KS11'].includes(i.symbol) && !i.error
+    ['.N225', '.SSEC', '.HSI', '.KS11'].includes(i.symbol) && !i.error
   );
   if (asianIndices.length > 0) {
     const asianAvg = asianIndices.reduce((sum, i) => sum + i.changePct, 0) / asianIndices.length;
@@ -372,8 +314,7 @@ function calculateFearGreedIndicators(indices, currencies) {
     else if (asianAvg < 0) { score -= 5; factors.push(`🔴 Châu Á giảm nhẹ ${asianAvg.toFixed(2)}% (-5)`); }
   }
 
-  // Factor 4: VIX (Fear Index)
-  const vix = currencies.find(c => c.symbol === '^VIX');
+  const vix = currencies.find(c => c.symbol === '.VIX');
   if (vix && !vix.error) {
     if (vix.price > 30) { score -= 15; factors.push(`🔴 VIX rất cao ${vix.price} → Panic (-15)`); }
     else if (vix.price > 25) { score -= 10; factors.push(`🔴 VIX cao ${vix.price} → Sợ hãi (-10)`); }
@@ -382,24 +323,20 @@ function calculateFearGreedIndicators(indices, currencies) {
     else { factors.push(`🟡 VIX bình thường ${vix.price} (0)`); }
   }
 
-  // Factor 5: DXY (Dollar Index) - DXY tăng → xấu cho EM/VN
-  const dxy = currencies.find(c => c.symbol === 'DX-Y.NYB');
+  const dxy = currencies.find(c => c.symbol === '@DX.1');
   if (dxy && !dxy.error) {
     if (dxy.changePct > 0.5) { score -= 8; factors.push(`🔴 USD mạnh lên DXY +${dxy.changePct}% (-8)`); }
     else if (dxy.changePct < -0.5) { score += 8; factors.push(`🟢 USD yếu đi DXY ${dxy.changePct}% (+8)`); }
   }
 
-  // Factor 6: Gold (safe haven)
-  const gold = currencies.find(c => c.symbol === 'GC=F');
+  const gold = currencies.find(c => c.symbol === '@GC.1');
   if (gold && !gold.error) {
     if (gold.changePct > 1.5) { score -= 5; factors.push(`🟠 Vàng tăng mạnh +${gold.changePct}% → risk-off (-5)`); }
     else if (gold.changePct < -1) { score += 3; factors.push(`🟢 Vàng giảm → risk-on (+3)`); }
   }
 
-  // Clamp score to 0-100
   score = Math.max(0, Math.min(100, score));
 
-  // Label
   let label, emoji;
   if (score >= 80) { label = 'CỰC KỲ THAM LAM'; emoji = '🟢🟢'; }
   else if (score >= 65) { label = 'THAM LAM'; emoji = '🟢'; }
@@ -410,36 +347,27 @@ function calculateFearGreedIndicators(indices, currencies) {
   return { score, label, emoji, factors };
 }
 
-// ─── SUMMARY BUILDER ───────────────────────────────────────
-
-/**
- * Build tổng hợp text cho AI prompt
- */
 function buildGlobalSummary(indices, sectorETFs, currencies, fearGreed) {
   let summary = '';
 
-  // Indices
   summary += 'CHỈ SỐ THỊ TRƯỜNG QUỐC TẾ:\n';
   for (const idx of indices.filter(i => !i.error)) {
     const sign = idx.changePct >= 0 ? '+' : '';
     summary += `  ${idx.region} ${idx.name}: ${idx.price.toLocaleString()} (${sign}${idx.changePct}%) | KL: ${formatBigVol(idx.volume)}\n`;
   }
 
-  // Sector ETFs
   summary += '\nETF NGÀNH MỸ (ẢNH HƯỞNG VN):\n';
   for (const etf of sectorETFs) {
     const sign = etf.changePct >= 0 ? '+' : '';
     summary += `  ${etf.name} (${etf.symbol}): ${sign}${etf.changePct}% → VN: ${etf.vnSector} (${etf.vnStocks})\n`;
   }
 
-  // Currencies & Commodities
   summary += '\nTỶ GIÁ & HÀNG HÓA:\n';
   for (const c of currencies.filter(c => !c.error)) {
     const sign = c.changePct >= 0 ? '+' : '';
     summary += `  ${c.name}: ${c.price.toLocaleString()} (${sign}${c.changePct}%)\n`;
   }
 
-  // Fear/Greed
   summary += `\nCHỈ SỐ FEAR/GREED: ${fearGreed.score}/100 (${fearGreed.label})\n`;
   summary += `Factors:\n`;
   for (const f of fearGreed.factors) {
@@ -449,9 +377,6 @@ function buildGlobalSummary(indices, sectorETFs, currencies, fearGreed) {
   return summary;
 }
 
-/**
- * Build Telegram message cho báo cáo TTCK quốc tế
- */
 function buildGlobalMarketTelegramMessage(globalData) {
   const { indices, sectorETFs, currencies, fearGreed } = globalData;
   const now = new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
@@ -460,15 +385,12 @@ function buildGlobalMarketTelegramMessage(globalData) {
   msg += `🕐 <i>${now}</i>\n`;
   msg += `━━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
-  // Fear/Greed Score
   msg += `${fearGreed.emoji} <b>FEAR/GREED: ${fearGreed.score}/100 (${fearGreed.label})</b>\n\n`;
 
-  // ─── Global Indices ───
   msg += `📊 <b>CHỈ SỐ CHÍNH</b>\n`;
 
-  // Group by region
   const usIndices = indices.filter(i => i.region.includes('Mỹ') && !i.error);
-  const asiaIndices = indices.filter(i => (i.region.includes('Nhật') || i.region.includes('Trung') || i.region.includes('Hồng') || i.region.includes('Hàn')) && !i.error);
+  const asiaIndices = indices.filter(i => (i.region.includes('Nhật') || i.region.includes('Trung') || i.region.includes('Hồng') || i.region.includes('Hàn') || i.region.includes('Singapore') || i.region.includes('Thái')) && !i.error);
   const euroIndices = indices.filter(i => (i.region.includes('Âu') || i.region.includes('Anh')) && !i.error);
 
   if (usIndices.length === 0 && asiaIndices.length === 0 && euroIndices.length === 0) {
@@ -502,11 +424,9 @@ function buildGlobalMarketTelegramMessage(globalData) {
     }
   }
 
-  // ─── Sector ETFs ───
   msg += `\n━━━━━━━━━━━━━━━━━━━━━━\n`;
   msg += `🏦 <b>ETF NGÀNH → ẢNH HƯỞNG VN</b>\n\n`;
 
-  // Sort by changePct
   const sortedETFs = [...sectorETFs].sort((a, b) => b.changePct - a.changePct);
   if (sortedETFs.length === 0) {
     msg += `⚠️ <i>Dữ liệu ETF tạm thời không khả dụng.</i>\n`;
@@ -518,7 +438,6 @@ function buildGlobalMarketTelegramMessage(globalData) {
     msg += `   → ${etf.vnStocks}\n`;
   }
 
-  // ─── Currencies & Commodities ───
   msg += `\n━━━━━━━━━━━━━━━━━━━━━━\n`;
   msg += `💱 <b>TỶ GIÁ & HÀNG HÓA</b>\n\n`;
 
@@ -532,12 +451,10 @@ function buildGlobalMarketTelegramMessage(globalData) {
     msg += `${icon} <b>${c.name}</b>: ${c.price.toLocaleString('en-US', {maximumFractionDigits: 2})} (${sign}${c.changePct}%)\n`;
   }
 
-  // ─── Quick Interpretation ───
   msg += `\n━━━━━━━━━━━━━━━━━━━━━━\n`;
   msg += `🔮 <b>TÍN HIỆU NHANH CHO VN</b>\n\n`;
 
-  // US market signal
-  const sp500 = indices.find(i => i.symbol === '^GSPC');
+  const sp500 = indices.find(i => i.symbol === '.SPX');
   if (sp500 && !sp500.error) {
     if (sp500.changePct > 1) msg += `🟢 Mỹ tăng mạnh → VN có thể <b>GAP UP mở cửa</b>\n`;
     else if (sp500.changePct > 0) msg += `🟢 Mỹ tăng nhẹ → VN thiên hướng <b>TÍCH CỰC</b>\n`;
@@ -546,7 +463,6 @@ function buildGlobalMarketTelegramMessage(globalData) {
     else msg += `🟡 Mỹ sideway → VN <b>PHÂN HÓA</b>\n`;
   }
 
-  // Sector signal
   const topSector = sortedETFs[0];
   const botSector = sortedETFs[sortedETFs.length - 1];
   if (topSector && topSector.changePct > 0.5) {
@@ -556,8 +472,7 @@ function buildGlobalMarketTelegramMessage(globalData) {
     msg += `📉 Ngành yếu: <b>${botSector.vnSector}</b> (${botSector.symbol} ${botSector.changePct}%) → ${botSector.vnStocks}\n`;
   }
 
-  // VIX signal
-  const vix = currencies.find(c => c.symbol === '^VIX');
+  const vix = currencies.find(c => c.symbol === '.VIX');
   if (vix && !vix.error) {
     if (vix.price > 25) msg += `⚠️ VIX = ${vix.price} (CAO) → Thị trường lo ngại, <b>THẬN TRỌNG</b>\n`;
     else if (vix.price < 15) msg += `✅ VIX = ${vix.price} (THẤP) → Thị trường bình ổn\n`;
@@ -568,8 +483,6 @@ function buildGlobalMarketTelegramMessage(globalData) {
   return msg;
 }
 
-// ─── HELPERS ───────────────────────────────────────────────
-
 function formatBigVol(vol) {
   if (!vol) return '0';
   if (vol >= 1000000000) return (vol / 1000000000).toFixed(2) + 'B';
@@ -578,156 +491,84 @@ function formatBigVol(vol) {
   return vol.toLocaleString();
 }
 
-// ─── JOB 21h MỚI: FETCH ĐƠN GIẢN + GIÁ VÀNG ──────────────────
-
-/**
- * Fetch chỉ số quốc tế (đơn giản, không ETF/Fear-Greed)
- * Dùng cho báo cáo 21h hàng ngày
- */
 async function fetchGlobalIndicesSimple() {
   console.log('\n🌍 Lấy dữ liệu TTCK quốc tế (đơn giản)...');
   const results = [];
   const symbols = GLOBAL_INDICES.map(i => i.symbol);
 
   try {
-    const quotes = await withRetry(
-      () => yahooFinance.quote(symbols, {}, { validateResult: false }),
-      3, 2000
-    );
+    const quotes = await withRetry(() => fetchCNBCQuotes(symbols), 3, 2000);
     const quotesArray = Array.isArray(quotes) ? quotes : [quotes];
 
     for (const idx of GLOBAL_INDICES) {
       const quote = quotesArray.find(q => q && q.symbol === idx.symbol);
-      if (quote) {
-        const changePct = quote.regularMarketChangePercent || 0;
+      if (quote && quote.last !== undefined) {
+        const changePct = parseFloat(quote.change_pct) || 0;
         results.push({
           ...idx,
-          price: quote.regularMarketPrice || 0,
-          change: quote.regularMarketChange || 0,
+          price: parseFloat(quote.last) || 0,
+          change: parseFloat(quote.change) || 0,
           changePct: parseFloat(changePct.toFixed(2)),
-          marketState: quote.marketState || 'UNKNOWN',
+          marketState: quote.market_state || 'REGULAR',
         });
         const sign = changePct >= 0 ? '+' : '';
         const icon = changePct > 0 ? '🟢' : changePct < 0 ? '🔴' : '🟡';
-        console.log(`   ${icon} ${idx.name}: ${(quote.regularMarketPrice || 0).toLocaleString()} (${sign}${changePct.toFixed(2)}%)`);
+        console.log(`   ${icon} ${idx.name}: ${(parseFloat(quote.last) || 0).toLocaleString()} (${sign}${changePct.toFixed(2)}%)`);
       } else {
         results.push({ ...idx, price: 0, change: 0, changePct: 0, error: true });
-        console.log(`   ⚠️ ${idx.name}: Không lấy được dữ liệu`);
+        console.log(`   ⚠️  ${idx.name}: Không lấy được dữ liệu`);
       }
     }
   } catch (error) {
-    console.error('   ❌ Lỗi lấy global indices:', error.message);
-    // Fallback: fetch từng cái
-    for (const idx of GLOBAL_INDICES) {
-      try {
-        const quote = await withRetry(
-          () => yahooFinance.quote(idx.symbol, {}, { validateResult: false }),
-          2, 1500
-        );
-        if (quote) {
-          results.push({
-            ...idx,
-            price: quote.regularMarketPrice || 0,
-            change: quote.regularMarketChange || 0,
-            changePct: parseFloat((quote.regularMarketChangePercent || 0).toFixed(2)),
-            marketState: quote.marketState || 'UNKNOWN',
-          });
-        }
-      } catch (e) {
-        console.error(`   ⚠️ ${idx.name}: ${e.message}`);
-        results.push({ ...idx, price: 0, changePct: 0, error: true });
-      }
-    }
+    console.error('   ❌ Lỗi lấy global indices simple:', error.message);
   }
 
   console.log(`   ✅ Lấy được ${results.filter(r => !r.error).length}/${GLOBAL_INDICES.length} chỉ số`);
   return results;
 }
 
-/**
- * Fetch giá vàng thế giới (Yahoo Finance) + giá vàng Việt Nam (BTMC API)
- * Bao gồm: 1 lượng, 1 chỉ, vàng nhẫn, tỷ lệ tăng/giảm
- * @returns {Object} { world: {...}, vietnam: {...} }
- */
 async function fetchGoldPrices() {
   console.log('\n🥇 Lấy giá vàng...');
   const result = { world: null, vietnam: null };
 
-  // 1. Vàng thế giới từ Yahoo Finance
   try {
-    const goldQuote = await withRetry(
-      () => yahooFinance.quote('GC=F', {}, { validateResult: false }),
-      2, 1500
-    );
-    if (goldQuote) {
-      const changePct = goldQuote.regularMarketChangePercent || 0;
-      result.world = {
-        price: goldQuote.regularMarketPrice || 0,
-        change: goldQuote.regularMarketChange || 0,
-        changePct: parseFloat(changePct.toFixed(2)),
-        currency: 'USD/oz',
-      };
-      const sign = changePct >= 0 ? '+' : '';
-      const icon = changePct > 0 ? '🟢' : changePct < 0 ? '🔴' : '🟡';
-      console.log(`   ${icon} Vàng TG: $${(result.world.price || 0).toLocaleString()} (${sign}${changePct.toFixed(2)}%)`);
-    }
-  } catch (error) {
-    console.error('   ⚠️ Lỗi lấy giá vàng TG:', error.message);
-  }
-
-  // Lấy % thay đổi vàng TG làm tham chiếu cho VN
-  const worldGoldChangePct = result.world ? result.world.changePct : 0;
-
-  // 2. Vàng Việt Nam từ BTMC (Bảo Tín Minh Châu) API
-  try {
-    const axios = require('axios');
-    const btmcResponse = await axios.get('https://www.btmc.vn/api/BTMCAPI/getpricebtmc?key=3kd8ub1llcg9t45ber1', {
-      timeout: 10000,
+    const response = await axios.get('https://www.vang.today/api/prices', {
+      timeout: 8000,
       headers: { 'User-Agent': 'Mozilla/5.0' },
     });
-
-    if (btmcResponse.data && btmcResponse.data.DataList && btmcResponse.data.DataList.Data) {
-      const goldItems = btmcResponse.data.DataList.Data;
-
+    if (response.data && response.data.success && response.data.prices) {
+      const prices = response.data.prices;
+      
+      if (prices.XAUUSD) {
+        result.world = {
+          price: prices.XAUUSD.buy,
+          change: prices.XAUUSD.change_buy,
+          changePct: parseFloat(prices.XAUUSD.change_buy.toFixed(2)),
+          currency: 'USD/oz',
+        };
+      }
+      
       let sjc1Luong = null;
       let vangNhan1Chi = null;
-
-      for (const item of goldItems) {
-        const rows = item.DataList?.Data || [];
-        for (const row of rows) {
-          const name = (row['@n'] || row['@key'] || '').toLowerCase();
-          if (!sjc1Luong && (name.includes('sjc') || name.includes('1l') || name.includes('1 lượng'))) {
-            sjc1Luong = {
-              buy: parseFloat(row['@pb'] || 0) * 1000,
-              sell: parseFloat(row['@ps'] || 0) * 1000,
-              name: row['@n'] || 'SJC 1L',
-            };
-          }
-          if (!vangNhan1Chi && (name.includes('nhẫn') || name.includes('1 chỉ') || name.includes('1c'))) {
-            vangNhan1Chi = {
-              buy: parseFloat(row['@pb'] || 0) * 1000,
-              sell: parseFloat(row['@ps'] || 0) * 1000,
-              name: row['@n'] || 'Nhẫn 1 chỉ',
-            };
-          }
-        }
+      
+      const sjcData = prices.SJL1L10 || prices.BTSJC || prices.VNGSJC || prices.VIETTINMSJC;
+      if (sjcData) {
+        sjc1Luong = {
+          buy: sjcData.buy,
+          sell: sjcData.sell,
+          name: sjcData.name || 'SJC 1L',
+        };
       }
-
-      // Fallback: lấy item đầu tiên nếu không tìm thấy
-      if (!sjc1Luong && goldItems.length > 0) {
-        const firstGroup = goldItems[0];
-        const firstRows = firstGroup.DataList?.Data || [];
-        if (firstRows.length > 0) {
-          const row = firstRows[0];
-          sjc1Luong = {
-            buy: parseFloat(row['@pb'] || 0) * 1000,
-            sell: parseFloat(row['@ps'] || 0) * 1000,
-            name: row['@n'] || 'Vàng miếng',
-          };
-        }
+      
+      const nhanData = prices.SJ9999 || prices.BT9999NTT || prices.PQHN24NTT;
+      if (nhanData) {
+        vangNhan1Chi = {
+          buy: Math.round(nhanData.buy / 10),
+          sell: Math.round(nhanData.sell / 10),
+          name: (nhanData.name || 'Nhẫn') + ' 1 chỉ',
+        };
       }
-
-      // Tính giá 1 chỉ = 1 lượng / 10
+      
       let vang1Chi = null;
       if (sjc1Luong && sjc1Luong.buy > 0) {
         vang1Chi = {
@@ -736,27 +577,39 @@ async function fetchGoldPrices() {
           name: 'SJC 1 chỉ',
         };
       }
-
+      
       result.vietnam = {
         sjc1Luong,
         vang1Chi,
         vangNhan1Chi,
-        changePct: worldGoldChangePct,
-        source: 'BTMC',
+        changePct: result.world ? result.world.changePct : 0,
+        source: 'Vang.Today',
       };
-
-      if (sjc1Luong) console.log(`   🇻🇳 ${sjc1Luong.name}: Mua ${sjc1Luong.buy?.toLocaleString('vi-VN')}đ | Bán ${sjc1Luong.sell?.toLocaleString('vi-VN')}đ`);
-      if (vang1Chi) console.log(`   🇻🇳 ${vang1Chi.name}: Mua ${vang1Chi.buy?.toLocaleString('vi-VN')}đ | Bán ${vang1Chi.sell?.toLocaleString('vi-VN')}đ`);
-      if (vangNhan1Chi) console.log(`   🇻🇳 ${vangNhan1Chi.name}: Mua ${vangNhan1Chi.buy?.toLocaleString('vi-VN')}đ | Bán ${vangNhan1Chi.sell?.toLocaleString('vi-VN')}đ`);
+      
+      console.log('   ✅ Đã lấy thành công giá vàng từ Vang.Today');
+      return result;
     }
   } catch (error) {
-    console.error('   ⚠️ Lỗi lấy giá vàng VN:', error.message);
-    // Fallback: dùng giá vàng TG quy đổi
-    if (result.world) {
+    console.warn('   ⚠️  Lỗi lấy giá vàng từ Vang.Today:', error.message);
+  }
+
+  try {
+    const quotes = await fetchCNBCQuotes(['@GC.1']);
+    const goldQuote = quotes.find(q => q && q.symbol === '@GC.1');
+    if (goldQuote && goldQuote.last !== undefined) {
+      const changePct = parseFloat(goldQuote.change_pct) || 0;
+      result.world = {
+        price: parseFloat(goldQuote.last) || 0,
+        change: parseFloat(goldQuote.change) || 0,
+        changePct: parseFloat(changePct.toFixed(2)),
+        currency: 'USD/oz',
+      };
+      
       const usdVnd = 25500;
       const troyOzToLuong = 1.20565;
       const pricePerLuong = result.world.price * usdVnd * troyOzToLuong;
       const pricePerChi = pricePerLuong / 10;
+      
       result.vietnam = {
         sjc1Luong: {
           buy: Math.round(pricePerLuong / 1000) * 1000,
@@ -769,31 +622,28 @@ async function fetchGoldPrices() {
           name: 'Vàng 1 chỉ (ước)',
         },
         vangNhan1Chi: null,
-        changePct: worldGoldChangePct,
-        source: 'Quy đổi từ giá TG',
+        changePct,
+        source: 'Quy đổi từ giá TG (CNBC)',
       };
+      console.log('   ✅ Fallback lấy giá vàng TG từ CNBC thành công');
     }
+  } catch (error) {
+    console.error('   ⚠️  Lỗi fallback lấy giá vàng:', error.message);
   }
 
   return result;
 }
 
-/**
- * Build Telegram message cho báo cáo 21h hàng ngày
- * TTCK quốc tế + Giá vàng
- */
 function buildDailyGlobalSummaryMessage(indices, goldData, now) {
   let msg = `🌍 <b>BÁO CÁO TTCK QUỐC TẾ & GIÁ VÀNG</b>\n`;
   msg += `🕐 <i>${now}</i>\n`;
   msg += `━━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
-  // ─── TTCK Quốc tế ───
   const validIndices = indices.filter(i => !i.error);
 
-  // Group by region
   const regions = [
     { label: '🇺🇸 <b>Mỹ</b>', filter: i => i.region.includes('Mỹ') },
-    { label: '🌏 <b>Châu Á</b>', filter: i => ['Nhật', 'Trung', 'Hồng', 'Hàn', 'Indo', 'Thái'].some(k => i.region.includes(k)) },
+    { label: '🌏 <b>Châu Á</b>', filter: i => ['Nhật', 'Trung', 'Hồng', 'Hàn', 'Singapore', 'Thái'].some(k => i.region.includes(k)) },
     { label: '🇪🇺 <b>Châu Âu</b>', filter: i => ['Châu Âu', 'Anh'].some(k => i.region.includes(k)) },
   ];
 
@@ -815,9 +665,8 @@ function buildDailyGlobalSummaryMessage(indices, goldData, now) {
     msg += `\n⚠️ <i>Dữ liệu chỉ số tạm thời không khả dụng.</i>\n`;
   }
 
-  // Tóm tắt nhanh
   const usIndices = validIndices.filter(i => i.region.includes('Mỹ'));
-  const asiaIndices = validIndices.filter(i => ['Nhật', 'Trung', 'Hồng', 'Hàn', 'Indo', 'Thái'].some(k => i.region.includes(k)));
+  const asiaIndices = validIndices.filter(i => ['Nhật', 'Trung', 'Hồng', 'Hàn', 'Singapore', 'Thái'].some(k => i.region.includes(k)));
 
   if (usIndices.length > 0) {
     const usAvg = usIndices.reduce((sum, i) => sum + i.changePct, 0) / usIndices.length;
@@ -831,22 +680,19 @@ function buildDailyGlobalSummaryMessage(indices, goldData, now) {
   }
   msg += `\n`;
 
-  // ─── Giá Vàng ───
   msg += `\n━━━━━━━━━━━━━━━━━━━━━━\n`;
   msg += `🥇 <b>GIÁ VÀNG</b>\n\n`;
 
-  // Vàng thế giới
   if (goldData && goldData.world) {
     const g = goldData.world;
     const gIcon = g.changePct > 0 ? '🟢' : g.changePct < 0 ? '🔴' : '🟡';
     const gSign = g.changePct >= 0 ? '+' : '';
     msg += `🌐 <b>Vàng Thế Giới:</b>\n`;
-    msg += `${gIcon} $${g.price.toLocaleString('en-US', {maximumFractionDigits: 2})}/oz (${gSign}${g.changePct}%)\n\n`;
+    msg += `${gIcon} ${g.price.toLocaleString('en-US', {maximumFractionDigits: 2})}/oz (${gSign}${g.changePct}%)\n\n`;
   } else {
     msg += `🌐 Vàng TG: <i>Không lấy được dữ liệu</i>\n\n`;
   }
 
-  // Vàng Việt Nam
   if (goldData && goldData.vietnam) {
     const vn = goldData.vietnam;
     const vnChangePct = vn.changePct || 0;
@@ -877,7 +723,6 @@ function buildDailyGlobalSummaryMessage(indices, goldData, now) {
     msg += `🇻🇳 Vàng VN: <i>Không lấy được dữ liệu</i>\n`;
   }
 
-  // Footer
   msg += `\n━━━━━━━━━━━━━━━━━━━━━━\n`;
   msg += `<i>📰 Cập nhật mỗi ngày lúc 21:00</i>\n`;
   msg += `<i>🤖 VN Stock Bot | TTCK Quốc tế & Vàng</i>`;

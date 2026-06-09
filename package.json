@@ -26,7 +26,6 @@
     "dotenv": "^16.4.5",
     "node-cron": "^3.0.3",
     "node-telegram-bot-api": "^0.66.0",
-    "openai": "^4.0.0",
-    "yahoo-finance2": "^3.14.0"
+    "openai": "^4.0.0"
   }
 }

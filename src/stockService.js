@@ -29,7 +29,7 @@ const HEADERS = {
 
 /**
  * Lấy dữ liệu realtime của nhiều mã cùng lúc từ VPS
- * @param {string[]} symbols - Danh sách mã (ví dụ: ['FPT', 'VNM'])
+ * @param {string[]} symbols - Danh sách mã (ví dụ: ['FPT', 'ACB'])
  * @returns {Object[]} Danh sách dữ liệu stock
  */
 async function fetchRealtimeData(symbols) {

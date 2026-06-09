@@ -17,7 +17,7 @@
  * ║     🔒 Anti-spam: 60s giãn cách giữa 2 lần gọi cùng key       ║
  * ║                                                               ║
  * ╠═══════════════════════════════════════════════════════════════╣
- * ║  Source: VPS (VPBank Securities) + Yahoo Finance              ║
+ * ║  Source: VPS (VPBank Securities) + CNBC API + Vang.Today      ║
  * ║  Stack:  Node.js + node-cron + Google Gemini (FREE)           ║
  * ╚═══════════════════════════════════════════════════════════════╝
  */
@@ -400,7 +400,7 @@ async function main() {
   console.log(`   🔑 Key 2 (AI 2+4): ${hasKey2 ? '✅ OK' : '❌ Thiếu'}`);
   console.log(`   🔒 Anti-spam: 15s giãn cách / key`);
   console.log(`   💾 Cache: Dùng data 16h00 cho báo cáo 20h30`);
-  console.log(`   💰 Chi phí: $0 (100% FREE Gemini Flash + Yahoo Finance)`);
+  console.log(`   💰 Chi phí: $0 (100% FREE Gemini Flash + CNBC API)`);
   console.log('');
 
   // Validate cron expressions
