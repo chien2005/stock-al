@@ -565,6 +565,7 @@ async function main() {
         serverTime: vnNow,
         startedAt: startedAt.toISOString(),
         stocks: config.stockSymbols.length,
+        stockSymbols: config.stockSymbols,
         interactive: config.enableInteractiveBot,
         jobs: {
           lastSuccess: Object.fromEntries(
