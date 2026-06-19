@@ -57,8 +57,9 @@ const config = {
       .map(s => s.trim().toUpperCase())
       .filter(s => s.length > 0);
     
-    // Always exclude VNM
-    symbols = symbols.filter(s => s !== 'VNM');
+    // Always exclude VNM and index symbols (which are fetched separately)
+    const excluded = ['VNM', 'VN30', 'VN30INDEX', 'VNINDEX'];
+    symbols = symbols.filter(s => !excluded.includes(s));
     
     // Always guarantee TCB and ACB are included
     if (!symbols.includes('TCB')) symbols.push('TCB');
