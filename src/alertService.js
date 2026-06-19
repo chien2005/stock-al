@@ -34,6 +34,10 @@ const THRESHOLDS = {
   volumeVsSMA20: 1.5,        // KL ngày vượt 150% SMA20 → alert
   priceChangePct: 3.0,       // Giá biến động > 3%
   nearCeilingFloor: 0.5,     // Gần trần/sàn < 0.5%
+  
+  // Cảnh báo giao dịch cho tất cả (tay to, quỹ, nhà nước...)
+  totalVolume3MinPct: 0.08,  // Tổng KL khớp 3 phút > 8% KLTB20 → bất thường
+  totalVolume3MinMin: 50000, // Hoặc ít nhất 50K CP
 };
 
 // ─── STATE ──────────────────────────────────────────────────
@@ -263,6 +267,39 @@ async function pollAndCheck(isFirstPoll) {
           alerts.push({ symbol, icon: '🔵⬇️', title: 'CHẠM SÀN',
             detail: `Giá: <b>${fmtPrice(price)}</b> | Sàn: ${fmtPrice(floorPrice)} (${changePct}%)`,
             price, changePct, volume, priority: 'HIGH' });
+          _alertedToday[key] = now;
+        }
+      }
+
+      // ═══ CHECK 7: Tổng KL khớp thay đổi đột biến (3 phút) - Tay to/Quỹ/Tổ chức ═══
+      const volDelta = volume - prev.volume;
+      const dynamicVolThreshold = avgVol > 0 ? Math.max(Math.round(avgVol * THRESHOLDS.totalVolume3MinPct), THRESHOLDS.totalVolume3MinMin) : 100000;
+      
+      if (volDelta >= dynamicVolThreshold) {
+        const key = `${symbol}_total_vol_spike`;
+        if (!isCooldown(key, now)) {
+          const pctOfAvg = avgVol > 0 ? (volDelta / avgVol * 100).toFixed(1) : '---';
+          let detail = `Khớp lệnh 3ph: <b>+${fmtVol(volDelta)}</b> CP\n`;
+          if (avgVol > 0) {
+            detail += `   📊 Tương đương: <b>${pctOfAvg}%</b> KLTB20 (${fmtVol(avgVol)})\n`;
+          }
+          // Thêm thông tin khối ngoại nếu có đóng góp
+          if (Math.abs(fnDelta) > 0) {
+            const fnPct = Math.min(Math.round((Math.abs(fnDelta) / volDelta) * 100), 100);
+            detail += `   🛸 Khối ngoại ròng: ${fnDelta >= 0 ? '+' : ''}${fmtVol(fnDelta)} CP (~${fnPct}% lượng khớp 3ph)\n`;
+          }
+          detail += `   <i>Tín hiệu dòng tiền lớn từ Tay to, Các quỹ hoặc Tổ chức trong nước.</i>`;
+
+          alerts.push({
+            symbol,
+            icon: '🐋🔥',
+            title: 'TAY TO / QUỸ GIAO DỊCH ĐỘT BIẾN',
+            detail,
+            price,
+            changePct,
+            volume,
+            priority: volDelta >= dynamicVolThreshold * 2 ? 'HIGH' : 'MEDIUM',
+          });
           _alertedToday[key] = now;
         }
       }

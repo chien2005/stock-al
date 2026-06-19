@@ -51,10 +51,21 @@ const config = {
   },
 
   // Stock symbols
-  stockSymbols: (process.env.STOCK_SYMBOLS || 'VCB,FPT,VIC,HPG,MWG,MSN,VHM,TCB,ACB,VPB,MBB')
-    .split(',')
-    .map(s => s.trim().toUpperCase())
-    .filter(s => s.length > 0),
+  stockSymbols: (() => {
+    let symbols = (process.env.STOCK_SYMBOLS || 'VCB,FPT,VIC,HPG,MWG,MSN,VHM,TCB,ACB,VPB,MBB')
+      .split(',')
+      .map(s => s.trim().toUpperCase())
+      .filter(s => s.length > 0);
+    
+    // Always exclude VNM
+    symbols = symbols.filter(s => s !== 'VNM');
+    
+    // Always guarantee TCB and ACB are included
+    if (!symbols.includes('TCB')) symbols.push('TCB');
+    if (!symbols.includes('ACB')) symbols.push('ACB');
+    
+    return symbols;
+  })(),
 
   // Cron: báo giá (thứ 2-6, 10h/13h/16h)
   cronSchedule: process.env.CRON_SCHEDULE || '0 10,13,16 * * 1-5',

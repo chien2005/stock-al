@@ -455,6 +455,8 @@ async function main() {
   });
 
   // ─── SCHEDULE JOB 1.5: AI CUỐI PHIÊN (T2-T6, 16h05) ────
+  // DISABLED: Bỏ AI cuối phiên 16h05 theo yêu cầu của user (chỉ nhận báo giá 16h, báo cáo AI 20h30 vẫn hoạt động bình thường)
+  /*
   cron.schedule(config.cronAfterCloseSchedule, () => {
     const now = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
     console.log(`\n🧠 [AI Cuối phiên] Cron triggered: ${now}`);
@@ -463,6 +465,7 @@ async function main() {
     scheduled: true,
     timezone: config.timezone,
   });
+  */
 
   // ─── SCHEDULE JOB 2: AI REPORT (T2-T6, 20h30) ─────────
   cron.schedule(config.cronAiSchedule, () => {
@@ -508,6 +511,8 @@ async function main() {
   }, { scheduled: true, timezone: config.timezone });
 
   // ─── HEARTBEAT: Gửi "đang sống" mỗi ngày 9:00 T2-T6 ───────
+  // DISABLED: Bỏ tin nhắn heartbeat hàng ngày theo yêu cầu của user
+  /*
   cron.schedule('0 9 * * 1-5', async () => {
     try {
       const now = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
@@ -533,20 +538,14 @@ async function main() {
 
       await sendTelegramMessage(
         `💓 <b>HEARTBEAT - Bot đang hoạt động</b>\n` +
-        `🕐 ${now}\n` +
-        `⏱ Uptime: ${uptimeStr}\n` +
-        `📊 ${config.stockSymbols.length} mã theo dõi\n` +
-        `━━━━━━━━━━━━━━━━━━━━━━\n` +
-        `📋 <b>Trạng thái Jobs:</b>\n` +
-        `${jobStatus}` +
-        `━━━━━━━━━━━━━━━━━━━━━━\n` +
-        `<i>🤖 VN Stock Bot v${config.version}</i>`
+        `...`
       );
       console.log('💓 Heartbeat sent');
     } catch (e) {
       console.error('💓 Heartbeat error:', e.message);
     }
   }, { scheduled: true, timezone: config.timezone });
+  */
 
   // ─── HTTP HEALTH SERVER (Render.com keep-alive) ────────
   const PORT = process.env.PORT || 3000;
