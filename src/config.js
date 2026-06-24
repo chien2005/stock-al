@@ -40,14 +40,14 @@ const config = {
     apiKey: process.env.OPENROUTER_API_KEY || '',
     baseURL: 'https://openrouter.ai/api/v1',
 
-    // AI 2: Chuyên gia phân tích - dùng model lớn, reasoning tốt
-    modelAI2: process.env.OPENROUTER_MODEL_AI2 || 'google/gemma-4-31b:free',
+    // AI 2: Chuyên gia phân tích - Google Gemma 4 31B (FREE, kiểm tra OK)
+    modelAI2: process.env.OPENROUTER_MODEL_AI2 || 'google/gemma-4-31b-it:free',
 
-    // AI 3: Flash expert - dùng model nhanh, ngắn gọn
-    modelAI3: process.env.OPENROUTER_MODEL_AI3 || 'nvidia/nemotron-3-super:free',
+    // AI 3: Flash expert - LLaMA 3.3 70B (FREE, kiểm tra OK)
+    modelAI3: process.env.OPENROUTER_MODEL_AI3 || 'meta-llama/llama-3.3-70b-instruct:free',
 
-    // AI 4: Phản biện - dùng model khác hoàn toàn để đa dạng góc nhìn
-    modelAI4: process.env.OPENROUTER_MODEL_AI4 || 'openrouter/free',
+    // AI 4: Phản biện - GPT-OSS 120B (FREE, kiểm tra OK)
+    modelAI4: process.env.OPENROUTER_MODEL_AI4 || 'openai/gpt-oss-120b:free',
   },
 
   // Stock symbols
