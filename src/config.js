@@ -6,6 +6,18 @@
 
 require('dotenv').config();
 
+function cleanApiKey(key) {
+  if (!key || typeof key !== 'string' || key.trim() === '' || key.includes('PASTE_')) {
+    return null;
+  }
+  return key.trim();
+}
+
+const geminiKey1 = cleanApiKey(process.env.GEMINI_API_KEY_AI1) || '';
+const geminiKey2 = cleanApiKey(process.env.GEMINI_API_KEY_AI2) || geminiKey1;
+const geminiKey3 = cleanApiKey(process.env.GEMINI_API_KEY_AI3) || geminiKey1;
+const geminiKey4 = cleanApiKey(process.env.GEMINI_API_KEY_AI4) || geminiKey2 || geminiKey1;
+
 const config = {
   // Telegram - Multi-Bot (mỗi AI 1 bot riêng)
   telegram: {
@@ -17,17 +29,17 @@ const config = {
   },
 
   // Google Gemini Keys - ALL FREE (fallback khi OpenRouter lỗi)
-  geminiAI1: { apiKey: process.env.GEMINI_API_KEY_AI1 || '' },
+  geminiAI1: { apiKey: geminiKey1 },
   geminiAI2: {
-    apiKey: process.env.GEMINI_API_KEY_AI2 || process.env.GEMINI_API_KEY_AI1 || '',
+    apiKey: geminiKey2,
     model: 'gemini-2.5-flash',
   },
   geminiAI3: { 
-    apiKey: process.env.GEMINI_API_KEY_AI3 || '',
+    apiKey: geminiKey3,
     model: 'gemini-2.5-flash',
   },
   geminiAI4: {
-    apiKey: process.env.GEMINI_API_KEY_AI4 || process.env.GEMINI_API_KEY_AI2 || process.env.GEMINI_API_KEY_AI1 || '',
+    apiKey: geminiKey4,
     model: 'gemini-2.5-flash',
   },
 
