@@ -373,12 +373,11 @@ function buildQuickSummary(stocks, now, vn30Index, liquidity = null) {
   // Tổng KLGD & NN ròng
   const totalVol = valid.reduce((sum, s) => sum + (s.volume || 0), 0);
   const totalFN = valid.reduce((sum, s) => sum + (s.foreignNet || 0), 0);
-  const totalBuyVal = valid.reduce((sum, s) => sum + (s.foreignBuyValue || (s.foreignBuy || 0) * (s.price || 0)), 0);
-  const totalSellVal = valid.reduce((sum, s) => sum + (s.foreignSellValue || (s.foreignSell || 0) * (s.price || 0)), 0);
   msg += `📦 Tổng KLGD: <b>${formatVolume(totalVol)}</b>\n`;
   msg += `${totalFN >= 0 ? '💚' : '💔'} NN ròng tổng: <b>${totalFN >= 0 ? '+' : ''}${formatVolume(totalFN)}</b>\n`;
-  const totalStronger = totalBuyVal > totalSellVal ? '🟢 MUA mạnh hơn' : totalBuyVal < totalSellVal ? '🔴 BÁN mạnh hơn' : '🟡 Cân bằng';
-  msg += `💵 GT Mua: <b>${formatBigValueAI(totalBuyVal)}</b> | Bán: <b>${formatBigValueAI(totalSellVal)}</b> → ${totalStronger}\n\n`;
+  const totalTradeVal = valid.reduce((sum, s) => sum + ((s.volume || 0) * (s.price || 0)), 0);
+  msg += `💵 Tổng GT GD: <b>${formatBigValueAI(totalTradeVal)}</b>\n\n`;
+
 
   for (const s of valid) {
     const sign = s.changePct >= 0 ? '+' : '';
@@ -403,13 +402,12 @@ function buildQuickSummary(stocks, now, vn30Index, liquidity = null) {
     if (s.foreignBuy > 0 || s.foreignSell > 0) {
       const fIcon = s.foreignNet > 0 ? '💚' : s.foreignNet < 0 ? '💔' : '💛';
       msg += `   ${fIcon} NN ròng: ${s.foreignNet >= 0 ? '+' : ''}${formatVolume(s.foreignNet)}\n`;
-      // Giá trị mua/bán
-      const buyVal = s.foreignBuyValue || (s.foreignBuy * s.price) || 0;
-      const sellVal = s.foreignSellValue || (s.foreignSell * s.price) || 0;
-      if (buyVal > 0 || sellVal > 0) {
-        const stronger = buyVal > sellVal ? '🟢 MUA mạnh' : buyVal < sellVal ? '🔴 BÁN mạnh' : '🟡 Cân bằng';
-        msg += `   💵 M ${formatBigValueAI(buyVal)} | B ${formatBigValueAI(sellVal)} → ${stronger}\n`;
-      }
+    }
+
+    // Tổng giá trị giao dịch
+    const totalTradeValStock = (s.volume || 0) * (s.price || 0);
+    if (totalTradeValStock > 0) {
+      msg += `   💵 Tổng GT GD: ${formatBigValueAI(totalTradeValStock)}\n`;
     }
 
     // SMA20
@@ -857,8 +855,6 @@ function buildDetailedRuleBasedReport(stocks, now) {
         signals.push(`🔥 KL đột biến ${volRatio.toFixed(1)}x TB → ${s.changePct > 0 ? 'dòng tiền vào mạnh' : 'tín hiệu xả hàng'}`);
       } else if (volRatio > 1.5) {
         signals.push(`📊 KL cao hơn TB (${volRatio.toFixed(1)}x)`);
-      } else if (volRatio < 0.5) {
-        signals.push('⚠️ KL thấp bất thường - thanh khoản kém');
       }
     }
 

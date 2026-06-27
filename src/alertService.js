@@ -38,6 +38,10 @@ const THRESHOLDS = {
   // Cảnh báo giao dịch cho tất cả (tay to, quỹ, nhà nước...)
   totalVolume3MinPct: 0.08,  // Tổng KL khớp 3 phút > 8% KLTB20 → bất thường
   totalVolume3MinMin: 50000, // Hoặc ít nhất 50K CP
+
+  // Ngưỡng giá trị tối thiểu (VND) để alert - tránh spam giao dịch lẻ tẻ
+  alertMinValue: 5e9,        // Alert NN/KL chỉ khi giá trị >= 5 tỷ VND
+  bigTradeMinValue: 10e9,    // Giao dịch lớn (bất kỳ NĐT nào) >= 10 tỷ VND
 };
 
 // ─── STATE ──────────────────────────────────────────────────
@@ -167,12 +171,13 @@ async function pollAndCheck(isFirstPoll) {
 
       // ═══ CHECK 1: NN mua/bán ròng THAY ĐỔI đột biến (3 phút) ═══
       const fnDelta = foreignNet - prev.foreignNet;
-      if (Math.abs(fnDelta) >= THRESHOLDS.foreignNetChange) {
+      const fnDeltaValue = Math.abs(fnDelta) * price; // Giá trị VND
+      if (Math.abs(fnDelta) >= THRESHOLDS.foreignNetChange && fnDeltaValue >= THRESHOLDS.alertMinValue) {
         const key = `${symbol}_fn_${fnDelta > 0 ? 'b' : 's'}`;
         if (!isCooldown(key, now)) {
           const act = fnDelta > 0 ? 'MUA RÒNG' : 'BÁN RÒNG';
           const ico = fnDelta > 0 ? '💚🔥' : '💔🔥';
-          let detail = `Thay đổi 3ph: <b>${fnDelta > 0 ? '+' : ''}${fmtVol(fnDelta)}</b> CP\n`;
+          let detail = `Thay đổi 3ph: <b>${fnDelta > 0 ? '+' : ''}${fmtVol(fnDelta)}</b> CP (~${fmtValue(fnDeltaValue)})\n`;
           detail += `   NN Mua: ${fmtVol(foreignBuy)} | Bán: ${fmtVol(foreignSell)} | Ròng: ${foreignNet >= 0 ? '+' : ''}${fmtVol(foreignNet)}`;
 
           // So sánh lệnh gom với KLTB20
@@ -191,7 +196,8 @@ async function pollAndCheck(isFirstPoll) {
       }
 
       // ═══ CHECK 2: NN ròng TỔNG trong ngày lớn ═══
-      if (Math.abs(foreignNet) >= THRESHOLDS.foreignNetTotal) {
+      const foreignNetValue = Math.abs(foreignNet) * price;
+      if (Math.abs(foreignNet) >= THRESHOLDS.foreignNetTotal && foreignNetValue >= THRESHOLDS.alertMinValue) {
         const key = `${symbol}_fnt_${foreignNet > 0 ? 'b' : 's'}`;
         if (!isCooldown(key, now)) {
           const act = foreignNet > 0 ? 'GOM HÀNG LỚN' : 'XẢ HÀNG LỚN';
@@ -274,12 +280,13 @@ async function pollAndCheck(isFirstPoll) {
       // ═══ CHECK 7: Tổng KL khớp thay đổi đột biến (3 phút) - Tay to/Quỹ/Tổ chức ═══
       const volDelta = volume - prev.volume;
       const dynamicVolThreshold = avgVol > 0 ? Math.max(Math.round(avgVol * THRESHOLDS.totalVolume3MinPct), THRESHOLDS.totalVolume3MinMin) : 100000;
+      const volDeltaValue = volDelta * price; // Giá trị VND của KL thay đổi
       
-      if (volDelta >= dynamicVolThreshold) {
+      if (volDelta >= dynamicVolThreshold && volDeltaValue >= THRESHOLDS.alertMinValue) {
         const key = `${symbol}_total_vol_spike`;
         if (!isCooldown(key, now)) {
           const pctOfAvg = avgVol > 0 ? (volDelta / avgVol * 100).toFixed(1) : '---';
-          let detail = `Khớp lệnh 3ph: <b>+${fmtVol(volDelta)}</b> CP\n`;
+          let detail = `Khớp lệnh 3ph: <b>+${fmtVol(volDelta)}</b> CP (~${fmtValue(volDeltaValue)})\n`;
           if (avgVol > 0) {
             detail += `   📊 Tương đương: <b>${pctOfAvg}%</b> KLTB20 (${fmtVol(avgVol)})\n`;
           }
@@ -299,6 +306,44 @@ async function pollAndCheck(isFirstPoll) {
             changePct,
             volume,
             priority: volDelta >= dynamicVolThreshold * 2 ? 'HIGH' : 'MEDIUM',
+          });
+          _alertedToday[key] = now;
+        }
+      }
+
+      // ═══ CHECK 8: Giao dịch lớn >= 10 tỷ VND (bất kỳ NĐT nào) ═══
+      // Detect khi KL khớp 3 phút * giá >= 10 tỷ → bất kỳ ai (NN, nội, tổ chức, cá nhân)
+      if (volDelta > 0 && volDeltaValue >= THRESHOLDS.bigTradeMinValue) {
+        const key = `${symbol}_big_trade`;
+        if (!isCooldown(key, now)) {
+          const valStr = fmtValue(volDeltaValue);
+          let detail = `Giao dịch lớn 3ph: <b>+${fmtVol(volDelta)}</b> CP\n`;
+          detail += `   💰 Giá trị: <b>${valStr}</b>\n`;
+          if (avgVol > 0) {
+            const pctOfAvg = (volDelta / avgVol * 100).toFixed(1);
+            detail += `   📊 Tương đương: <b>${pctOfAvg}%</b> KLTB20 (${fmtVol(avgVol)})\n`;
+          }
+          // Phân tách: NN chiếm bao nhiêu?
+          if (Math.abs(fnDelta) > 0) {
+            const fnPct = Math.min(Math.round((Math.abs(fnDelta) / volDelta) * 100), 100);
+            const nnValStr = fmtValue(Math.abs(fnDelta) * price);
+            detail += `   🛸 Trong đó NN: ${fnDelta >= 0 ? '+' : ''}${fmtVol(fnDelta)} CP (~${nnValStr}, ${fnPct}%)\n`;
+            const domesticPct = 100 - fnPct;
+            detail += `   🏠 Nội địa (tổ chức/cá nhân): ~${domesticPct}% lượng khớp\n`;
+          } else {
+            detail += `   🏠 100% giao dịch nội địa (tổ chức/cá nhân lớn)\n`;
+          }
+          detail += `   <i>⚡ Giao dịch giá trị rất lớn — có thể từ quỹ, tổ chức hoặc cá nhân lớn.</i>`;
+
+          alerts.push({
+            symbol,
+            icon: '💎🐋',
+            title: `GIAO DỊCH LỚN ${valStr}`,
+            detail,
+            price,
+            changePct,
+            volume,
+            priority: volDeltaValue >= THRESHOLDS.bigTradeMinValue * 2 ? 'HIGH' : 'MEDIUM',
           });
           _alertedToday[key] = now;
         }

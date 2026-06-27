@@ -80,11 +80,14 @@ const config = {
     return symbols;
   })(),
 
-  // Cron: báo giá (thứ 2-6, 10h/13h/16h)
-  cronSchedule: process.env.CRON_SCHEDULE || '0 10,13,16 * * 1-5',
+  // Cron: báo giá (thứ 2-6, 10h/13h)
+  cronSchedule: process.env.CRON_SCHEDULE || '0 10,13 * * 1-5',
 
   // Cron: AI phân tích cuối phiên (thứ 2-6, 16h05 - ngay sau báo giá 16h)
   cronAfterCloseSchedule: process.env.CRON_AFTER_CLOSE_SCHEDULE || '5 16 * * 1-5',
+
+  // Cron: báo giá kết phiên (thứ 2-6, 15h01 - ngay sau khi đóng cửa)
+  cronCloseSchedule: process.env.CRON_CLOSE_SCHEDULE || '1 15 * * 1-5',
 
   // Cron: AI phân tích đa chuyên gia (thứ 2-6, 20h30)
   cronAiSchedule: process.env.CRON_AI_SCHEDULE || '30 20 * * 1-5',

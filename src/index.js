@@ -4,7 +4,7 @@
  * ║     🇻🇳  VN STOCK BOT v2.0.0  📊                            ║
  * ║     Multi-AI Team + Global Market System                      ║
  * ║                                                               ║
- * ║     📊 Báo giá: 10:00 | 13:00 | 16:00  (T2-T6)              ║
+ * ║     📊 Báo giá: 10:00 | 13:00 | 15:01  (T2-T6)              ║
  * ║     🤖 AI Report: 20:30                (T2-T6)              ║
  * ║     🌍 TTCK Quốc tế + Vàng: 21:00    (Mỗi ngày)           ║
  * ║     📅 Weekly: 8:30                    (Thứ 2)              ║
@@ -35,7 +35,7 @@ const { startAlertMonitor, stopAlertMonitor, resetDailyData } = require('./alert
 // ─── Thời điểm khởi động (cho health check) ─────────────
 const startedAt = new Date();
 
-// ─── DATA CACHE: Lưu data cuối phiên (16h) cho report 20h30 ──
+// ─── DATA CACHE: Lưu data cuối phiên (15h01) cho report 20h30 ──
 let lastStockData = null;
 let lastStockDataTime = 0;
 let lastMarketScan = null;
@@ -362,7 +362,7 @@ async function main() {
   ║   🇻🇳  VN STOCK BOT v${config.version}  📊                       ║
   ║   Multi-AI Team + Global Market (ALL FREE)                ║
   ║                                                           ║
-  ║   📊 Báo giá:  10:00 | 13:00 | 16:00  (T2-T6)           ║
+  ║   📊 Báo giá:  10:00 | 13:00 | 15:01  (T2-T6)           ║
   ║   🤖 AI Report: 20:30                 (T2-T6)           ║
   ║   🌍 TTCK+Vàng: 21:00                 (Mỗi ngày)        ║
   ║   📅 Weekly:    8:30                  (Thứ 2)           ║
@@ -399,13 +399,14 @@ async function main() {
   console.log(`   🔑 Key 1 (AI 1+3): ${hasKey1 ? '✅ OK' : '❌ Thiếu'}`);
   console.log(`   🔑 Key 2 (AI 2+4): ${hasKey2 ? '✅ OK' : '❌ Thiếu'}`);
   console.log(`   🔒 Anti-spam: 15s giãn cách / key`);
-  console.log(`   💾 Cache: Dùng data 16h00 cho báo cáo 20h30`);
+  console.log(`   💾 Cache: Dùng data 15h01 cho báo cáo 20h30`);
   console.log(`   💰 Chi phí: $0 (100% FREE Gemini Flash + CNBC API)`);
   console.log('');
 
   // Validate cron expressions
   const cronChecks = [
     { name: 'Báo giá', expr: config.cronSchedule },
+    { name: 'Báo giá kết phiên', expr: config.cronCloseSchedule },
     { name: 'AI Cuối phiên', expr: config.cronAfterCloseSchedule },
     { name: 'AI Report', expr: config.cronAiSchedule },
     { name: 'TTCK+Vàng', expr: config.cronGlobalSchedule },
@@ -444,7 +445,7 @@ async function main() {
     console.error('⚠️ Không gửi được thông báo khởi động:', e.message);
   }
 
-  // ─── SCHEDULE JOB 1: BÁO GIÁ (T2-T6, 10h/13h/16h) ────
+  // ─── SCHEDULE JOB 1: BÁO GIÁ (T2-T6, 10h/13h) ────
   cron.schedule(config.cronSchedule, () => {
     const now = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
     console.log(`\n⏰ [Báo giá] Cron triggered: ${now}`);
@@ -454,8 +455,18 @@ async function main() {
     timezone: config.timezone,
   });
 
+  // ─── SCHEDULE JOB 1b: BÁO GIÁ KẾT PHIÊN (T2-T6, 15h01) ────
+  cron.schedule(config.cronCloseSchedule, () => {
+    const now = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
+    console.log(`\n⏰ [Báo giá kết phiên] Cron triggered: ${now}`);
+    runStockJob();
+  }, {
+    scheduled: true,
+    timezone: config.timezone,
+  });
+
   // ─── SCHEDULE JOB 1.5: AI CUỐI PHIÊN (T2-T6, 16h05) ────
-  // DISABLED: Bỏ AI cuối phiên 16h05 theo yêu cầu của user (chỉ nhận báo giá 16h, báo cáo AI 20h30 vẫn hoạt động bình thường)
+  // DISABLED: Bỏ AI cuối phiên 16h05 theo yêu cầu của user (chỉ nhận báo giá 15h01, báo cáo AI 20h30 vẫn hoạt động bình thường)
   /*
   cron.schedule(config.cronAfterCloseSchedule, () => {
     const now = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
@@ -648,6 +659,7 @@ async function main() {
   console.log(`🟢 VN Stock Bot v${config.version} đang chạy!`);
   console.log('');
   console.log('   📊 Báo giá:     ' + config.cronSchedule + ` (${config.timezone})`);
+  console.log('   📊 Kết phiên:   ' + config.cronCloseSchedule + ` (${config.timezone})`);
   console.log('   🧠 AI Cuối phiên:' + config.cronAfterCloseSchedule + ` (${config.timezone})`);
   console.log('   🤖 AI Report:   ' + config.cronAiSchedule + ` (${config.timezone})`);
   console.log('   🌍 TTCK+Vàng:   ' + config.cronGlobalSchedule + ` (${config.timezone}) [MỖI NGÀY]`);

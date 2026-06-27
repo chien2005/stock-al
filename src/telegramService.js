@@ -120,12 +120,10 @@ function formatStockMessage(stocks, liquidity = null) {
       msg += ` | B ${fmtVol(stock.foreignSell)}`;
       msg += ` | Ròng: ${fSign}${fmtVol(stock.foreignNet)}\n`;
 
-      // Giá trị Mua/Bán (tỷ VND)
-      const buyVal = (stock.foreignBuyValue || stock.foreignBuy * stock.price) || 0;
-      const sellVal = (stock.foreignSellValue || stock.foreignSell * stock.price) || 0;
-      if (buyVal > 0 || sellVal > 0) {
-        const stronger = buyVal > sellVal ? '🟢 MUA mạnh hơn' : buyVal < sellVal ? '🔴 BÁN mạnh hơn' : '🟡 Cân bằng';
-        msg += `💵 GT: M ${fmtBigValue(buyVal)} | B ${fmtBigValue(sellVal)} → ${stronger}\n`;
+      // Giá trị tổng giao dịch (tỷ VND)
+      const totalTradeVal = (stock.volume || 0) * (stock.price || 0);
+      if (totalTradeVal > 0) {
+        msg += `💵 Tổng GT GD: ${fmtBigValue(totalTradeVal)}\n`;
       }
     }
 
