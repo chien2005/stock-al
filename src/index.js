@@ -31,6 +31,7 @@ const { initAIEngines, runScheduledAnalysis, runDailyGlobalSummaryReport } = req
 const { runWeeklyAnalysis } = require('./weeklyAnalysis');
 const { startBotHandler, stopBotHandler } = require('./botHandler');
 const { startAlertMonitor, stopAlertMonitor, resetDailyData } = require('./alertService');
+const { runSmartMoneyReport } = require('./smartMoneyReport');
 
 // ─── Thời điểm khởi động (cho health check) ─────────────
 const startedAt = new Date();
@@ -272,8 +273,25 @@ async function runAiJob() {
       vn30Index = await fetchVN30Index();
     }
 
-    // runScheduledAnalysis với market scan data và liquidity
-    await runScheduledAnalysis(stocks, { marketScan, vn30Index, liquidity });
+    // 🧠 Smart Money Report — chạy TRƯỚC AI để AI có thêm context
+    let smartMoneyData = null;
+    try {
+      console.log('\n🧠 Chạy Smart Money Report...');
+      smartMoneyData = await runSmartMoneyReport();
+      if (smartMoneyData && smartMoneyData.message) {
+        // Gửi báo cáo Smart Money riêng trước báo cáo AI
+        const { sendTelegramMessage } = require('./telegramService');
+        await sendTelegramMessage(smartMoneyData.message);
+        console.log('   ✅ Đã gửi Smart Money Report');
+      } else {
+        console.log('   ℹ️ Không phát hiện pattern Smart Money hôm nay');
+      }
+    } catch (smError) {
+      console.error('   ⚠️ Lỗi Smart Money Report:', smError.message);
+    }
+
+    // runScheduledAnalysis với market scan data, liquidity và smart money patterns
+    await runScheduledAnalysis(stocks, { marketScan, vn30Index, liquidity, smartMoneyPatterns: smartMoneyData?.patterns });
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
     jobLastSuccess['aiJob'] = Date.now();
     console.log(`\n✅ BÁO CÁO CUỐI NGÀY HOÀN THÀNH! (${elapsed}s)`);

@@ -19,6 +19,7 @@ const OpenAI = require('openai');
 const axios = require('axios');
 const { config } = require('./config');
 const { calculateAllIndicators, calcShortTermScore, calcMidTermScore, formatIndicatorsForAI, getScoreEmoji } = require('./predictiveEngine');
+const { formatPatternsForAI } = require('./smartMoneyReport');
 
 // ─── AI ENGINE INSTANCES ───────────────────────────────────
 
@@ -142,7 +143,7 @@ function splitMessage(msg, maxLen) {
 // Dữ liệu lấy từ cache 16h00 (giá cuối phiên chính xác)
 
 async function runScheduledAnalysis(stocks, extraData = {}) {
-  const { marketScan, vn30Index, liquidity } = extraData;
+  const { marketScan, vn30Index, liquidity, smartMoneyPatterns } = extraData;
   const stockData = formatStockDataForAI(stocks);
   const now = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
   const chatId = config.telegram.chatId;
@@ -162,7 +163,7 @@ async function runScheduledAnalysis(stocks, extraData = {}) {
       await waitForAntiSpam('gemini_key2'); // AI 4 dùng Key 2
       console.log('   ⚔️ AI 4 (Gemini Flash) đang phân tích cuối ngày...');
 
-      const prompt = buildEndOfDayPrompt(stockData, stocks, { marketScan, vn30Index, liquidity });
+      const prompt = buildEndOfDayPrompt(stockData, stocks, { marketScan, vn30Index, liquidity, smartMoneyPatterns });
 
       const result = await geminiAI4.generateContent(prompt);
       const text = result.response.text();
@@ -202,7 +203,7 @@ async function runScheduledAnalysis(stocks, extraData = {}) {
  * Bao gồm cả data từ market scan (dòng tiền toàn thị trường)
  */
 function buildEndOfDayPrompt(stockData, stocks, extraData = {}) {
-  const { marketScan, vn30Index, liquidity } = extraData;
+  const { marketScan, vn30Index, liquidity, smartMoneyPatterns } = extraData;
 
   // Tính toán thêm context cho AI
   const validStocks = stocks.filter(s => !s.error);
@@ -284,6 +285,7 @@ ${volSpikes.length > 0 ? `- KL đột biến: ${volSpikes.map(s => `${s.symbol}(
 ${foreignBuyers.length > 0 ? `- NN mua ròng mạnh: ${foreignBuyers.map(s => `${s.symbol}(+${formatVolume(s.foreignNet)})`).join(', ')}` : ''}
 ${foreignSellers.length > 0 ? `- NN bán ròng mạnh: ${foreignSellers.map(s => `${s.symbol}(${formatVolume(s.foreignNet)})`).join(', ')}` : ''}
 ${marketScanContext}
+${smartMoneyPatterns ? formatPatternsForAI(smartMoneyPatterns) : ''}
 
 YÊU CẦU PHÂN TÍCH CHUYÊN SÂU (viết dạng bài phân tích, KHÔNG gán nhãn đơn giản):
 
@@ -333,6 +335,14 @@ YÊU CẦU PHÂN TÍCH CHUYÊN SÂU (viết dạng bài phân tích, KHÔNG gán
    - NÊN BÁN/CHỐT LỜI mã nào?
    - NÊN THEO DÕI thêm mã nào?
    - Nhà đầu tư mới nên làm gì? Nên vào thị trường không?
+
+9. 🧠 **SMART MONEY PATTERNS** (~200 chữ):
+   - Dựa trên dữ liệu Smart Money Patterns ở trên (nếu có), phân tích:
+   - Mã nào đang CẠN CUNG (thanh khoản kiệt quệ)? Khi nào nên vào?
+   - Mã nào có dấu hiệu ĐÁY? Có nên bắt đáy không?
+   - Mã nào QUAY ĐẦU THẤT BẠI? Cảnh báo T+ trap?
+   - Mã nào đang bị XẢ HÀNG CÓ TỔ CHỨC? Tránh mua?
+   - Mã nào đang được TÍCH LŨY ÂM THẦM? Cơ hội mua trước khi bùng nổ?
 
 FORMAT: Tiếng Việt, emoji, phân tích chi tiết (~1200 chữ). Dùng ** để bold điểm quan trọng. Không code block. Không gán nhãn đơn giản kiểu [CHỐT LỜI?].
 Viết như một chuyên gia tài chính đang tư vấn cho khách hàng VIP, nhưng luôn nhắc "Đây là phân tích tham khảo, không phải lời khuyên đầu tư."`;
