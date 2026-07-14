@@ -60,6 +60,9 @@ const THRESHOLDS = {
   maxAlertsPerSymbol: 3,     // Tối đa 3 noti/mã/ngày (trừ HIGH priority)
 };
 
+// ─── BATCHED BIG TRADE: Ngưỡng cứng 5 tỷ VND ───────────────
+const BIG_TRADE_BATCH_MIN = 5e9;  // Gom lệnh >= 5 tỷ, gửi tổng hợp theo khung giờ
+
 // ─── STATE ──────────────────────────────────────────────────
 let _pollInterval = null;
 let _previousData = {};       // { symbol: { foreignNet, volume, ... } }
@@ -72,6 +75,10 @@ let _alertCountToday = {};    // { symbol: count } - số alert trong ngày mỗ
 // ─── SMART MONEY STATE (v2.0) ────────────────────────────────
 let _washTradingFlags = {};   // { symbol: { flipCount, lastSign } } - đếm đổi chiều
 let _streakData = {};         // { symbol: { direction, count, totalDelta } } - streak tracking
+
+// ─── BATCHED BIG TRADE BUFFER ────────────────────────────────
+// Gom các giao dịch lớn >= 5 tỷ, gửi tổng hợp theo khung giờ (11h, 13h30, 14h, 14h30)
+let _bigTradeBuffer = [];     // [ { symbol, time, volDelta, fnDelta, value, price, changePct } ]
 
 const ALERT_COOLDOWN = 30 * 60 * 1000; // 30 phút giữa 2 alert cùng loại/mã (tăng từ 15)
 
@@ -112,6 +119,7 @@ function resetDailyData() {
   _alertCountToday = {};
   _washTradingFlags = {};
   _streakData = {};
+  _bigTradeBuffer = [];
   // Reload avg volumes mỗi ngày mới
   loadAvgVolumes();
   console.log('🚨 Alert v2.0: Reset data đầu ngày');
@@ -457,65 +465,25 @@ async function pollAndCheck(isFirstPoll) {
         }
       }
 
-      // ═══ CHECK 7: Tổng KL khớp thay đổi đột biến (3 phút) ═══
+      // ═══ CHECK 7+8: Giao dịch lớn → GOM VÀO BUFFER (gửi tổng hợp theo khung giờ) ═══
+      // Thay vì gửi alert real-time, push vào _bigTradeBuffer
+      // Flush theo schedule: 11h, 13h30, 14h, 14h30
       const volDelta = volume - prev.volume;
-      const dynamicVolThreshold = avgVol > 0 ? Math.max(Math.round(avgVol * THRESHOLDS.totalVolume3MinPct), THRESHOLDS.totalVolume3MinMin) : 100000;
       const volDeltaValue = volDelta * price;
-      
-      if (volDelta >= dynamicVolThreshold && volDeltaValue >= effectiveMinValue) {
-        const key = `${symbol}_total_vol_spike`;
-        if (!isCooldown(key, now) && canAlertSymbol(symbol, 'MEDIUM')) {
-          const pctOfAvg = avgVol > 0 ? (volDelta / avgVol * 100).toFixed(1) : '---';
-          let detail = `Khớp lệnh 3ph: <b>+${fmtVol(volDelta)}</b> CP (~${fmtValue(volDeltaValue)})\n`;
-          if (avgVol > 0) {
-            detail += `   📊 Tương đương: <b>${pctOfAvg}%</b> KLTB20 (${fmtVol(avgVol)})\n`;
-          }
-          if (Math.abs(fnDelta) > 0) {
-            const fnPct = Math.min(Math.round((Math.abs(fnDelta) / volDelta) * 100), 100);
-            detail += `   🛸 Khối ngoại ròng: ${fnDelta >= 0 ? '+' : ''}${fmtVol(fnDelta)} CP (~${fnPct}% lượng khớp 3ph)\n`;
-          }
-          detail += `   <i>Tín hiệu dòng tiền lớn từ Tay to, Các quỹ hoặc Tổ chức.</i>`;
 
-          alerts.push({
-            symbol, icon: '🐋🔥', title: 'TAY TO / QUỸ GIAO DỊCH ĐỘT BIẾN', detail,
-            price, changePct, volume,
-            priority: volDelta >= dynamicVolThreshold * 2 ? 'HIGH' : 'MEDIUM',
-          });
-          _alertedToday[key] = now;
-          incrementAlertCount(symbol);
-        }
-      }
-
-      // ═══ CHECK 8: Giao dịch lớn >= 10 tỷ VND ═══
-      if (volDelta > 0 && volDeltaValue >= THRESHOLDS.bigTradeMinValue) {
-        const key = `${symbol}_big_trade`;
-        if (!isCooldown(key, now) && canAlertSymbol(symbol, 'MEDIUM')) {
-          const valStr = fmtValue(volDeltaValue);
-          let detail = `Giao dịch lớn 3ph: <b>+${fmtVol(volDelta)}</b> CP\n`;
-          detail += `   💰 Giá trị: <b>${valStr}</b>\n`;
-          if (avgVol > 0) {
-            const pctOfAvg = (volDelta / avgVol * 100).toFixed(1);
-            detail += `   📊 Tương đương: <b>${pctOfAvg}%</b> KLTB20 (${fmtVol(avgVol)})\n`;
-          }
-          if (Math.abs(fnDelta) > 0) {
-            const fnPct = Math.min(Math.round((Math.abs(fnDelta) / volDelta) * 100), 100);
-            const nnValStr = fmtValue(Math.abs(fnDelta) * price);
-            detail += `   🛸 Trong đó NN: ${fnDelta >= 0 ? '+' : ''}${fmtVol(fnDelta)} CP (~${nnValStr}, ${fnPct}%)\n`;
-            const domesticPct = 100 - fnPct;
-            detail += `   🏠 Nội địa (tổ chức/cá nhân): ~${domesticPct}% lượng khớp\n`;
-          } else {
-            detail += `   🏠 100% giao dịch nội địa (tổ chức/cá nhân lớn)\n`;
-          }
-          detail += `   <i>⚡ Giao dịch giá trị rất lớn — có thể từ quỹ, tổ chức hoặc cá nhân lớn.</i>`;
-
-          alerts.push({
-            symbol, icon: '💎🐋', title: `GIAO DỊCH LỚN ${valStr}`, detail,
-            price, changePct, volume,
-            priority: volDeltaValue >= THRESHOLDS.bigTradeMinValue * 2 ? 'HIGH' : 'MEDIUM',
-          });
-          _alertedToday[key] = now;
-          incrementAlertCount(symbol);
-        }
+      if (volDelta > 0 && volDeltaValue >= BIG_TRADE_BATCH_MIN) {
+        const timeStr = new Date().toLocaleTimeString('vi-VN', { timeZone: config.timezone, hour: '2-digit', minute: '2-digit' });
+        _bigTradeBuffer.push({
+          symbol,
+          time: timeStr,
+          volDelta,
+          fnDelta,
+          value: volDeltaValue,
+          price,
+          changePct,
+          avgVol: avgVol || 0,
+        });
+        console.log(`📦 [Buffer] ${symbol}: +${fmtVol(volDelta)} CP (~${fmtValue(volDeltaValue)}) @ ${timeStr}`);
       }
 
       _previousData[symbol] = cur;
@@ -565,6 +533,124 @@ async function sendAlerts(alerts) {
   }
 }
 
+// ─── FLUSH BIG TRADE BUFFER (gửi tổng hợp theo khung giờ) ──
+
+/**
+ * Gom tất cả giao dịch lớn trong buffer, group theo mã CP,
+ * format thành 1 tin nhắn tổng hợp rồi gửi Telegram.
+ * Gọi bởi cron: 11h, 13h30, 14h, 14h30 (T2-T6)
+ * Nếu buffer rỗng → skip, không gửi tin.
+ */
+async function flushBigTradeBuffer() {
+  if (_bigTradeBuffer.length === 0) {
+    console.log('📦 [Flush] Buffer trống — không gửi tin');
+    return;
+  }
+
+  const items = [..._bigTradeBuffer];
+  _bigTradeBuffer = []; // clear ngay để tránh duplicate
+
+  const nowStr = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
+  const nowTime = new Date().toLocaleTimeString('vi-VN', { timeZone: config.timezone, hour: '2-digit', minute: '2-digit' });
+
+  // Group theo symbol
+  const grouped = {};
+  for (const item of items) {
+    if (!grouped[item.symbol]) {
+      grouped[item.symbol] = {
+        trades: [],
+        totalValue: 0,
+        totalVolDelta: 0,
+        totalFnDelta: 0,
+        lastPrice: item.price,
+        lastChangePct: item.changePct,
+      };
+    }
+    const g = grouped[item.symbol];
+    g.trades.push(item);
+    g.totalValue += item.value;
+    g.totalVolDelta += item.volDelta;
+    g.totalFnDelta += item.fnDelta;
+    g.lastPrice = item.price;
+    g.lastChangePct = item.changePct;
+  }
+
+  // Tính tổng mua/xả
+  let totalBuyValue = 0, totalSellValue = 0;
+  let buySymbols = 0, sellSymbols = 0;
+
+  let msg = `📊 <b>TỔNG HỢP GIAO DỊCH LỚN (${nowTime})</b>\n`;
+  msg += `🕐 <i>${nowStr}</i>\n`;
+  msg += `━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+
+  // Sắp xếp: xả (volDelta âm ròng hoặc giá giảm) trước, gom sau
+  const symbols = Object.keys(grouped).sort((a, b) => {
+    const aDir = grouped[a].totalFnDelta >= 0 ? 1 : -1;
+    const bDir = grouped[b].totalFnDelta >= 0 ? 1 : -1;
+    return aDir - bDir; // xả trước, gom sau
+  });
+
+  for (const sym of symbols) {
+    const g = grouped[sym];
+    // Xác định hướng dòng tiền: dựa trên fnDelta (NN ròng) kết hợp changePct
+    const isNetBuy = g.totalFnDelta > 0 || (g.totalFnDelta === 0 && g.lastChangePct > 0);
+    const dirIcon = isNetBuy ? '🟢' : '🔴';
+    const dirText = isNetBuy ? 'GOM' : 'XẢ';
+
+    if (isNetBuy) {
+      totalBuyValue += g.totalValue;
+      buySymbols++;
+    } else {
+      totalSellValue += g.totalValue;
+      sellSymbols++;
+    }
+
+    msg += `${dirIcon} <b>${sym}</b> — ${g.trades.length} lệnh ${dirText} | Tổng: <b>${fmtValue(g.totalValue)}</b>\n`;
+    msg += `   💰 Giá: ${fmtPrice(g.lastPrice)} (${g.lastChangePct >= 0 ? '+' : ''}${g.lastChangePct}%)\n`;
+
+    for (const t of g.trades) {
+      let tradeDetail = `   📦 ${t.time} — +${fmtVol(t.volDelta)} CP (~${fmtValue(t.value)})`;
+      if (Math.abs(t.fnDelta) > 0) {
+        tradeDetail += ` | NN: ${t.fnDelta >= 0 ? '+' : ''}${fmtVol(t.fnDelta)}`;
+        const domesticDelta = t.volDelta - Math.abs(t.fnDelta);
+        if (domesticDelta > 0) {
+          tradeDetail += `, Nội: +${fmtVol(domesticDelta)}`;
+        }
+      } else {
+        tradeDetail += ` | 100% Nội địa`;
+      }
+      msg += tradeDetail + `\n`;
+    }
+    msg += `\n`;
+  }
+
+  msg += `━━━━━━━━━━━━━━━━━━━━━━\n`;
+  if (totalBuyValue > 0) {
+    msg += `📈 Tổng MUA GOM: <b>${fmtValue(totalBuyValue)}</b> (${buySymbols} mã)\n`;
+  }
+  if (totalSellValue > 0) {
+    msg += `📉 Tổng XẢ HÀNG: <b>${fmtValue(totalSellValue)}</b> (${sellSymbols} mã)\n`;
+  }
+  const netFlow = totalBuyValue - totalSellValue;
+  const flowIcon = netFlow >= 0 ? '🟢' : '🔻';
+  const flowText = netFlow >= 0 ? 'TIỀN ĐANG VÀO' : 'TIỀN ĐANG RA';
+  msg += `${flowIcon} Dòng tiền ròng: <b>${netFlow >= 0 ? '+' : ''}${fmtValue(netFlow)}</b> → ${flowText}\n`;
+  msg += `━━━━━━━━━━━━━━━━━━━━━━\n`;
+  msg += `<i>🤖 VN Stock Bot v${config.version} | Batched Alert (≥5 tỷ)</i>`;
+
+  try {
+    await axios.post(`https://api.telegram.org/bot${config.telegram.botToken}/sendMessage`, {
+      chat_id: config.telegram.chatId,
+      text: msg,
+      parse_mode: 'HTML',
+      disable_web_page_preview: true,
+    });
+    console.log(`📦 [Flush] Đã gửi tổng hợp: ${items.length} lệnh, ${symbols.length} mã`);
+  } catch (error) {
+    console.error('📦 [Flush] Lỗi gửi Telegram:', error.response?.data?.description || error.message);
+  }
+}
+
 // ─── HELPERS ────────────────────────────────────────────────
 
 function isCooldown(key, now) {
@@ -590,4 +676,4 @@ function fmtValue(v) {
   return v.toLocaleString('vi-VN') + ' đ';
 }
 
-module.exports = { startAlertMonitor, stopAlertMonitor, resetDailyData, isTradingHours };
+module.exports = { startAlertMonitor, stopAlertMonitor, resetDailyData, isTradingHours, flushBigTradeBuffer };

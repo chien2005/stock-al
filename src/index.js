@@ -30,7 +30,7 @@ const { sendTelegramMessage, formatStockMessage } = require('./telegramService')
 const { initAIEngines, runScheduledAnalysis, runDailyGlobalSummaryReport } = require('./aiTeam');
 const { runWeeklyAnalysis } = require('./weeklyAnalysis');
 const { startBotHandler, stopBotHandler } = require('./botHandler');
-const { startAlertMonitor, stopAlertMonitor, resetDailyData } = require('./alertService');
+const { startAlertMonitor, stopAlertMonitor, resetDailyData, flushBigTradeBuffer } = require('./alertService');
 const { runSmartMoneyReport } = require('./smartMoneyReport');
 
 // ─── Thời điểm khởi động (cho health check) ─────────────
@@ -538,6 +538,27 @@ async function main() {
   cron.schedule('0 9 * * 1-5', () => {
     resetDailyData();
   }, { scheduled: true, timezone: config.timezone });
+
+  // ─── SCHEDULE: FLUSH GIAO DỊCH LỚN (11h, 13h30, 14h, 14h30 T2-T6) ───
+  // Gom tất cả lệnh >= 5 tỷ rồi gửi tổng hợp 1 lần, tránh spam
+  const bigTradeFlushSchedules = [
+    { cron: '0 11 * * 1-5', label: '11:00' },
+    { cron: '30 13 * * 1-5', label: '13:30' },
+    { cron: '0 14 * * 1-5', label: '14:00' },
+    { cron: '30 14 * * 1-5', label: '14:30' },
+  ];
+
+  for (const schedule of bigTradeFlushSchedules) {
+    cron.schedule(schedule.cron, async () => {
+      console.log(`\n📦 [BigTrade Flush ${schedule.label}] Cron triggered`);
+      try {
+        await flushBigTradeBuffer();
+      } catch (err) {
+        console.error(`📦 [BigTrade Flush ${schedule.label}] Lỗi:`, err.message);
+      }
+    }, { scheduled: true, timezone: config.timezone });
+  }
+  console.log('   📦 BigTrade Flush: 11:00 | 13:30 | 14:00 | 14:30 (T2-T6, ≥5 tỷ)');
 
   // ─── HEARTBEAT: Gửi "đang sống" mỗi ngày 9:00 T2-T6 ───────
   // DISABLED: Bỏ tin nhắn heartbeat hàng ngày theo yêu cầu của user
