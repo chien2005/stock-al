@@ -80,8 +80,8 @@ const config = {
     return symbols;
   })(),
 
-  // Cron: báo giá (thứ 2-6, 10h/13h)
-  cronSchedule: process.env.CRON_SCHEDULE || '0 10,13 * * 1-5',
+  // Cron: báo giá (thứ 2-6, 10h)
+  cronSchedule: process.env.CRON_SCHEDULE || '0 10 * * 1-5',
 
   // Cron: AI phân tích cuối phiên (thứ 2-6, 16h05 - ngay sau báo giá 16h)
   cronAfterCloseSchedule: process.env.CRON_AFTER_CLOSE_SCHEDULE || '5 16 * * 1-5',
@@ -105,7 +105,7 @@ const config = {
   timezone: process.env.TZ || 'Asia/Ho_Chi_Minh',
 
   // Version
-  version: '2.4.0',
+  version: '2.5.0',
 };
 
 // Validate required config

@@ -270,7 +270,9 @@ function buildEndOfDayPrompt(stockData, stocks, extraData = {}) {
 
   return `Bạn là CHIẾN LƯỢC GIA CHỨNG KHOÁN VIỆT NAM chuyên nghiệp. Phiên giao dịch hôm nay đã kết thúc.
 
-DỮ LIỆU DANH MỤC THEO DÕI (giá cuối phiên 16h00):
+QUAN TRỌNG: CHỈ phân tích các cổ phiếu BLUE CHIP trong rổ VN30 (danh mục theo dõi bên dưới). KHÔNG phân tích các mã cổ phiếu lạ, penny stock, hay mid-cap ngoài danh mục.
+
+DỮ LIỆU DANH MỤC THEO DÕI — BLUE CHIP VN30 (giá cuối phiên):
 ${stockData}
 ${vn30Context}
 ${liquidityContext}

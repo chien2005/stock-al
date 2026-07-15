@@ -143,14 +143,6 @@ function formatStockMessage(stocks, liquidity = null) {
       msg += `📉 SMA50: ${fmtPrice(stock.sma50)} ${sma50Icon} ${sma50Pct > 0 ? '+' : ''}${sma50Pct}%${sma50Level ? ' ' + sma50Level : ''}\n`;
     }
 
-    // Sổ lệnh (top bid/ask)
-    if (stock.bids.length > 0 && stock.asks.length > 0) {
-      const bestBid = stock.bids[0];
-      const bestAsk = stock.asks[0];
-      msg += `📖 Bid: ${fmtPrice(bestBid.price)}×${fmtVol(bestBid.volume)}`;
-      msg += ` | Ask: ${fmtPrice(bestAsk.price)}×${fmtVol(bestAsk.volume)}\n`;
-    }
-
     msg += `\n`;
   }
 

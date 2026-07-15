@@ -32,6 +32,7 @@ const { runWeeklyAnalysis } = require('./weeklyAnalysis');
 const { startBotHandler, stopBotHandler } = require('./botHandler');
 const { startAlertMonitor, stopAlertMonitor, resetDailyData, flushBigTradeBuffer } = require('./alertService');
 const { runSmartMoneyReport } = require('./smartMoneyReport');
+const { runWhaleTrackerReport } = require('./whaleTracker');
 
 // ─── Thời điểm khởi động (cho health check) ─────────────
 const startedAt = new Date();
@@ -463,7 +464,7 @@ async function main() {
     console.error('⚠️ Không gửi được thông báo khởi động:', e.message);
   }
 
-  // ─── SCHEDULE JOB 1: BÁO GIÁ (T2-T6, 10h/13h) ────
+  // ─── SCHEDULE JOB 1: BÁO GIÁ (T2-T6, 10h) ────
   cron.schedule(config.cronSchedule, () => {
     const now = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
     console.log(`\n⏰ [Báo giá] Cron triggered: ${now}`);
@@ -472,6 +473,20 @@ async function main() {
     scheduled: true,
     timezone: config.timezone,
   });
+
+  // ─── SCHEDULE JOB 1a: BÁO GIÁ TRONG PHIÊN (T2-T6, 13h35/14h10/14h40) ────
+  const intradaySchedules = [
+    { cron: '35 13 * * 1-5', label: '13:35' },
+    { cron: '10 14 * * 1-5', label: '14:10' },
+    { cron: '40 14 * * 1-5', label: '14:40' },
+  ];
+  for (const schedule of intradaySchedules) {
+    cron.schedule(schedule.cron, () => {
+      const now = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
+      console.log(`\n⏰ [Báo giá ${schedule.label}] Cron triggered: ${now}`);
+      runStockJob();
+    }, { scheduled: true, timezone: config.timezone });
+  }
 
   // ─── SCHEDULE JOB 1b: BÁO GIÁ KẾT PHIÊN (T2-T6, 15h01) ────
   cron.schedule(config.cronCloseSchedule, () => {
@@ -539,13 +554,13 @@ async function main() {
     resetDailyData();
   }, { scheduled: true, timezone: config.timezone });
 
-  // ─── SCHEDULE: FLUSH GIAO DỊCH LỚN (11h, 13h30, 14h, 14h30 T2-T6) ───
+  // ─── SCHEDULE: FLUSH GIAO DỊCH LỚN (11h, 13h35, 14h10, 14h40 T2-T6) ───
   // Gom tất cả lệnh >= 5 tỷ rồi gửi tổng hợp 1 lần, tránh spam
   const bigTradeFlushSchedules = [
     { cron: '0 11 * * 1-5', label: '11:00' },
-    { cron: '30 13 * * 1-5', label: '13:30' },
-    { cron: '0 14 * * 1-5', label: '14:00' },
-    { cron: '30 14 * * 1-5', label: '14:30' },
+    { cron: '35 13 * * 1-5', label: '13:35' },
+    { cron: '10 14 * * 1-5', label: '14:10' },
+    { cron: '40 14 * * 1-5', label: '14:40' },
   ];
 
   for (const schedule of bigTradeFlushSchedules) {
@@ -558,7 +573,19 @@ async function main() {
       }
     }, { scheduled: true, timezone: config.timezone });
   }
-  console.log('   📦 BigTrade Flush: 11:00 | 13:30 | 14:00 | 14:30 (T2-T6, ≥5 tỷ)');
+  console.log('   📦 BigTrade Flush: 11:00 | 13:35 | 14:10 | 14:40 (T2-T6, ≥5 tỷ)');
+
+  // ─── SCHEDULE: WHALE TRACKER REPORT (T2-T6, 19h45) ───
+  cron.schedule('45 19 * * 1-5', async () => {
+    const now = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
+    console.log(`\n🐋 [Whale Tracker] Cron triggered: ${now}`);
+    try {
+      await runWhaleTrackerReport();
+    } catch (err) {
+      console.error('🐋 [Whale Tracker] Lỗi:', err.message);
+    }
+  }, { scheduled: true, timezone: config.timezone });
+  console.log('   🐋 Whale Tracker: 19:45 (T2-T6)');
 
   // ─── HEARTBEAT: Gửi "đang sống" mỗi ngày 9:00 T2-T6 ───────
   // DISABLED: Bỏ tin nhắn heartbeat hàng ngày theo yêu cầu của user
