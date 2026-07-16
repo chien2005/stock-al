@@ -33,20 +33,29 @@ const HEADERS = {
  * @returns {Object[]} Danh sách dữ liệu stock
  */
 async function fetchRealtimeData(symbols) {
-  try {
-    const symbolStr = symbols.join(',');
-    const url = `${VPS_API.realtime}/${symbolStr}`;
+  const symbolStr = symbols.join(',');
+  const url = `${VPS_API.realtime}/${symbolStr}`;
+  const maxRetries = 3;
 
-    const response = await axios.get(url, {
-      headers: HEADERS,
-      timeout: 15000,
-    });
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const response = await axios.get(url, {
+        headers: HEADERS,
+        timeout: 10000,
+      });
 
-    return response.data || [];
-  } catch (error) {
-    console.error('⚠️  Lỗi khi lấy realtime data từ VPS:', error.message);
-    return [];
+      if (response.data && response.data.length > 0) {
+        return response.data;
+      }
+      console.log(`⚠️ Attempt ${attempt}/${maxRetries}: VPS API returned empty data. Retrying...`);
+    } catch (error) {
+      console.error(`⚠️ Attempt ${attempt}/${maxRetries} failed: ${error.message}`);
+    }
+    if (attempt < maxRetries) {
+      await new Promise(res => setTimeout(res, 1500));
+    }
   }
+  return [];
 }
 
 /**
@@ -55,21 +64,28 @@ async function fetchRealtimeData(symbols) {
  * @returns {Object|null}
  */
 async function fetchHistoryData(symbol) {
-  try {
-    const now = Math.floor(Date.now() / 1000);
-    const from = now - 86400 * 60; // 60 ngày trước (cần >= 35 cho MACD, 50 cho SMA50)
-    const url = `${VPS_API.history}?symbol=${symbol}&resolution=D&from=${from}&to=${now}`;
+  const now = Math.floor(Date.now() / 1000);
+  const from = now - 86400 * 60; // 60 ngày trước (cần >= 35 cho MACD, 50 cho SMA50)
+  const url = `${VPS_API.history}?symbol=${symbol}&resolution=D&from=${from}&to=${now}`;
+  const maxRetries = 2;
 
-    const response = await axios.get(url, {
-      headers: HEADERS,
-      timeout: 10000,
-    });
-
-    return response.data;
-  } catch (error) {
-    // Non-critical, silently fail
-    return null;
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const response = await axios.get(url, {
+        headers: HEADERS,
+        timeout: 8000,
+      });
+      if (response.data) {
+        return response.data;
+      }
+    } catch (error) {
+      // Non-critical, silently fail
+    }
+    if (attempt < maxRetries) {
+      await new Promise(res => setTimeout(res, 1000));
+    }
   }
+  return null;
 }
 
 /**
@@ -285,41 +301,50 @@ async function fetchVN30Index() {
   const from = now - 86400 * 5; // 5 ngày gần nhất
 
   const results = {};
+  const maxRetries = 2;
 
   for (const indexSymbol of ['VN30', 'VNINDEX']) {
-    try {
-      const url = `${VPS_API.history}?symbol=${indexSymbol}&resolution=D&from=${from}&to=${now}`;
-      const response = await axios.get(url, { headers: HEADERS, timeout: 10000 });
-      const data = response.data;
+    let success = false;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const url = `${VPS_API.history}?symbol=${indexSymbol}&resolution=D&from=${from}&to=${now}`;
+        const response = await axios.get(url, { headers: HEADERS, timeout: 10000 });
+        const data = response.data;
 
-      if (data && data.s === 'ok' && data.c && data.c.length > 0) {
-        const lastIdx = data.c.length - 1;
-        const prevIdx = lastIdx > 0 ? lastIdx - 1 : 0;
+        if (data && data.s === 'ok' && data.c && data.c.length > 0) {
+          const lastIdx = data.c.length - 1;
+          const prevIdx = lastIdx > 0 ? lastIdx - 1 : 0;
 
-        const close = data.c[lastIdx];
-        const prevClose = data.c[prevIdx];
-        const open = data.o[lastIdx];
-        const high = data.h[lastIdx];
-        const low = data.l[lastIdx];
-        const volume = data.v[lastIdx];
-        const change = close - prevClose;
-        const changePct = prevClose > 0 ? parseFloat(((close - prevClose) / prevClose * 100).toFixed(2)) : 0;
+          const close = data.c[lastIdx];
+          const prevClose = data.c[prevIdx];
+          const open = data.o[lastIdx];
+          const high = data.h[lastIdx];
+          const low = data.l[lastIdx];
+          const volume = data.v[lastIdx];
+          const change = close - prevClose;
+          const changePct = prevClose > 0 ? parseFloat(((close - prevClose) / prevClose * 100).toFixed(2)) : 0;
 
-        results[indexSymbol.toLowerCase()] = {
-          symbol: indexSymbol,
-          close: parseFloat(close.toFixed(2)),
-          open: parseFloat(open.toFixed(2)),
-          high: parseFloat(high.toFixed(2)),
-          low: parseFloat(low.toFixed(2)),
-          volume,
-          prevClose: parseFloat(prevClose.toFixed(2)),
-          change: parseFloat(change.toFixed(2)),
-          changePct,
-        };
-        console.log(`   📊 ${indexSymbol}: ${close.toFixed(2)} (${changePct >= 0 ? '+' : ''}${changePct}%)`);
+          results[indexSymbol.toLowerCase()] = {
+            symbol: indexSymbol,
+            close: parseFloat(close.toFixed(2)),
+            open: parseFloat(open.toFixed(2)),
+            high: parseFloat(high.toFixed(2)),
+            low: parseFloat(low.toFixed(2)),
+            volume,
+            prevClose: parseFloat(prevClose.toFixed(2)),
+            change: parseFloat(change.toFixed(2)),
+            changePct,
+          };
+          console.log(`   📊 ${indexSymbol}: ${close.toFixed(2)} (${changePct >= 0 ? '+' : ''}${changePct}%)`);
+          success = true;
+          break;
+        }
+      } catch (error) {
+        console.error(`   ⚠️ Attempt ${attempt}/${maxRetries} failed for ${indexSymbol}:`, error.message);
       }
-    } catch (error) {
-      console.error(`   ⚠️ Lỗi lấy ${indexSymbol}:`, error.message);
+      if (attempt < maxRetries) {
+        await new Promise(res => setTimeout(res, 1000));
+      }
     }
   }
 
@@ -579,44 +604,49 @@ function fmtVol(vol) {
  * @returns {Object|null}
  */
 async function fetchMarketLiquidity() {
-  try {
-    const url = 'https://bgapidatafeed.vps.com.vn/getlistindexdetail/10,02,03';
-    const response = await axios.get(url, {
-      headers: HEADERS,
-      timeout: 10000,
-    });
+  const url = 'https://bgapidatafeed.vps.com.vn/getlistindexdetail/10,02,03';
+  const maxRetries = 2;
 
-    if (!response.data || !Array.isArray(response.data)) {
-      return null;
-    }
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const response = await axios.get(url, {
+        headers: HEADERS,
+        timeout: 10000,
+      });
 
-    let hoseVal = 0;
-    let hnxVal = 0;
-    let upcomVal = 0;
+      if (response.data && Array.isArray(response.data)) {
+        let hoseVal = 0;
+        let hnxVal = 0;
+        let upcomVal = 0;
 
-    for (const item of response.data) {
-      const val = parseFloat(item.value || 0) / 1000; // Quy ra tỷ VNĐ
-      if (item.mc === '10') {
-        hoseVal = val;
-      } else if (item.mc === '02') {
-        hnxVal = val;
-      } else if (item.mc === '03') {
-        upcomVal = val;
+        for (const item of response.data) {
+          const val = parseFloat(item.value || 0) / 1000; // Quy ra tỷ VNĐ
+          if (item.mc === '10') {
+            hoseVal = val;
+          } else if (item.mc === '02') {
+            hnxVal = val;
+          } else if (item.mc === '03') {
+            upcomVal = val;
+          }
+        }
+
+        const totalVal = hoseVal + hnxVal + upcomVal;
+
+        return {
+          hose: hoseVal,
+          hnx: hnxVal,
+          upcom: upcomVal,
+          total: totalVal,
+        };
       }
+    } catch (error) {
+      console.error(`⚠️ Attempt ${attempt}/${maxRetries} failed for market liquidity:`, error.message);
     }
-
-    const totalVal = hoseVal + hnxVal + upcomVal;
-
-    return {
-      hose: hoseVal,
-      hnx: hnxVal,
-      upcom: upcomVal,
-      total: totalVal,
-    };
-  } catch (error) {
-    console.error('⚠️  Lỗi khi lấy thanh khoản tổng TTCK VN:', error.message);
-    return null;
+    if (attempt < maxRetries) {
+      await new Promise(res => setTimeout(res, 1000));
+    }
   }
+  return null;
 }
 
 module.exports = { fetchAllStocks, fetchRealtimeData, fetchVN30Index, fetchMarketScan, fetchTopBoughtStocks, fetchMarketLiquidity };
