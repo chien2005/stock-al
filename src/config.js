@@ -5,6 +5,7 @@
  */
 
 require('dotenv').config();
+const userConfig = require('./userConfig');
 
 function cleanApiKey(key) {
   if (!key || typeof key !== 'string' || key.trim() === '' || key.includes('PASTE_')) {
@@ -62,12 +63,9 @@ const config = {
     modelAI4: process.env.OPENROUTER_MODEL_AI4 || 'openai/gpt-oss-120b:free',
   },
 
-  // Stock symbols
+  // Stock symbols (đọc trực tiếp từ userConfig.js)
   stockSymbols: (() => {
-    let symbols = (process.env.STOCK_SYMBOLS || 'VCB,FPT,VIC,HPG,MWG,MSN,VHM,TCB,ACB,VPB,MBB')
-      .split(',')
-      .map(s => s.trim().toUpperCase())
-      .filter(s => s.length > 0);
+    let symbols = userConfig.stockSymbols || [];
     
     // Always exclude VNM and index symbols (which are fetched separately)
     const excluded = ['VNM', 'VN30', 'VN30INDEX', 'VNINDEX'];
@@ -80,23 +78,23 @@ const config = {
     return symbols;
   })(),
 
-  // Cron: báo giá (thứ 2-6, 10h)
-  cronSchedule: process.env.CRON_SCHEDULE || '0 10 * * 1-5',
+  // Cron: báo giá (đọc trực tiếp từ userConfig.js)
+  cronSchedule: userConfig.cronSchedule,
 
-  // Cron: AI phân tích cuối phiên (thứ 2-6, 16h05 - ngay sau báo giá 16h)
-  cronAfterCloseSchedule: process.env.CRON_AFTER_CLOSE_SCHEDULE || '5 16 * * 1-5',
+  // Cron: AI phân tích cuối phiên (thứ 2-6, 16h05) - mặc định giữ nguyên nhưng không chạy
+  cronAfterCloseSchedule: '5 16 * * 1-5',
 
-  // Cron: báo giá kết phiên (thứ 2-6, 15h01 - ngay sau khi đóng cửa)
-  cronCloseSchedule: process.env.CRON_CLOSE_SCHEDULE || '1 15 * * 1-5',
+  // Cron: báo giá kết phiên (đọc trực tiếp từ userConfig.js)
+  cronCloseSchedule: userConfig.cronCloseSchedule,
 
-  // Cron: AI phân tích đa chuyên gia (thứ 2-6, 20h30)
-  cronAiSchedule: process.env.CRON_AI_SCHEDULE || '30 20 * * 1-5',
+  // Cron: AI phân tích đa chuyên gia (đọc trực tiếp từ userConfig.js)
+  cronAiSchedule: userConfig.cronAiSchedule,
 
-  // Cron: Báo cáo TTCK quốc tế + giá vàng (MỖI NGÀY, 21h00 - kể cả T7/CN)
-  cronGlobalSchedule: process.env.CRON_GLOBAL_SCHEDULE || '0 21 * * *',
+  // Cron: Báo cáo TTCK quốc tế + giá vàng (đọc trực tiếp từ userConfig.js)
+  cronGlobalSchedule: userConfig.cronGlobalSchedule,
 
-  // Cron: Phân tích đầu tuần (Thứ 2, 8h30)
-  cronWeeklySchedule: process.env.CRON_WEEKLY_SCHEDULE || '30 8 * * 1',
+  // Cron: Phân tích đầu tuần (đọc trực tiếp từ userConfig.js)
+  cronWeeklySchedule: userConfig.cronWeeklySchedule,
 
   // Bật/tắt interactive bot (polling)
   enableInteractiveBot: (process.env.ENABLE_INTERACTIVE_BOT || 'true') === 'true',
