@@ -9,6 +9,7 @@
 
 const axios = require('axios');
 const { config } = require('./config');
+const { getStreakDays } = require('./whaleTracker');
 
 const TELEGRAM_API = `https://api.telegram.org/bot${config.telegram.botToken}`;
 
@@ -47,133 +48,218 @@ async function sendTelegramMessage(message) {
  * @param {Array} stocks - Danh sách thông tin stock
  * @returns {string} Message HTML formatted
  */
-function formatStockMessage(stocks, liquidity = null) {
-  const now = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
-  const weekday = new Date().toLocaleDateString('vi-VN', { weekday: 'long', timeZone: config.timezone });
+/**
+ * Phát hiện hành vi của dòng tiền tay to/quỹ đối ứng dựa trên biến động giá, volume và ròng khối ngoại
+ */
+function detectPattern(symbol, changePct, volRatio, totalVal, fnValue) {
+  const streakDays = getStreakDays() || {};
+  const streak = streakDays[symbol];
+  const streakCount = streak ? streak.count : 0;
+  const streakDir = streak ? streak.direction : 0;
 
-  let msg = '';
-  msg += `📊 <b>BÁO CÁO CHỨNG KHOÁN VIỆT NAM</b>\n`;
-  msg += `🗓 ${weekday}, ${now}\n`;
-  if (liquidity) {
-    msg += `💸 <b>Tổng thanh khoản TTCK VN</b>: <code>${liquidity.total.toLocaleString('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} tỷ</code> (HOSE: ${liquidity.hose.toLocaleString('vi-VN', { maximumFractionDigits: 1 })} tỷ, HNX: ${liquidity.hnx.toLocaleString('vi-VN', { maximumFractionDigits: 1 })} tỷ, UPCOM: ${liquidity.upcom.toLocaleString('vi-VN', { maximumFractionDigits: 1 })} tỷ)\n`;
+  if (changePct >= 2.0 && volRatio >= 1.2 && fnValue <= 2.0) {
+    return { icon: '🔥', text: 'Nội Kéo', priority: 'HIGH' };
   }
+  if (fnValue <= -5.0 && changePct >= -0.5) {
+    return { icon: '🛡️', text: 'Nội Đỡ', priority: 'HIGH' };
+  }
+  if (changePct <= -2.0 && volRatio >= 1.2 && fnValue >= -2.0) {
+    return { icon: '💔', text: 'Nội Xả', priority: 'HIGH' };
+  }
+  if (streakDir > 0 && streakCount >= 3 && Math.abs(changePct) <= 1.2) {
+    return { icon: '🧲', text: 'Gom Âm Thầm', priority: 'MEDIUM' };
+  }
+  if (streakDir < 0 && streakCount >= 3) {
+    return { icon: '🔻', text: 'Ngoại Xả', priority: 'MEDIUM' };
+  }
+  if (volRatio >= 2.0) {
+    return { icon: '⚡', text: 'KL Đột Biến', priority: 'LOW' };
+  }
+  return null;
+}
+
+/**
+ * Format dữ liệu stock thành message Telegram đẹp dạng WHALE TRACKER v2.1
+ * @param {Array} stocks - Danh sách thông tin stock
+ * @param {Object} liquidity - Thông tin thanh khoản thị trường
+ * @param {Object} vn30Index - Chỉ số VN30 / VNINDEX
+ * @returns {string} Message HTML formatted
+ */
+function formatStockMessage(stocks, liquidity = null, vn30Index = null) {
+  const now = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
+
+  // Map stocks thành cấu trúc thuận tiện
+  const formattedStocks = [];
+  for (const s of stocks) {
+    if (s.error) continue;
+
+    const totalVal = (s.volume * s.price) / 1e9;
+    const fnValue = (s.foreignNet * s.price) / 1e9;
+    const fnBuyValue = (s.foreignBuy * s.price) / 1e9;
+    const fnSellValue = (s.foreignSell * s.price) / 1e9;
+    const volRatio = s.avgVolume > 0 ? (s.volume / s.avgVolume) : 0;
+
+    const foreignParticipationPct = totalVal > 0 
+      ? parseFloat((((s.foreignBuy + s.foreignSell) * s.price / 1e9) / (2 * totalVal) * 100).toFixed(1)) 
+      : 0;
+
+    const pattern = detectPattern(s.symbol, s.changePct, volRatio, totalVal, fnValue);
+    
+    // Đọc streak để hiển thị hành vi nổi bật
+    const streakDays = getStreakDays() || {};
+    const streak = streakDays[s.symbol];
+    const streakCount = streak ? streak.count : 0;
+
+    formattedStocks.push({
+      symbol: s.symbol,
+      price: s.price,
+      changePct: s.changePct,
+      volume: s.volume,
+      avgVolume: s.avgVolume,
+      volRatio,
+      foreignNet: s.foreignNet,
+      fnValue,
+      fnBuyValue,
+      fnSellValue,
+      totalVal,
+      foreignParticipationPct,
+      pattern,
+      streakCount
+    });
+  }
+
+  // Mặc định sắp xếp theo khối lượng dòng tiền ròng của ngoại lớn nhất
+  formattedStocks.sort((a, b) => Math.abs(b.fnValue) - Math.abs(a.fnValue));
+
+  const totalFnBuy = formattedStocks.reduce((sum, st) => sum + st.fnBuyValue, 0);
+  const totalFnSell = formattedStocks.reduce((sum, st) => sum + st.fnSellValue, 0);
+  const totalFnNet = totalFnBuy - totalFnSell;
+
+  let msg = `🐋 <b>WHALE TRACKER — TAY TO ĐỐI ỨNG</b>\n`;
+  msg += `🕐 <i>${now}</i>\n`;
   msg += `━━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
-  // Phân loại
-  const validStocks = stocks.filter(s => !s.error);
-  const gainers = validStocks.filter(s => s.change > 0);
-  const losers = validStocks.filter(s => s.change < 0);
-  const unchanged = validStocks.filter(s => s.change === 0);
-  const errors = stocks.filter(s => s.error);
+  // Cấu trúc bảng 44 ký tự (hỗ trợ mã dài đến 5 ký tự)
+  msg += `<code>Mã    Giá (Biến động)    Ngoại   TổngGD  %Ngoại</code>\n`;
+  msg += `<code>───── ─────────────── ─────── ─────── ──────</code>\n`;
 
-  // Hiển thị từng mã
-  for (const stock of stocks) {
-    if (stock.error) {
-      msg += `⚠️ <b>${stock.symbol}</b> - ${stock.message}\n\n`;
-      continue;
-    }
-
-    // Icon tăng/giảm
-    let trend;
-    if (stock.changePct > 6.5) {
-      trend = '🟣'; // Trần
-    } else if (stock.changePct < -6.5) {
-      trend = '🔵'; // Sàn
-    } else if (stock.change > 0) {
-      trend = '🟢';
-    } else if (stock.change < 0) {
-      trend = '🔴';
+  for (const s of formattedStocks) {
+    const sym = s.symbol.length > 5 ? s.symbol.substring(0, 5) : s.symbol.padEnd(5);
+    const priceStr = `${(s.price / 1000).toFixed(2)} (${s.changePct >= 0 ? '+' : ''}${s.changePct.toFixed(1).replace('.', ',')}%)`.padStart(15);
+    const fnStr = `${s.fnValue >= 0 ? '+' : ''}${s.fnValue.toFixed(1)}t`.padStart(7);
+    const totalGDStr = `${s.totalVal.toFixed(0)}t`.padStart(7);
+    const participation = `${s.foreignParticipationPct}%`.padStart(6);
+    
+    // Icon hướng giá trần/sàn/tăng/giảm/đứng giá
+    let pctIcon;
+    if (s.changePct > 6.5) {
+      pctIcon = '🟣';
+    } else if (s.changePct < -6.5) {
+      pctIcon = '🔵';
+    } else if (s.changePct > 0) {
+      pctIcon = '🟢';
+    } else if (s.changePct < 0) {
+      pctIcon = '🔴';
     } else {
-      trend = '🟡';
+      pctIcon = '🟡';
     }
-
-    const arrow = stock.change > 0 ? '▲' : stock.change < 0 ? '▼' : '▬';
-    const sign = stock.change > 0 ? '+' : '';
-
-    // Header: Mã + Sàn
-    msg += `${trend} <b>${stock.symbol}</b> (${stock.exchange})`;
-    msg += ` ${arrow}\n`;
-
-    // Giá & thay đổi
-    msg += `💰 <b>${fmtPrice(stock.price)}</b>`;
-    msg += ` (${sign}${fmtPrice(stock.change)} | ${sign}${stock.changePct}%)\n`;
-
-    // OHLC
-    msg += `📈 O: ${fmtPrice(stock.openPrice)}`;
-    msg += ` H: ${fmtPrice(stock.highPrice)}`;
-    msg += ` L: ${fmtPrice(stock.lowPrice)}\n`;
-
-    // Khối lượng
-    msg += `📦 KLGD: <b>${fmtVol(stock.volume)}</b>`;
-    if (stock.avgVolume > 0) {
-      const volRatio = (stock.volume / stock.avgVolume * 100).toFixed(0);
-      const volIcon = volRatio > 150 ? '🔥' : volRatio > 100 ? '📊' : '📉';
-      msg += ` ${volIcon} (TB20: ${fmtVol(stock.avgVolume)} | ${volRatio}%)`;
-    }
-    msg += `\n`;
-
-    // Khối ngoại
-    if (stock.foreignBuy > 0 || stock.foreignSell > 0) {
-      const fSign = stock.foreignNet > 0 ? '+' : '';
-      const fIcon = stock.foreignNet > 0 ? '💚' : stock.foreignNet < 0 ? '💔' : '💛';
-      msg += `${fIcon} NN: M ${fmtVol(stock.foreignBuy)}`;
-      msg += ` | B ${fmtVol(stock.foreignSell)}`;
-      msg += ` | Ròng: ${fSign}${fmtVol(stock.foreignNet)}\n`;
-
-      // Giá trị tổng giao dịch (tỷ VND)
-      const totalTradeVal = (stock.volume || 0) * (stock.price || 0);
-      if (totalTradeVal > 0) {
-        msg += `💵 Tổng GT GD: ${fmtBigValue(totalTradeVal)}\n`;
-      }
-    }
-
-    // SMA20 indicator
-    if (stock.sma20 > 0) {
-      const sma20Pct = ((stock.price - stock.sma20) / stock.sma20 * 100).toFixed(1);
-      const sma20Icon = stock.price > stock.sma20 ? '⬆️' : '⬇️';
-      const sma20Level = Math.abs(sma20Pct) >= 15 ? '⚡' : Math.abs(sma20Pct) >= 5 ? '🔥' : '';
-      msg += `📊 SMA20: ${fmtPrice(stock.sma20)} ${sma20Icon} ${sma20Pct > 0 ? '+' : ''}${sma20Pct}%${sma20Level ? ' ' + sma20Level : ''}\n`;
-    }
-
-    // SMA50 indicator
-    if (stock.sma50 > 0) {
-      const sma50Pct = ((stock.price - stock.sma50) / stock.sma50 * 100).toFixed(1);
-      const sma50Icon = stock.price > stock.sma50 ? '⬆️' : '⬇️';
-      const sma50Level = Math.abs(sma50Pct) >= 15 ? '⚡' : Math.abs(sma50Pct) >= 5 ? '🔥' : '';
-      msg += `📉 SMA50: ${fmtPrice(stock.sma50)} ${sma50Icon} ${sma50Pct > 0 ? '+' : ''}${sma50Pct}%${sma50Level ? ' ' + sma50Level : ''}\n`;
-    }
-
-    msg += `\n`;
+    
+    msg += `${pctIcon}<code>${sym} ${priceStr} ${fnStr} ${totalGDStr} ${participation}</code>\n`;
   }
 
-  // ─── SUMMARY ───────────────────────────────────────────
-  msg += `━━━━━━━━━━━━━━━━━━━━━━\n`;
-  msg += `📊 <b>TỔNG KẾT:</b>\n`;
-  msg += `🟢 Tăng: ${gainers.length} | 🔴 Giảm: ${losers.length} | 🟡 Đứng: ${unchanged.length}`;
-  if (errors.length > 0) msg += ` | ⚠️ Lỗi: ${errors.length}`;
+  // Chèn lỗi nếu có mã nào bị lỗi
+  const errors = stocks.filter(s => s.error);
+  if (errors.length > 0) {
+    msg += `\n⚠️ <b>MÃ LỖI:</b>\n`;
+    for (const err of errors) {
+      msg += `   • <b>${err.symbol}</b>: ${err.message}\n`;
+    }
+  }
+
+  msg += `━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+
+  // Chèn Chỉ số thị trường nếu có tham số vn30Index
+  if (vn30Index) {
+    msg += `📊 <b>CHỈ SỐ THỊ TRƯỜNG</b>\n`;
+    if (vn30Index.vn30) {
+      const v = vn30Index.vn30;
+      const icon = v.changePct > 0 ? '🟢' : v.changePct < 0 ? '🔴' : '🟡';
+      const sign = v.changePct >= 0 ? '+' : '';
+      msg += `${icon} <b>VN30</b>: ${v.close} (${sign}${v.changePct}%) | KL: ${(v.volume / 1000000).toFixed(0)}M\n`;
+    }
+    if (vn30Index.vnindex) {
+      const v = vn30Index.vnindex;
+      const icon = v.changePct > 0 ? '🟢' : v.changePct < 0 ? '🔴' : '🟡';
+      const sign = v.changePct >= 0 ? '+' : '';
+      msg += `${icon} <b>VNINDEX</b>: ${v.close} (${sign}${v.changePct}%) | KL: ${(v.volume / 1000000).toFixed(0)}M\n`;
+    }
+    msg += `━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+  }
+
+  // Chèn thông tin Tổng thanh khoản (nếu có)
+  if (liquidity) {
+    msg += `💸 <b>TỔNG THANH KHOẢN TTCK VN</b>:\n`;
+    msg += `   • <code>${liquidity.total.toLocaleString('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} tỷ</code>\n`;
+    msg += `   • HOSE: ${liquidity.hose.toLocaleString('vi-VN', { maximumFractionDigits: 1 })} tỷ | HNX: ${liquidity.hnx.toLocaleString('vi-VN', { maximumFractionDigits: 1 })} tỷ | UPCOM: ${liquidity.upcom.toLocaleString('vi-VN', { maximumFractionDigits: 1 })} tỷ\n`;
+    msg += `━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+  }
+
+  // Thông số Dòng Tiền NN
+  msg += `💰 <b>DÒNG TIỀN NN:</b>\n`;
+  msg += `   📈 Mua: <b>${totalFnBuy.toFixed(1)} tỷ</b> | 📉 Bán: <b>-${totalFnSell.toFixed(1)} tỷ</b>\n`;
+  const netIcon = totalFnNet >= 0 ? '🟢' : '🔻';
+  const netText = totalFnNet >= 0 ? 'TIỀN VÀO' : 'TIỀN RA';
+  msg += `   ${netIcon} Ròng: <b>${totalFnNet >= 0 ? '+' : ''}${totalFnNet.toFixed(1)} tỷ</b> → ${netText}\n\n`;
+
+  // QUỸ mua vào mạnh nhất (Top 10 cp có fnValue dương lớn nhất)
+  const buyers = [...formattedStocks].filter(s => s.fnValue > 0).sort((a, b) => b.fnValue - a.fnValue).slice(0, 10);
+  msg += `📋 <b>QUỸ mua vào mạnh nhất:</b>\n`;
+  if (buyers.length > 0) {
+    buyers.forEach((s, idx) => {
+      msg += `   ${idx + 1}. <b>${s.symbol}</b> (+${s.fnValue.toFixed(1)} tỷ)\n`;
+    });
+  } else {
+    msg += `   — Không có mã nào được mua ròng\n`;
+  }
   msg += `\n`;
 
-  // Top tăng / giảm
-  if (gainers.length > 0) {
-    const topGainer = gainers.sort((a, b) => b.changePct - a.changePct)[0];
-    msg += `🏆 Tăng nhất: <b>${topGainer.symbol}</b> (+${topGainer.changePct}%)\n`;
+  // QUỸ bán ra mạnh nhất (Top 10 cp có fnValue âm lớn nhất)
+  const sellers = [...formattedStocks].filter(s => s.fnValue < 0).sort((a, b) => a.fnValue - b.fnValue).slice(0, 10);
+  msg += `📋 <b>QUỸ bán ra mạnh nhất:</b>\n`;
+  if (sellers.length > 0) {
+    sellers.forEach((s, idx) => {
+      msg += `   ${idx + 1}. <b>${s.symbol}</b> (${s.fnValue.toFixed(1)} tỷ)\n`;
+    });
+  } else {
+    msg += `   — Không có mã nào bị bán ròng\n`;
   }
-  if (losers.length > 0) {
-    const topLoser = losers.sort((a, b) => a.changePct - b.changePct)[0];
-    msg += `💣 Giảm nhất: <b>${topLoser.symbol}</b> (${topLoser.changePct}%)\n`;
+  msg += `\n`;
+
+  // Diễn giải tín hiệu
+  const signalStocks = formattedStocks.filter(s => s.pattern);
+  if (signalStocks.length > 0) {
+    msg += `🧠 <b>HÀNH VI TAY TO NỔI BẬT:</b>\n`;
+    for (const s of signalStocks) {
+      msg += `   ${s.pattern.icon} <b>${s.symbol}</b>: ${s.pattern.text}`;
+      if (s.pattern.text === 'Nội Kéo') {
+        msg += ` (Nội mua đẩy giá, Ngoại ròng ${s.fnValue >= 0 ? '+' : ''}${s.fnValue.toFixed(1)} tỷ)`;
+      } else if (s.pattern.text === 'Nội Đỡ') {
+        msg += ` (Nội hấp thụ lực xả ${Math.abs(s.fnValue).toFixed(1)} tỷ của Ngoại)`;
+      } else if (s.pattern.text === 'Nội Xả') {
+        msg += ` (Nội chủ động xả bán)`;
+      } else if (s.pattern.text === 'Gom Âm Thầm') {
+        msg += ` (Ngoại gom ròng ${s.streakCount} phiên)`;
+      } else if (s.pattern.text === 'Ngoại Xả') {
+        msg += ` (Ngoại bán liên tiếp ${s.streakCount} phiên)`;
+      } else {
+        msg += ` (KLGD gấp ${s.volRatio.toFixed(1)} lần trung bình)`;
+      }
+      msg += `\n`;
+    }
   }
 
-  // Top khối lượng
-  if (validStocks.length > 0) {
-    const topVol = [...validStocks].sort((a, b) => b.volume - a.volume)[0];
-    msg += `🔥 KL cao nhất: <b>${topVol.symbol}</b> (${fmtVol(topVol.volume)})\n`;
-  }
-
-  // Tổng KL giao dịch
-  const totalVolume = validStocks.reduce((sum, s) => sum + s.volume, 0);
-  msg += `📦 Tổng KLGD: <b>${fmtVol(totalVolume)}</b>\n`;
-
-  msg += `\n<i>📡 Nguồn: VPS | 🤖 VN Stock Bot</i>`;
+  msg += `━━━━━━━━━━━━━━━━━━━━━━\n`;
+  msg += `<i>🐋 Whale Tracker v2.1 | VN Stock Bot</i>`;
 
   return msg;
 }

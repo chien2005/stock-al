@@ -188,21 +188,32 @@ function formatWhaleReport(stocks) {
   msg += `🕐 <i>${nowStr}</i>\n`;
   msg += `━━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
-  // Bỏ cột % theo yêu cầu của user
-  msg += `<code>Mã   Giá    Ngoại   TổngGD  %Ngoại</code>\n`;
-  msg += `<code>─── ───── ─────── ─────── ──────</code>\n`;
+  // Cập nhật tiêu đề bảng và đường kẻ thẳng hàng 44 ký tự (hỗ trợ mã dài đến 5 ký tự)
+  msg += `<code>Mã    Giá (Biến động)    Ngoại   TổngGD  %Ngoại</code>\n`;
+  msg += `<code>───── ─────────────── ─────── ─────── ──────</code>\n`;
 
   for (const s of stocks) {
-    const sym = s.symbol.padEnd(3);
-    const price = fmtPriceShort(s.price).padStart(5);
+    const sym = s.symbol.length > 5 ? s.symbol.substring(0, 5) : s.symbol.padEnd(5);
+    const priceStr = `${(s.price / 1000).toFixed(2)} (${s.changePct >= 0 ? '+' : ''}${s.changePct.toFixed(1).replace('.', ',')}%)`.padStart(15);
     const fnStr = `${s.fnValue >= 0 ? '+' : ''}${s.fnValue.toFixed(1)}t`.padStart(7);
     const totalGDStr = `${s.totalVal.toFixed(0)}t`.padStart(7);
     const participation = `${s.foreignParticipationPct}%`.padStart(6);
     
-    // Icon hướng giá tăng/giảm nhẹ để dễ nhận biết
-    const pctIcon = s.changePct > 0 ? '🟢' : s.changePct < 0 ? '🔴' : '🟡';
+    // Icon hướng giá trần/sàn/tăng/giảm/đứng giá
+    let pctIcon;
+    if (s.changePct > 6.5) {
+      pctIcon = '🟣';
+    } else if (s.changePct < -6.5) {
+      pctIcon = '🔵';
+    } else if (s.changePct > 0) {
+      pctIcon = '🟢';
+    } else if (s.changePct < 0) {
+      pctIcon = '🔴';
+    } else {
+      pctIcon = '🟡';
+    }
     
-    msg += `${pctIcon}<code>${sym} ${price} ${fnStr} ${totalGDStr} ${participation}</code>\n`;
+    msg += `${pctIcon}<code>${sym} ${priceStr} ${fnStr} ${totalGDStr} ${participation}</code>\n`;
   }
 
   msg += `━━━━━━━━━━━━━━━━━━━━━━\n\n`;
@@ -272,4 +283,8 @@ function fmtPriceShort(p) {
   return (p / 1000).toFixed(1);
 }
 
-module.exports = { runWhaleTrackerReport };
+module.exports = {
+  runWhaleTrackerReport,
+  getStreakDays: () => _streakDays,
+  getPrevDayForeignNet: () => _prevDayForeignNet,
+};

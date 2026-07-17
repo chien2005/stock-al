@@ -131,24 +131,7 @@ async function runStockJob() {
     console.log('   💾 Đã cache dữ liệu cho báo cáo cuối ngày');
 
     // Format message với VN30 index
-    let message = formatStockMessage(stocks, liquidity);
-    if (vn30Index) {
-      let idxMsg = '\n📊 <b>CHỈ SỐ THỊ TRƯỜNG</b>\n';
-      if (vn30Index.vn30) {
-        const v = vn30Index.vn30;
-        const icon = v.changePct > 0 ? '🟢' : v.changePct < 0 ? '🔴' : '🟡';
-        const sign = v.changePct >= 0 ? '+' : '';
-        idxMsg += `${icon} <b>VN30</b>: ${v.close} (${sign}${v.changePct}%) | KL: ${(v.volume / 1000000).toFixed(0)}M\n`;
-      }
-      if (vn30Index.vnindex) {
-        const v = vn30Index.vnindex;
-        const icon = v.changePct > 0 ? '🟢' : v.changePct < 0 ? '🔴' : '🟡';
-        const sign = v.changePct >= 0 ? '+' : '';
-        idxMsg += `${icon} <b>VNINDEX</b>: ${v.close} (${sign}${v.changePct}%) | KL: ${(v.volume / 1000000).toFixed(0)}M\n`;
-      }
-      // Chèn trước phần TỔNG KẾT
-      message = message.replace('━━━━━━━━━━━━━━━━━━━━━━\n📊 <b>TỔNG KẾT', idxMsg + '\n━━━━━━━━━━━━━━━━━━━━━━\n📊 <b>TỔNG KẾT');
-    }
+    let message = formatStockMessage(stocks, liquidity, vn30Index);
     const sent = await sendTelegramMessage(message);
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
 
