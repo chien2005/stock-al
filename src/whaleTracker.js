@@ -10,6 +10,7 @@
 
 const axios = require('axios');
 const { config } = require('./config');
+const { fetchProprietaryTrading } = require('./stockService');
 
 const VPS_API = {
   realtime: 'https://bgapidatafeed.vps.com.vn/getliststockdata',
@@ -59,6 +60,16 @@ async function runWhaleTrackerReport() {
       return;
     }
 
+    // Fetch tự doanh song song
+    const propPromises = symbols.map(sym => fetchProprietaryTrading(sym).catch(() => null));
+    const propResults = await Promise.all(propPromises);
+    const propData = {};
+    symbols.forEach((sym, idx) => {
+      if (propResults[idx]) {
+        propData[sym] = propResults[idx];
+      }
+    });
+
     // Fetch KLTB20
     const avgVolumes = {};
     const now = Math.floor(Date.now() / 1000);
@@ -104,12 +115,19 @@ async function runWhaleTrackerReport() {
       updateStreak(sym, foreignNet);
       const pattern = detectAdvancedPattern(sym, foreignNet, changePct, volRatio, totalVal, fnValue);
 
+      const propNet = propData[sym] ? propData[sym].netVal : null;
+      const propBuy = propData[sym] ? propData[sym].buyVal : 0;
+      const propSell = propData[sym] ? propData[sym].sellVal : 0;
+
       stocks.push({
         symbol: sym, price, changePct, volume, avgVol, volRatio,
         foreignBuy, foreignSell, foreignNet, fnValue, fnBuyValue, fnSellValue, totalVal,
         foreignParticipationPct, pattern, owners: WHALE_OWNERS[sym] || [],
         streakCount: _streakDays[sym]?.count || 0,
         streakDir: _streakDays[sym]?.direction || 0,
+        propNet,
+        propBuy,
+        propSell
       });
     }
 
@@ -188,16 +206,22 @@ function formatWhaleReport(stocks) {
   msg += `🕐 <i>${nowStr}</i>\n`;
   msg += `━━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
-  // Cập nhật tiêu đề bảng và đường kẻ thẳng hàng 44 ký tự (hỗ trợ mã dài đến 5 ký tự)
-  msg += `<code>Mã    Giá (Biến động)    Ngoại   TổngGD  %Ngoại</code>\n`;
-  msg += `<code>───── ─────────────── ─────── ─────── ──────</code>\n`;
+  // Cập nhật tiêu đề bảng và đường kẻ thẳng hàng 46 ký tự
+  msg += `<code>Mã    Giá (Biến động)    Ngoại  TựDoanh TổngGD</code>\n`;
+  msg += `<code>───── ─────────────── ─────── ──────── ───────</code>\n`;
 
   for (const s of stocks) {
     const sym = s.symbol.length > 5 ? s.symbol.substring(0, 5) : s.symbol.padEnd(5);
     const priceStr = `${(s.price / 1000).toFixed(2)} (${s.changePct >= 0 ? '+' : ''}${s.changePct.toFixed(1).replace('.', ',')}%)`.padStart(15);
     const fnStr = `${s.fnValue >= 0 ? '+' : ''}${s.fnValue.toFixed(1)}t`.padStart(7);
+    
+    let propStr = '---';
+    if (s.propNet !== null && s.propNet !== undefined) {
+      propStr = `${s.propNet >= 0 ? '+' : ''}${s.propNet.toFixed(1)}t`;
+    }
+    propStr = propStr.padStart(8);
+
     const totalGDStr = `${s.totalVal.toFixed(0)}t`.padStart(7);
-    const participation = `${s.foreignParticipationPct}%`.padStart(6);
     
     // Icon hướng giá trần/sàn/tăng/giảm/đứng giá
     let pctIcon;
@@ -213,7 +237,7 @@ function formatWhaleReport(stocks) {
       pctIcon = '🟡';
     }
     
-    msg += `${pctIcon}<code>${sym} ${priceStr} ${fnStr} ${totalGDStr} ${participation}</code>\n`;
+    msg += `${pctIcon}<code>${sym} ${priceStr} ${fnStr} ${propStr} ${totalGDStr}</code>\n`;
   }
 
   msg += `━━━━━━━━━━━━━━━━━━━━━━\n\n`;
@@ -224,6 +248,44 @@ function formatWhaleReport(stocks) {
   const netIcon = totalFnNet >= 0 ? '🟢' : '🔻';
   const netText = totalFnNet >= 0 ? 'TIỀN VÀO' : 'TIỀN RA';
   msg += `   ${netIcon} Ròng: <b>${totalFnNet >= 0 ? '+' : ''}${totalFnNet.toFixed(1)} tỷ</b> → ${netText}\n\n`;
+
+  // Thông số Dòng Tiền Tự Doanh (nếu có dữ liệu)
+  const validPropStocks = stocks.filter(s => s.propNet !== null);
+  if (validPropStocks.length > 0) {
+    const totalPropBuy = validPropStocks.reduce((sum, st) => sum + (st.propBuy || 0), 0);
+    const totalPropSell = validPropStocks.reduce((sum, st) => sum + (st.propSell || 0), 0);
+    const totalPropNet = totalPropBuy - totalPropSell;
+
+    msg += `📊 <b>DÒNG TIỀN TỰ DOANH CTCK:</b>\n`;
+    msg += `   📈 Mua: <b>${totalPropBuy.toFixed(1)} tỷ</b> | 📉 Bán: <b>-${totalPropSell.toFixed(1)} tỷ</b>\n`;
+    const propNetIcon = totalPropNet >= 0 ? '🟢' : '🔻';
+    const propNetText = totalPropNet >= 0 ? 'TIỀN VÀO' : 'TIỀN RA';
+    msg += `   ${propNetIcon} Ròng: <b>${totalPropNet >= 0 ? '+' : ''}${totalPropNet.toFixed(1)} tỷ</b> → ${propNetText}\n\n`;
+
+    // TỰ DOANH mua vào mạnh nhất
+    const propBuyers = [...validPropStocks].filter(s => s.propNet > 0).sort((a, b) => b.propNet - a.propNet).slice(0, 5);
+    msg += `📋 <b>TỰ DOANH mua vào mạnh nhất:</b>\n`;
+    if (propBuyers.length > 0) {
+      propBuyers.forEach((s, idx) => {
+        msg += `   ${idx + 1}. <b>${s.symbol}</b> (+${s.propNet.toFixed(1)} tỷ)\n`;
+      });
+    } else {
+      msg += `   — Không có mã nào được mua ròng\n`;
+    }
+    msg += `\n`;
+
+    // TỰ DOANH bán ra mạnh nhất
+    const propSellers = [...validPropStocks].filter(s => s.propNet < 0).sort((a, b) => a.propNet - b.propNet).slice(0, 5);
+    msg += `📋 <b>TỰ DOANH bán ra mạnh nhất:</b>\n`;
+    if (propSellers.length > 0) {
+      propSellers.forEach((s, idx) => {
+        msg += `   ${idx + 1}. <b>${s.symbol}</b> (${s.propNet.toFixed(1)} tỷ)\n`;
+      });
+    } else {
+      msg += `   — Không có mã nào bị bán ròng\n`;
+    }
+    msg += `\n`;
+  }
 
   // QUỸ mua vào mạnh nhất (Top 10 cp có fnValue dương lớn nhất)
   const buyers = [...stocks].filter(s => s.fnValue > 0).sort((a, b) => b.fnValue - a.fnValue).slice(0, 10);

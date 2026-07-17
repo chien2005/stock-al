@@ -649,5 +649,42 @@ async function fetchMarketLiquidity() {
   return null;
 }
 
-module.exports = { fetchAllStocks, fetchRealtimeData, fetchVN30Index, fetchMarketScan, fetchTopBoughtStocks, fetchMarketLiquidity };
+/**
+ * Lấy dữ liệu tự doanh mới nhất của mã cổ phiếu từ VNDIRECT API
+ * @param {string} symbol - Mã cổ phiếu
+ * @returns {Object|null}
+ */
+async function fetchProprietaryTrading(symbol) {
+  const url = `https://finfo-api.vndirect.com.vn/v4/proprietary_trading?q=code:${symbol}&size=1`;
+  const maxRetries = 2;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const response = await axios.get(url, {
+        headers: HEADERS,
+        timeout: 5000,
+      });
+      if (response.data && response.data.data && response.data.data.length > 0) {
+        const item = response.data.data[0];
+        const buyVal = (parseFloat(item.matchedValueBuy || 0) + parseFloat(item.putthroughValueBuy || 0)) / 1e9;
+        const sellVal = (parseFloat(item.matchedValueSell || 0) + parseFloat(item.putthroughValueSell || 0)) / 1e9;
+        const netVal = buyVal - sellVal;
+        return {
+          buyVal,
+          sellVal,
+          netVal,
+          date: item.date,
+        };
+      }
+    } catch (error) {
+      // Non-critical, silently fail
+    }
+    if (attempt < maxRetries) {
+      await new Promise(res => setTimeout(res, 500));
+    }
+  }
+  return null;
+}
+
+module.exports = { fetchAllStocks, fetchRealtimeData, fetchVN30Index, fetchMarketScan, fetchTopBoughtStocks, fetchMarketLiquidity, fetchProprietaryTrading };
 

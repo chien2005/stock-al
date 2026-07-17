@@ -123,6 +123,19 @@ async function runStockJob() {
       return;
     }
 
+    // Fetch tự doanh cho các mã thành công song song
+    const { fetchProprietaryTrading } = require('./stockService');
+    const validSymbols = stocks.filter(s => !s.error).map(s => s.symbol);
+    const propResults = await Promise.all(
+      validSymbols.map(sym => fetchProprietaryTrading(sym).catch(() => null))
+    );
+    const propData = {};
+    validSymbols.forEach((sym, idx) => {
+      if (propResults[idx]) {
+        propData[sym] = propResults[idx];
+      }
+    });
+
     // Cache data cho báo cáo cuối ngày 20h30
     lastStockData = stocks;
     lastStockDataTime = Date.now();
@@ -130,8 +143,8 @@ async function runStockJob() {
     lastLiquidity = liquidity;
     console.log('   💾 Đã cache dữ liệu cho báo cáo cuối ngày');
 
-    // Format message với VN30 index
-    let message = formatStockMessage(stocks, liquidity, vn30Index);
+    // Format message với VN30 index và tự doanh
+    let message = formatStockMessage(stocks, liquidity, vn30Index, propData);
     const sent = await sendTelegramMessage(message);
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
 

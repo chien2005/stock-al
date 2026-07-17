@@ -303,9 +303,22 @@ async function pollAndCheck(isFirstPoll) {
       const foreignNet = foreignBuy - foreignSell;
       const changePct = refPrice > 0 ? parseFloat(((price - refPrice) / refPrice * 100).toFixed(2)) : 0;
 
+      // Parse bid/ask depth
+      const bidVol1 = parseInt((raw.g1 || '').split('|')[1] || 0);
+      const bidVol2 = parseInt((raw.g2 || '').split('|')[1] || 0);
+      const bidVol3 = parseInt((raw.g3 || '').split('|')[1] || 0);
+      const bidDepth = bidVol1 + bidVol2 + bidVol3;
+
+      const askVol1 = parseInt((raw.g4 || '').split('|')[1] || 0);
+      const askVol2 = parseInt((raw.g5 || '').split('|')[1] || 0);
+      const askVol3 = parseInt((raw.g6 || '').split('|')[1] || 0);
+      const askDepth = askVol1 + askVol2 + askVol3;
+
+      const OBI = (bidDepth + askDepth) > 0 ? (bidDepth - askDepth) / (bidDepth + askDepth) : 0;
+
       const prev = _previousData[symbol];
       const avgVol = _avgVolumes[symbol] || 0;
-      const cur = { price, refPrice, ceilingPrice, floorPrice, volume, foreignBuy, foreignSell, foreignNet, changePct };
+      const cur = { price, refPrice, ceilingPrice, floorPrice, volume, foreignBuy, foreignSell, foreignNet, changePct, bidDepth, askDepth, OBI };
 
       if (isFirstPoll || !prev) {
         _previousData[symbol] = cur;
@@ -358,6 +371,44 @@ async function pollAndCheck(isFirstPoll) {
             _alertedToday[key] = now;
             incrementAlertCount(symbol);
           }
+        }
+      }
+
+      // ═══ CHECK 1.1: Sáng kiến 3 — RÚT LỆNH ĐỆM MUA MẠNH ═══
+      if (prev.bidDepth >= 30000 && bidDepth <= prev.bidDepth * 0.5) {
+        const key = `${symbol}_cancel_bid`;
+        if (!isCooldown(key, now) && canAlertSymbol(symbol, 'HIGH')) {
+          const dropPct = ((prev.bidDepth - bidDepth) / prev.bidDepth * 100).toFixed(0);
+          let detail = `Lực chặn mua (Bid Depth) đột ngột giảm mạnh: <b>-${dropPct}%</b>\n`;
+          detail += `   Trước: ${fmtVol(prev.bidDepth)} CP → Hiện tại: ${fmtVol(bidDepth)} CP\n`;
+          detail += `   Chỉ số OBI: ${prev.OBI?.toFixed(2)} → ${OBI.toFixed(2)}\n`;
+          detail += `   <i>Cảnh báo: Có dấu hiệu tạo lập/tay to rút lệnh đệm mua ảo ở dưới để buông giá.</i>`;
+
+          alerts.push({
+            symbol, icon: '🚨🔌', title: 'RÚT LỆNH ĐỆM MUA', detail,
+            price, changePct, volume, priority: 'HIGH'
+          });
+          _alertedToday[key] = now;
+          incrementAlertCount(symbol);
+        }
+      }
+
+      // ═══ CHECK 1.2: Sáng kiến 2 — KIỆT LỰC ĐỠ (Absorption Exhaustion) ═══
+      if (foreignNet < -40000 && fnDelta < -15000 && (bidDepth <= prev.bidDepth * 0.6 || OBI < -0.5) && changePct < prev.changePct - 0.4) {
+        const key = `${symbol}_exhaust_support`;
+        if (!isCooldown(key, now) && canAlertSymbol(symbol, 'HIGH')) {
+          let detail = `Lực đỡ mua ròng của Nội cạn kiệt/rút lui dưới áp lực xả ròng mạnh của Ngoại.\n`;
+          detail += `   NN thay đổi 3ph: <b>${fmtVol(fnDelta)}</b> CP | Ròng ngày: <b>${fmtVol(foreignNet)}</b> CP\n`;
+          detail += `   Bid Depth giảm: ${fmtVol(prev.bidDepth)} → ${fmtVol(bidDepth)} CP (OBI: ${OBI.toFixed(2)})\n`;
+          detail += `   Giá trượt nhanh: ${fmtPrice(prev.price)} → <b>${fmtPrice(price)}</b> (${changePct >= 0 ? '+' : ''}${changePct}%)\n`;
+          detail += `   <i>Khuyến nghị: Theo dõi sát sao mốc hỗ trợ, hạ tỷ trọng sớm tránh cú gãy trung hạn.</i>`;
+
+          alerts.push({
+            symbol, icon: '🚨🛡️', title: 'KIỆT LỰC ĐỠ (Exhausted)', detail,
+            price, changePct, volume, priority: 'HIGH'
+          });
+          _alertedToday[key] = now;
+          incrementAlertCount(symbol);
         }
       }
 

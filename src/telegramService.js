@@ -79,13 +79,14 @@ function detectPattern(symbol, changePct, volRatio, totalVal, fnValue) {
 }
 
 /**
- * Format dữ liệu stock thành message Telegram đẹp dạng WHALE TRACKER v2.1
+ * Format dữ liệu stock thành message Telegram đẹp dạng WHALE TRACKER v2.1 (kèm Tự doanh)
  * @param {Array} stocks - Danh sách thông tin stock
  * @param {Object} liquidity - Thông tin thanh khoản thị trường
  * @param {Object} vn30Index - Chỉ số VN30 / VNINDEX
+ * @param {Object} propData - Bản ghi dữ liệu tự doanh từng mã
  * @returns {string} Message HTML formatted
  */
-function formatStockMessage(stocks, liquidity = null, vn30Index = null) {
+function formatStockMessage(stocks, liquidity = null, vn30Index = null, propData = null) {
   const now = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
 
   // Map stocks thành cấu trúc thuận tiện
@@ -110,6 +111,16 @@ function formatStockMessage(stocks, liquidity = null, vn30Index = null) {
     const streak = streakDays[s.symbol];
     const streakCount = streak ? streak.count : 0;
 
+    // Tích hợp dữ liệu tự doanh
+    let propNet = null;
+    let propBuy = 0;
+    let propSell = 0;
+    if (propData && propData[s.symbol]) {
+      propNet = propData[s.symbol].netVal;
+      propBuy = propData[s.symbol].buyVal;
+      propSell = propData[s.symbol].sellVal;
+    }
+
     formattedStocks.push({
       symbol: s.symbol,
       price: s.price,
@@ -124,7 +135,10 @@ function formatStockMessage(stocks, liquidity = null, vn30Index = null) {
       totalVal,
       foreignParticipationPct,
       pattern,
-      streakCount
+      streakCount,
+      propNet,
+      propBuy,
+      propSell
     });
   }
 
@@ -139,16 +153,22 @@ function formatStockMessage(stocks, liquidity = null, vn30Index = null) {
   msg += `🕐 <i>${now}</i>\n`;
   msg += `━━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
-  // Cấu trúc bảng 44 ký tự (hỗ trợ mã dài đến 5 ký tự)
-  msg += `<code>Mã    Giá (Biến động)    Ngoại   TổngGD  %Ngoại</code>\n`;
-  msg += `<code>───── ─────────────── ─────── ─────── ──────</code>\n`;
+  // Cấu trúc bảng 46 ký tự
+  msg += `<code>Mã    Giá (Biến động)    Ngoại  TựDoanh TổngGD</code>\n`;
+  msg += `<code>───── ─────────────── ─────── ──────── ───────</code>\n`;
 
   for (const s of formattedStocks) {
     const sym = s.symbol.length > 5 ? s.symbol.substring(0, 5) : s.symbol.padEnd(5);
     const priceStr = `${(s.price / 1000).toFixed(2)} (${s.changePct >= 0 ? '+' : ''}${s.changePct.toFixed(1).replace('.', ',')}%)`.padStart(15);
     const fnStr = `${s.fnValue >= 0 ? '+' : ''}${s.fnValue.toFixed(1)}t`.padStart(7);
+    
+    let propStr = '---';
+    if (s.propNet !== null && s.propNet !== undefined) {
+      propStr = `${s.propNet >= 0 ? '+' : ''}${s.propNet.toFixed(1)}t`;
+    }
+    propStr = propStr.padStart(8);
+
     const totalGDStr = `${s.totalVal.toFixed(0)}t`.padStart(7);
-    const participation = `${s.foreignParticipationPct}%`.padStart(6);
     
     // Icon hướng giá trần/sàn/tăng/giảm/đứng giá
     let pctIcon;
@@ -164,7 +184,7 @@ function formatStockMessage(stocks, liquidity = null, vn30Index = null) {
       pctIcon = '🟡';
     }
     
-    msg += `${pctIcon}<code>${sym} ${priceStr} ${fnStr} ${totalGDStr} ${participation}</code>\n`;
+    msg += `${pctIcon}<code>${sym} ${priceStr} ${fnStr} ${propStr} ${totalGDStr}</code>\n`;
   }
 
   // Chèn lỗi nếu có mã nào bị lỗi
@@ -210,6 +230,44 @@ function formatStockMessage(stocks, liquidity = null, vn30Index = null) {
   const netIcon = totalFnNet >= 0 ? '🟢' : '🔻';
   const netText = totalFnNet >= 0 ? 'TIỀN VÀO' : 'TIỀN RA';
   msg += `   ${netIcon} Ròng: <b>${totalFnNet >= 0 ? '+' : ''}${totalFnNet.toFixed(1)} tỷ</b> → ${netText}\n\n`;
+
+  // Thông số Dòng Tiền Tự Doanh (nếu có dữ liệu)
+  const validPropStocks = formattedStocks.filter(s => s.propNet !== null);
+  if (validPropStocks.length > 0) {
+    const totalPropBuy = validPropStocks.reduce((sum, st) => sum + (st.propBuy || 0), 0);
+    const totalPropSell = validPropStocks.reduce((sum, st) => sum + (st.propSell || 0), 0);
+    const totalPropNet = totalPropBuy - totalPropSell;
+
+    msg += `📊 <b>DÒNG TIỀN TỰ DOANH CTCK:</b>\n`;
+    msg += `   📈 Mua: <b>${totalPropBuy.toFixed(1)} tỷ</b> | 📉 Bán: <b>-${totalPropSell.toFixed(1)} tỷ</b>\n`;
+    const propNetIcon = totalPropNet >= 0 ? '🟢' : '🔻';
+    const propNetText = totalPropNet >= 0 ? 'TIỀN VÀO' : 'TIỀN RA';
+    msg += `   ${propNetIcon} Ròng: <b>${totalPropNet >= 0 ? '+' : ''}${totalPropNet.toFixed(1)} tỷ</b> → ${propNetText}\n\n`;
+
+    // TỰ DOANH mua vào mạnh nhất
+    const propBuyers = [...validPropStocks].filter(s => s.propNet > 0).sort((a, b) => b.propNet - a.propNet).slice(0, 5);
+    msg += `📋 <b>TỰ DOANH mua vào mạnh nhất:</b>\n`;
+    if (propBuyers.length > 0) {
+      propBuyers.forEach((s, idx) => {
+        msg += `   ${idx + 1}. <b>${s.symbol}</b> (+${s.propNet.toFixed(1)} tỷ)\n`;
+      });
+    } else {
+      msg += `   — Không có mã nào được mua ròng\n`;
+    }
+    msg += `\n`;
+
+    // TỰ DOANH bán ra mạnh nhất
+    const propSellers = [...validPropStocks].filter(s => s.propNet < 0).sort((a, b) => a.propNet - b.propNet).slice(0, 5);
+    msg += `📋 <b>TỰ DOANH bán ra mạnh nhất:</b>\n`;
+    if (propSellers.length > 0) {
+      propSellers.forEach((s, idx) => {
+        msg += `   ${idx + 1}. <b>${s.symbol}</b> (${s.propNet.toFixed(1)} tỷ)\n`;
+      });
+    } else {
+      msg += `   — Không có mã nào bị bán ròng\n`;
+    }
+    msg += `\n`;
+  }
 
   // QUỸ mua vào mạnh nhất (Top 10 cp có fnValue dương lớn nhất)
   const buyers = [...formattedStocks].filter(s => s.fnValue > 0).sort((a, b) => b.fnValue - a.fnValue).slice(0, 10);
