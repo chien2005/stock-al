@@ -180,12 +180,12 @@ function parseVPSData(raw, history) {
     ? parseFloat(((price - refPrice) / refPrice * 100).toFixed(2))
     : parseFloat(raw.changePc || 0);
 
-  // Khối lượng
-  const volume = parseInt(raw.lot || 0);
+  // Khối lượng (VPS API trả về đơn vị lô 10 cổ phiếu)
+  const volume = parseInt(raw.lot || 0) * 10;
 
-  // Khối ngoại  
-  const foreignBuy = parseInt(raw.fBVol || 0);
-  const foreignSell = parseInt(raw.fSVolume || 0);
+  // Khối ngoại (VPS API trả về đơn vị lô 10 cổ phiếu)
+  const foreignBuy = parseInt(raw.fBVol || 0) * 10;
+  const foreignSell = parseInt(raw.fSVolume || 0) * 10;
   const foreignRoom = parseFloat(raw.fRoom || 0);
 
   // Parse sổ lệnh (bid/ask)

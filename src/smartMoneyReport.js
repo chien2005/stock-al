@@ -68,10 +68,10 @@ async function runSmartMoneyReport() {
         realtimeData[raw.sym] = {
           price: parseFloat(raw.lastPrice || 0) * 1000,
           refPrice: parseFloat(raw.r || 0) * 1000,
-          volume: parseInt(raw.lot || 0),
-          foreignBuy: parseInt(raw.fBVol || 0),
-          foreignSell: parseInt(raw.fSVolume || 0),
-          foreignNet: parseInt(raw.fBVol || 0) - parseInt(raw.fSVolume || 0),
+          volume: parseInt(raw.lot || 0) * 10,
+          foreignBuy: parseInt(raw.fBVol || 0) * 10,
+          foreignSell: parseInt(raw.fSVolume || 0) * 10,
+          foreignNet: (parseInt(raw.fBVol || 0) - parseInt(raw.fSVolume || 0)) * 10,
           changePct: 0, // will calc below
         };
         const rt = realtimeData[raw.sym];

@@ -95,9 +95,9 @@ async function runWhaleTrackerReport() {
 
       const price = parseFloat(raw.lastPrice || 0) * 1000;
       const refPrice = parseFloat(raw.r || 0) * 1000;
-      const volume = parseInt(raw.lot || 0);
-      const foreignBuy = parseInt(raw.fBVol || 0);
-      const foreignSell = parseInt(raw.fSVolume || 0);
+      const volume = parseInt(raw.lot || 0) * 10;
+      const foreignBuy = parseInt(raw.fBVol || 0) * 10;
+      const foreignSell = parseInt(raw.fSVolume || 0) * 10;
       const foreignNet = foreignBuy - foreignSell;
       const changePct = refPrice > 0 ? parseFloat(((price - refPrice) / refPrice * 100).toFixed(2)) : 0;
       const avgVol = avgVolumes[sym] || 0;
