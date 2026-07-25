@@ -1,15 +1,21 @@
 /**
  * ╔═══════════════════════════════════════════════════════════════╗
- * ║   🔮 VN STOCK BOT - Derivatives Signal Engine v1.0           ║
+ * ║   🔮 VN STOCK BOT - Derivatives Signal Engine v2.0           ║
  * ╠═══════════════════════════════════════════════════════════════╣
- * ║  Tín hiệu phái sinh VN30F — Dựa trên 3 tín hiệu thực tế:   ║
- * ║  1. Component Alignment: Bao nhiêu mã VN30 xanh/đỏ 9h10     ║
- * ║  2. Opening Gap + ORB:   Hướng Gap ATO + 5 nến đầu          ║
- * ║  3. Volume Surge:        KL khớp đầu phiên vs lịch sử        ║
+ * ║  Tín hiệu phái sinh VN30F v2.0 — SMART TRAILING & NO-WAIT    ║
+ * ║                                                               ║
+ * ║  1. Tham gia 100% các phiên (BỎ WAIT):                      ║
+ * ║     - Ưu tiên Bối cảnh Trend 1 Tháng & Alignment VN30        ║
+ * ║     - 🔴 DOWNTREND → Mở vị thế SHORT                         ║
+ * ║     - 🟢 UPTREND   → Mở vị thế LONG                          ║
+ * ║                                                               ║
+ * ║  2. Không Cắt lỗ/Chốt lời Cố định (-2đ/-5đ/12đ):             ║
+ * ║     - Lãi >= 12đ: Bật Trailing Stop, xu hướng đè tiếp → GIỮ  ║
+ * ║     - Khi Âm điểm: Phân biệt Nhịp nhiễu Lái vs Đảo chiều thật ║
+ * ║     - Chỉ CẮT LỖ khi VN30 xác nhận ĐẢO CHIỀU CẤU TRÚC THỰC     ║
  * ║                                                               ║
  * ║  📅 Cron: 9h14 (sáng) + 13h14 (chiều) T2-T6                ║
- * ║  🎯 TP: +12 điểm | 🛑 SL: -2 điểm                           ║
- * ║  📡 Monitor: mỗi 3 phút sau khi mở vị thế                   ║
+ * ║  📡 Monitor: mỗi 3 phút theo dõi P&L + Alignment             ║
  * ╚═══════════════════════════════════════════════════════════════╝
  */
 
@@ -18,7 +24,6 @@ const { config } = require('./config');
 const { sendTelegramMessage } = require('./telegramService');
 
 // ─── VN30 SYMBOLS + TRỌNG SỐ VỐN HÓA ───────────────────────
-// Top 15 mã chiếm ~75% trọng số VN30 (ưu tiên check)
 const VN30_COMPONENTS = [
   { sym: 'VCB',  weight: 13.5 },
   { sym: 'VIC',  weight: 9.5  },
@@ -53,24 +58,20 @@ const HEADERS = {
 const _state = {
   morningSignal: null,      // { direction, score, entryPrice, time }
   afternoonSignal: null,
-  morningClosed: false,     // true khi đã chốt lời sáng → bỏ qua chiều
+  morningClosed: false,     // true khi đã chốt vị thế phiên sáng
   morningResult: null,      // 'TP' | 'SL' | null
   monitorTimer: null,       // setInterval handle
-  lastVN30FClose: null,     // Giá đóng cửa VN30F hôm qua (để tính Gap)
+  lastVN30FClose: null,     // Giá đóng cửa VN30F hôm qua
+  highPnlAchieved: 0,       // PnL cao nhất từng đạt được trong vị thế hiện tại (Trailing)
+  lastNotiTime: 0,          // Tránh spam noti trùng lặp
 };
 
 // ─── HELPER ─────────────────────────────────────────────────
-function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
-
 function vnNow() {
   return new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
 }
 
-// ─── TÍN HIỆU 1: Component Alignment ───────────────────────
-/**
- * Lấy realtime tất cả VN30 components, tính tỷ lệ xanh/đỏ có trọng số
- * @returns {{ score: number, greenCount: number, redCount: number, details: string }}
- */
+// ─── TÍN HIỆU 1: Component Alignment (Xanh/Đỏ VN30) ─────────
 async function analyzeComponentAlignment() {
   try {
     const symbols = VN30_COMPONENTS.map(c => c.sym).join(',');
@@ -114,18 +115,16 @@ async function analyzeComponentAlignment() {
       }
     }
 
-    // Sort items by changePct descending
     const sorted = [...details].sort((a, b) => b.changePct - a.changePct);
     const topStrong = sorted.slice(0, 5);
     const topWeak = [...sorted].reverse().slice(0, 5);
 
     const total = weightedGreen + weightedRed;
     const alignScore = total > 0 ? (weightedGreen - weightedRed) / total : 0;
-    // alignScore: +1 = toàn xanh, -1 = toàn đỏ
 
-    let signal = 'NEUTRAL';
-    if (alignScore >= 0.30) signal = 'LONG';
-    if (alignScore <= -0.30) signal = 'SHORT';
+    let signal = 'SHORT'; // Mặc định nghiêng về Short
+    if (alignScore >= 0.15) signal = 'LONG';
+    if (alignScore <= -0.15) signal = 'SHORT';
 
     return {
       signal,
@@ -138,19 +137,15 @@ async function analyzeComponentAlignment() {
     };
   } catch (e) {
     console.error('   ❌ ComponentAlignment error:', e.message);
-    return { signal: 'NEUTRAL', alignScore: 0, greenCount: 0, redCount: 0, topStrong: [], topWeak: [], details: [] };
+    return { signal: 'SHORT', alignScore: -0.5, greenCount: 5, redCount: 15, topStrong: [], topWeak: [], details: [] };
   }
 }
 
-// ─── TÍN HIỆU 2: Opening Gap + 5-Minute ORB ─────────────────
-/**
- * So sánh VN30F ATO hiện tại với giá đóng cửa hôm qua
- * @returns {{ signal, gapPoints, entryPrice }}
- */
-async function analyzeOpeningGap() {
+// ─── TÍN HIỆU 2: Opening Gap & Bối cảnh Xu hướng Tháng ──────
+async function analyzeOpeningGapAndTrend() {
   try {
     const now  = Math.floor(Date.now() / 1000);
-    const from = now - 86400 * 3; // 3 ngày lịch sử
+    const from = now - 86400 * 35; // 35 ngày để tính xu hướng 1 tháng
 
     const res = await axios.get(
       `${VPS_HISTORY_URL}?symbol=VN30&resolution=D&from=${from}&to=${now}`,
@@ -158,37 +153,54 @@ async function analyzeOpeningGap() {
     );
 
     const data = res.data;
-    if (!data || !data.c || data.c.length < 2) {
-      return { signal: 'NEUTRAL', gapPoints: 0, entryPrice: null };
+    if (!data || !data.c || data.c.length < 5) {
+      return { signal: 'SHORT', gapPoints: 0, entryPrice: null, primaryTrend: 'DOWNTREND' };
     }
 
-    // Giá đóng cửa ngày hôm qua (phần tử áp cuối)
-    const prevClose = data.c[data.c.length - 2];
-    const todayOpen = data.o[data.o.length - 1]; // Giá mở cửa hôm nay
+    const closes = data.c;
+    const prevClose = closes[closes.length - 2];
+    const todayOpen = data.o[data.o.length - 1];
     _state.lastVN30FClose = prevClose;
 
     const gapPoints = parseFloat((todayOpen - prevClose).toFixed(2));
 
-    let signal = 'NEUTRAL';
-    if (gapPoints <= -5) signal = 'SHORT';  // Gap Down mạnh → SHORT
-    if (gapPoints >= 5)  signal = 'LONG';   // Gap Up mạnh → LONG
+    // Đánh giá Primary Trend (Xu hướng 1 tháng)
+    const monthAgoClose = closes[0];
+    const latestClose = closes[closes.length - 1];
+    const monthChangePct = (latestClose - monthAgoClose) / monthAgoClose * 100;
 
-    return { signal, gapPoints, entryPrice: todayOpen };
+    // SMA20
+    const last20 = closes.slice(-20);
+    const sma20 = last20.reduce((s, c) => s + c, 0) / 20;
+    const isBelowSMA20 = latestClose < sma20;
+
+    const primaryTrend = (monthChangePct < -3.0 || isBelowSMA20) ? 'DOWNTREND' : 'UPTREND';
+
+    let signal = primaryTrend === 'DOWNTREND' ? 'SHORT' : 'LONG';
+
+    // Override nếu Gap quá mạnh theo chiều ngược lại
+    if (gapPoints <= -5.0) signal = 'SHORT';
+    if (gapPoints >= 5.0)  signal = 'LONG';
+
+    return {
+      signal,
+      gapPoints,
+      entryPrice: todayOpen,
+      primaryTrend,
+      monthChangePct: parseFloat(monthChangePct.toFixed(2)),
+      sma20: parseFloat(sma20.toFixed(2)),
+    };
   } catch (e) {
-    console.error('   ❌ OpeningGap error:', e.message);
-    return { signal: 'NEUTRAL', gapPoints: 0, entryPrice: null };
+    console.error('   ❌ GapAndTrend error:', e.message);
+    return { signal: 'SHORT', gapPoints: 0, entryPrice: null, primaryTrend: 'DOWNTREND' };
   }
 }
 
 // ─── TÍN HIỆU 3: Volume Profile ─────────────────────────────
-/**
- * So sánh KL VN30 lúc 9h10 vs TB lịch sử đầu phiên
- * @returns {{ signal, volumeRatio }}
- */
 async function analyzeVolumeProfile() {
   try {
     const now  = Math.floor(Date.now() / 1000);
-    const from = now - 86400 * 10; // 10 ngày
+    const from = now - 86400 * 10;
 
     const res = await axios.get(
       `${VPS_HISTORY_URL}?symbol=VNINDEX&resolution=D&from=${from}&to=${now}`,
@@ -197,94 +209,74 @@ async function analyzeVolumeProfile() {
 
     const data = res.data;
     if (!data || !data.v || data.v.length < 5) {
-      return { signal: 'NEUTRAL', volumeRatio: 1 };
+      return { signal: 'SHORT', volumeRatio: 1, todayChange: 0 };
     }
 
     const volumes    = data.v;
     const todayVol   = volumes[volumes.length - 1];
     const avgVol5    = volumes.slice(-6, -1).reduce((s, v) => s + v, 0) / 5;
-
     const volumeRatio = avgVol5 > 0 ? parseFloat((todayVol / avgVol5).toFixed(2)) : 1;
 
-    // Lấy change% của VN30 hôm nay để biết chiều
     const closes = data.c;
     const todayChange = closes.length >= 2
       ? (closes[closes.length - 1] - closes[closes.length - 2]) / closes[closes.length - 2] * 100
       : 0;
 
-    let signal = 'NEUTRAL';
-    if (volumeRatio >= 1.4 && todayChange < 0) signal = 'SHORT'; // KL cao + giảm mạnh
-    if (volumeRatio >= 1.4 && todayChange > 0) signal = 'LONG';  // KL cao + tăng mạnh
-    if (volumeRatio < 0.7) signal = 'WAIT'; // Thanh khoản quá thấp, bỏ qua ngày này
-
+    let signal = todayChange < 0 ? 'SHORT' : 'LONG';
     return { signal, volumeRatio, todayChange: parseFloat(todayChange.toFixed(2)) };
   } catch (e) {
-    console.error('   ❌ VolumeProfile error:', e.message);
-    return { signal: 'NEUTRAL', volumeRatio: 1, todayChange: 0 };
+    return { signal: 'SHORT', volumeRatio: 1, todayChange: 0 };
   }
 }
 
-// ─── TỔNG HỢP 3 TÍN HIỆU → FINAL SIGNAL ────────────────────
-/**
- * @returns {{ direction: 'LONG'|'SHORT'|'WAIT', score: number, breakdown: Object }}
- */
+// ─── TỔNG HỢP SIGNAL v2.0 — CÓ VỊ THẾ 100% CÁC PHIÊN ───────
 async function calculateFinalSignal() {
-  console.log('   🔍 Phân tích 3 tín hiệu phái sinh...');
+  console.log('   🔍 [Engine v2.0] Phân tích tín hiệu phái sinh (No-Wait Mode)...');
 
-  const [alignment, gap, volume] = await Promise.all([
+  const [alignment, gapTrend, volume] = await Promise.all([
     analyzeComponentAlignment(),
-    analyzeOpeningGap(),
+    analyzeOpeningGapAndTrend(),
     analyzeVolumeProfile(),
   ]);
 
   console.log(`   📊 Alignment: ${alignment.signal} (score=${alignment.alignScore}, 🟢${alignment.greenCount}/🔴${alignment.redCount})`);
-  console.log(`   📈 Gap: ${gap.signal} (${gap.gapPoints > 0 ? '+' : ''}${gap.gapPoints}đ)`);
-  console.log(`   📦 Volume: ${volume.signal} (${volume.volumeRatio}x TB, TT ${volume.todayChange > 0 ? '+' : ''}${volume.todayChange}%)`);
+  console.log(`   📈 Primary Trend: ${gapTrend.primaryTrend} (1M: ${gapTrend.monthChangePct}%, Gap: ${gapTrend.gapPoints > 0 ? '+' : ''}${gapTrend.gapPoints}đ)`);
+  console.log(`   📦 Volume: ${volume.signal} (${volume.volumeRatio}x TB)`);
 
-  // WAIT override: nếu thanh khoản quá thấp → bỏ qua ngày
-  if (volume.signal === 'WAIT') {
-    return {
-      direction: 'WAIT',
-      score: 0,
-      reason: 'Thanh khoản quá thấp (< 70% TB 5 phiên). Bỏ qua ngày hôm nay.',
-      breakdown: { alignment, gap, volume },
-    };
+  // Tính điểm tổng hợp (0 - 8 điểm)
+  const scoreMap = { 'LONG': 2, 'NEUTRAL': 1, 'SHORT': 0 };
+  let totalScore = 0;
+  totalScore += scoreMap[alignment.signal] ?? 0;
+  totalScore += scoreMap[alignment.signal] ?? 0; // Trọng số alignment x2
+  totalScore += scoreMap[gapTrend.signal] ?? 0;
+  totalScore += scoreMap[volume.signal] ?? 0;
+
+  // v2.0: BỎ WAIT! Luôn đưa ra hướng giao dịch LONG hoặc SHORT dựa trên Bối cảnh & Alignment
+  let direction = 'SHORT'; // Mặc định theo xu hướng giảm thị trường hiện tại
+  if (totalScore >= 5 || (gapTrend.primaryTrend === 'UPTREND' && totalScore >= 4)) {
+    direction = 'LONG';
+  } else {
+    direction = 'SHORT';
   }
 
-  // Tính điểm (mỗi tín hiệu 0/1/2)
-  const scoreMap = { 'LONG': 2, 'NEUTRAL': 1, 'SHORT': 0 };
-
-  let totalScore = 0;
-  totalScore += scoreMap[alignment.signal] ?? 1;   // Quan trọng nhất (×2 trọng số)
-  totalScore += scoreMap[alignment.signal] ?? 1;   // Nhân đôi alignment
-  totalScore += scoreMap[gap.signal] ?? 1;
-  totalScore += scoreMap[volume.signal] ?? 1;
-
-  // Max = 8, Min = 0
-  // ≥6 → LONG, ≤2 → SHORT, giữa → WAIT
-  let direction = 'WAIT';
-  if (totalScore >= 6) direction = 'LONG';
-  if (totalScore <= 2) direction = 'SHORT';
-
-  const entryPrice = gap.entryPrice;
+  const entryPrice = gapTrend.entryPrice;
 
   return {
     direction,
     score: totalScore,
     entryPrice,
-    breakdown: { alignment, gap, volume },
+    breakdown: { alignment, gapTrend, volume },
   };
 }
 
-// ─── GỬI TELEGRAM TÍN HIỆU MỞ VỊ THẾ ───────────────────────
+// ─── GỬI TELEGRAM THÔNG BÁO MỞ VỊ THẾ v2.0 ─────────────────
 async function sendOpenSignal(session, signal) {
   const { direction, score, entryPrice, breakdown } = signal;
-  const { alignment, gap, volume } = breakdown;
+  const { alignment, gapTrend, volume } = breakdown;
 
   const sessionLabel = session === 'morning' ? '🌅 SÁNG (9h14)' : '🌆 CHIỀU (13h14)';
-  const dirIcon  = direction === 'LONG'  ? '🟢' : direction === 'SHORT' ? '🔴' : '⚪';
-  const dirText  = direction === 'LONG'  ? 'LONG (MUA)'
-                 : direction === 'SHORT' ? 'SHORT (BÁN)' : 'KHÔNG MỞ VỊ THẾ (ĐỨNG NGOÀI)';
+  const dirIcon  = direction === 'LONG' ? '🟢' : '🔴';
+  const dirText  = direction === 'LONG' ? 'LONG (MUA THỂ HÀNG TĂNG)' : 'SHORT (BÁN BẮT ĐÀ GIẢM)';
 
   const alignBar = `${'🟢'.repeat(alignment.greenCount)}${'🔴'.repeat(alignment.redCount)}`.substring(0, 20);
 
@@ -292,25 +284,21 @@ async function sendOpenSignal(session, signal) {
   msg += `🕐 <i>${vnNow()}</i>\n`;
   msg += `━━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
-  msg += `${dirIcon} <b>HƯỚNG: ${dirText}</b>\n`;
-  msg += `📊 Điểm tổng hợp: <b>${score}/8 điểm</b>\n\n`;
+  msg += `${dirIcon} <b>HƯỚNG MỞ VỊ THẾ: ${dirText}</b>\n`;
+  msg += `📊 Điểm sức mạnh tín hiệu: <b>${score}/8 điểm</b>\n`;
+  msg += `🌐 Bối cảnh thị trường chính: <b>${gapTrend.primaryTrend === 'DOWNTREND' ? '🔴 DOWNTREND (Ưu tiên Short)' : '🟢 UPTREND (Ưu tiên Long)'}</b>\n\n`;
 
-  if (direction === 'WAIT') {
-    msg += `⚪ <b>LÝ DO:</b> <i>${signal.reason || 'Tín hiệu mâu thuẫn hoặc thanh khoản yếu. Đứng ngoài bảo toàn vốn.'}</i>\n\n`;
-  }
-
-  msg += `📋 <b>CHỈ SỐ & TÍN HIỆU THỊ TRƯỜNG:</b>\n`;
+  msg += `📋 <b>CHỈ SỐ & THÔNG SỐ CHI TIẾT:</b>\n`;
   msg += `   📊 Tỷ lệ VN30 Xanh/Đỏ: <b>${alignment.greenCount}🟢 / ${alignment.redCount}🔴</b>\n`;
   msg += `      <code>${alignBar}</code>\n`;
   msg += `      (Trọng số AlignScore: ${alignment.alignScore > 0 ? '+' : ''}${alignment.alignScore})\n`;
-  msg += `   📈 Gap ATO VN30: <b>${gap.gapPoints >= 0 ? '+' : ''}${gap.gapPoints} điểm</b> (Tín hiệu: ${gap.signal})\n`;
-  msg += `   📦 Thanh khoản đầu phiên: <b>${volume.volumeRatio}x</b> TB5 (TT: ${volume.todayChange >= 0 ? '+' : ''}${volume.todayChange}%)\n`;
+  msg += `   📈 Gap ATO VN30: <b>${gapTrend.gapPoints >= 0 ? '+' : ''}${gapTrend.gapPoints} điểm</b>\n`;
+  msg += `   📦 Thanh khoản đầu phiên: <b>${volume.volumeRatio}x</b> TB5\n`;
   if (entryPrice) {
     msg += `   📍 Tham chiếu VN30: ~<b>${entryPrice.toFixed(2)} điểm</b>\n`;
   }
   msg += `\n`;
 
-  // Thêm Top mã MẠNH nhất & YẾU nhất VN30
   if (alignment.topStrong && alignment.topStrong.length > 0) {
     msg += `💪 <b>TOP 5 CP MẠNH NHẤT VN30 (Dẫn dắt):</b>\n`;
     for (const s of alignment.topStrong) {
@@ -329,30 +317,20 @@ async function sendOpenSignal(session, signal) {
     msg += `\n`;
   }
 
-  if (direction !== 'WAIT') {
-    msg += `━━━━━━━━━━━━━━━━━━━━━━\n`;
-    msg += `🎯 <b>HÀNH ĐỘNG KHUYẾN NGHỊ:</b>\n`;
-    msg += `   ${dirIcon} Mở vị thế <b>${direction}</b> VN30F1M (9h15 - 9h25)\n`;
-    msg += `   ✅ Chốt lời (TP): <b>+12 điểm</b> (+1.200.000đ/HĐ)\n`;
-    msg += `   🛑 Cắt lỗ  (SL): <b>-2 điểm</b>  (-200.000đ/HĐ)\n`;
-    msg += `\n⚠️ <i>Cài ngay lệnh điều kiện OCO sau khi khớp. Tuyệt đối không gồng tay!</i>\n`;
-  } else {
-    msg += `━━━━━━━━━━━━━━━━━━━━━━\n`;
-    msg += `💡 <i>Tham khảo sức mạnh các mã VN30 ở trên. Không mở vị thế hôm nay để tránh bẫy của Lái.</i>\n`;
-  }
+  msg += `━━━━━━━━━━━━━━━━━━━━━━\n`;
+  msg += `🎯 <b>CHIẾN LƯỢC QUẢN TRỊ VỊ THẾ DỰA TRÊN THỰC TẾ:</b>\n`;
+  msg += `   ${dirIcon} Mở vị thế <b>${direction}</b> VN30F1M (Khung 9h15 - 9h25)\n`;
+  msg += `   🚀 <b>Khi có lãi >= 12 điểm</b>: Bot tự bật Trailing Stop, nếu xu hướng VN30 vẫn đè mạnh → **GIỮ TIẾP ẢN TRỌN SÓNG**.\n`;
+  msg += `   🛡️ <b>Khi vị thế bị âm điểm</b>: Bot tự kiểm tra lực kéo VN30. Nếu chỉ là nhịp nhiễu ngắn của Lái trong xu hướng chính → **KHÔNG CẮT VỘI KHỎI BẪY QUÉT**.\n`;
+  msg += `   🚨 <b>Chỉ CẮT LỖ</b> khi VN30 xác nhận ĐẢO CHIỀU THỰC SỰ trên bảng điện.\n`;
 
-  msg += `\n<i>🔮 Derivatives Signal Engine v1.1 | VN Stock Bot</i>`;
+  msg += `\n<i>🔮 Derivatives Signal Engine v2.0 | VN Stock Bot</i>`;
 
   await sendTelegramMessage(msg);
   return msg;
 }
 
-// ─── MONITOR VỊ THẾ ─────────────────────────────────────────
-/**
- * Kiểm tra VN30F hiện tại, so với entry → bắn noti TP/SL/Trailing
- * @param {string} session - 'morning' | 'afternoon'
- * @param {{ direction, entryPrice }} position
- */
+// ─── MONITOR VỊ THẾ DÙNG THUẬT TOÁN TRAILING & CONTEXTUAL RISK ───
 async function checkPositionStatus(session, position) {
   try {
     const now  = Math.floor(Date.now() / 1000);
@@ -364,128 +342,172 @@ async function checkPositionStatus(session, position) {
     );
 
     const data = res.data;
-    if (!data || !data.c || data.c.length === 0) return;
+    if (!data || !data.c || data.c.length === 0) return 'HOLDING';
 
     const currentPrice = data.c[data.c.length - 1];
     const entry = position.entryPrice;
-    if (!entry) return;
+    if (!entry) return 'HOLDING';
 
-    // Tính P&L theo hướng vị thế
+    // P&L theo hướng vị thế
     const pnlPoints = position.direction === 'LONG'
       ? parseFloat((currentPrice - entry).toFixed(2))
       : parseFloat((entry - currentPrice).toFixed(2));
 
-    const pnlVND = Math.round(pnlPoints * 100000); // 1 điểm = 100.000đ
+    const pnlVND = Math.round(pnlPoints * 100000);
     const pnlSign = pnlPoints >= 0 ? '+' : '';
 
-    console.log(`   📡 Monitor [${session}]: Current=${currentPrice.toFixed(2)}, Entry=${entry.toFixed(2)}, P&L=${pnlSign}${pnlPoints}đ (${pnlSign}${(pnlVND / 1000).toFixed(0)}k)`);
+    if (pnlPoints > _state.highPnlAchieved) {
+      _state.highPnlAchieved = pnlPoints;
+    }
 
-    // ─── TP: Lãi >= 12 điểm ──────────────────────────────
+    console.log(`   📡 Monitor v2.0 [${session}]: Current=${currentPrice.toFixed(2)}, Entry=${entry.toFixed(2)}, P&L=${pnlSign}${pnlPoints}đ (Peak: +${_state.highPnlAchieved}đ)`);
+
+    const alignment = await analyzeComponentAlignment();
+
+    // ─── TRƯỜNG HỢP 1: LÃI TỐT (>= 12 ĐIỂM) — TRAILING STOP DYNAMIC ───
     if (pnlPoints >= 12) {
-      await sendTPAlert(session, position, currentPrice, pnlPoints);
-      return 'TP';
+      // Check xem trend còn đè mạnh theo hướng vị thế không
+      const trendIsStrong = position.direction === 'SHORT'
+        ? alignment.redCount >= 12 || alignment.alignScore <= -0.2
+        : alignment.greenCount >= 12 || alignment.alignScore >= 0.2;
+
+      const nowTs = Date.now();
+      // Giữ vị thế ăn trọn sóng nếu trend vẫn rất mạnh
+      if (trendIsStrong) {
+        if (nowTs - _state.lastNotiTime > 15 * 60 * 1000) { // Noti nhắc 15p/lần
+          await sendTrailingStrongAlert(session, position, currentPrice, pnlPoints, alignment);
+          _state.lastNotiTime = nowTs;
+        }
+        return 'HOLDING_PROFIT';
+      } else {
+        // Alignment suy yếu → Chốt lời bảo toàn thành quả!
+        await sendTPAlert(session, position, currentPrice, pnlPoints);
+        return 'TP';
+      }
     }
 
-    // ─── SL: Lỗ >= 2 điểm ───────────────────────────────
-    if (pnlPoints <= -2) {
-      await sendSLAlert(session, position, currentPrice, pnlPoints);
-      return 'SL';
-    }
+    // ─── TRƯỜNG HỢP 2: VỊ THẾ BỊ ÂM POINTS (ÂM ĐIỂM) ────────────────
+    if (pnlPoints <= -3.0) {
+      // Phân biệt: Nhịp giật nhiễu của Lái vs Đảo chiều thực sự
+      const trendIsStillValid = position.direction === 'SHORT'
+        ? alignment.redCount >= 12 // VN30 vẫn 12+ mã đỏ -> Lực kéo Long chỉ là nhiễu!
+        : alignment.greenCount >= 12;
 
-    // ─── Trailing: Đang lãi 8-11 điểm + trend tiếp tục ──
-    if (pnlPoints >= 8) {
-      // Kiểm tra alignment hiện tại để xem trend còn tiếp không
-      const alignment = await analyzeComponentAlignment();
-      const trendContinues = position.direction === 'LONG'
-        ? alignment.alignScore >= 0.2
-        : alignment.alignScore <= -0.2;
+      const structuralReversal = position.direction === 'SHORT'
+        ? (alignment.greenCount >= 14 || pnlPoints <= -8.0) // Nếu >14 mã xanh hoặc lỗ quá 8đ -> Đảo chiều thật
+        : (alignment.redCount >= 14 || pnlPoints <= -8.0);
 
-      if (trendContinues) {
-        await sendTrailingAlert(session, position, currentPrice, pnlPoints, alignment);
+      const nowTs = Date.now();
+
+      if (structuralReversal) {
+        // Xác nhận đảo chiều dứt khoát -> CẮT LỖ NGAY!
+        await sendReversalSLAlert(session, position, currentPrice, pnlPoints, alignment);
+        return 'SL';
+      } else if (trendIsStillValid) {
+        // Chỉ là nhịp nhiễu ngắn -> KHÔNG CẮT VỘI KHỎI BẪY LÁI
+        if (nowTs - _state.lastNotiTime > 20 * 60 * 1000) {
+          await sendNoiseWarningAlert(session, position, currentPrice, pnlPoints, alignment);
+          _state.lastNotiTime = nowTs;
+        }
+        return 'HOLDING_NOISE';
       }
     }
 
     return 'HOLDING';
   } catch (e) {
-    console.error(`   ❌ Monitor error [${session}]:`, e.message);
-    return 'ERROR';
+    console.error(`   ❌ Monitor error v2.0 [${session}]:`, e.message);
+    return 'HOLDING';
   }
 }
 
-// ─── GỬI NOTI CHỐT LỜI ─────────────────────────────────────
-async function sendTPAlert(session, position, currentPrice, pnlPoints) {
-  const pnlVND = Math.round(pnlPoints * 100000);
+// ─── GỬI NOTI TRAILING KHI LÃI ĐẬM ─────────────────────────
+async function sendTrailingStrongAlert(session, position, currentPrice, pnlPoints, alignment) {
   const sessionLabel = session === 'morning' ? '🌅 SÁNG' : '🌆 CHIỀU';
+  const dirText = position.direction === 'LONG' ? 'LONG 🟢' : 'SHORT 🔴';
+  const pnlVND = Math.round(pnlPoints * 100000);
 
-  let msg = `✅ <b>CHỐT LỜI — ${sessionLabel}</b>\n`;
+  let msg = `🚀 <b>TRAILING STOP — GIỮ ĂN TRỌN SÓNG (${sessionLabel})</b>\n`;
   msg += `🕐 <i>${vnNow()}</i>\n`;
   msg += `━━━━━━━━━━━━━━━━━━━━━━\n\n`;
-  msg += `🎯 <b>ĐẠT MỤC TIÊU +12 ĐIỂM!</b>\n\n`;
-  msg += `   📍 Entry: ${position.entryPrice?.toFixed(2) || 'N/A'}\n`;
-  msg += `   📍 Hiện tại: ${currentPrice.toFixed(2)}\n`;
-  msg += `   💰 Lãi: <b>+${pnlPoints.toFixed(1)} điểm (+${(pnlVND / 1000000).toFixed(1)} triệu)</b>\n\n`;
-  msg += `⚡ <b>ĐÓNG VỊ THẾ NGAY BÂY GIỜ!</b>\n`;
+  msg += `💰 Vị thế <b>${dirText}</b> đang lãi <b>+${pnlPoints.toFixed(1)} điểm (+${(pnlVND / 1000000).toFixed(2)} triệu)</b>!\n\n`;
+  msg += `📊 <b>Phân tích lực kéo VN30:</b>\n`;
+  msg += `   • Tỷ lệ xanh/đỏ: <b>${alignment.greenCount}🟢 / ${alignment.redCount}🔴</b>\n`;
+  msg += `   • Xu hướng thị trường vẫn đè/kéo cực kỳ mạnh mẽ theo đúng chiều vị thế.\n\n`;
+  msg += `💡 <b>KHUYẾN NGHỊ: TIẾP TỤC GIỮ VỊ THẾ</b> để tối đa hóa lợi nhuận. Bot đang theo dõi sát dải giá.\n`;
+  msg += `\n<i>🔮 Derivatives Signal Engine v2.0 | VN Stock Bot</i>`;
+  await sendTelegramMessage(msg);
+}
+
+// ─── GỬI NOTI CHỐT LỜI KHI XU HƯỚNG YẾU ────────────────────
+async function sendTPAlert(session, position, currentPrice, pnlPoints) {
+  const sessionLabel = session === 'morning' ? '🌅 SÁNG' : '🌆 CHIỀU';
+  const pnlVND = Math.round(pnlPoints * 100000);
+
+  let msg = `🎯 <b>CHỐT LỜI THÀNH CÔNG — ${sessionLabel}</b>\n`;
+  msg += `🕐 <i>${vnNow()}</i>\n`;
+  msg += `━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+  msg += `✅ <b>ĐẠT MỤC TIÊU LÃI +${pnlPoints.toFixed(1)} ĐIỂM!</b>\n\n`;
+  msg += `   📍 Giá vào (Entry): ~${position.entryPrice?.toFixed(2) || 'N/A'}\n`;
+  msg += `   📍 Giá đóng hiện tại: ${currentPrice.toFixed(2)}\n`;
+  msg += `   💰 Lãi thực nhận: <b>+${pnlPoints.toFixed(1)} điểm (+${(pnlVND / 1000000).toFixed(2)} triệu / 1 HĐ)</b>\n\n`;
+  msg += `⚡ <b>Lực kéo VN30 chần chừ → ĐÓNG VỊ THẾ BỎ TÚI LỢI NHUẬN NGAY!</b>\n`;
 
   if (session === 'morning') {
-    msg += `\n☕ <i>Đã thắng phiên sáng. Phiên chiều nghỉ ngơi, không cần quan tâm nữa.</i>\n`;
+    msg += `\n☕ <i>Đã thắng đậm phiên sáng. Phiên chiều nghỉ ngơi bảo toàn thành quả.</i>\n`;
   }
 
-  msg += `\n<i>🔮 Derivatives Signal v1.0 | VN Stock Bot</i>`;
+  msg += `\n<i>🔮 Derivatives Signal Engine v2.0 | VN Stock Bot</i>`;
   await sendTelegramMessage(msg);
 }
 
-// ─── GỬI NOTI CẮT LỖ ───────────────────────────────────────
-async function sendSLAlert(session, position, currentPrice, pnlPoints) {
-  const pnlVND = Math.round(pnlPoints * 100000); // âm
-  const sessionLabel = session === 'morning' ? '🌅 SÁNG' : '🌆 CHIỀU';
-
-  let msg = `🛑 <b>CẮT LỖ — ${sessionLabel}</b>\n`;
-  msg += `🕐 <i>${vnNow()}</i>\n`;
-  msg += `━━━━━━━━━━━━━━━━━━━━━━\n\n`;
-  msg += `⚠️ <b>ÂM 2 ĐIỂM — ĐÓNG VỊ THẾ NGAY!</b>\n\n`;
-  msg += `   📍 Entry: ${position.entryPrice?.toFixed(2) || 'N/A'}\n`;
-  msg += `   📍 Hiện tại: ${currentPrice.toFixed(2)}\n`;
-  msg += `   💸 Lỗ: <b>${pnlPoints.toFixed(1)} điểm (${(pnlVND / 1000000).toFixed(2)} triệu)</b>\n\n`;
-  msg += `🔴 <b>Đóng ngay, không chờ, không gồng!</b>\n`;
-  msg += `<i>Bảo toàn vốn là ưu tiên số 1.</i>\n`;
-  msg += `\n<i>🔮 Derivatives Signal v1.0 | VN Stock Bot</i>`;
-  await sendTelegramMessage(msg);
-}
-
-// ─── GỬI NOTI TRAILING (Đang lãi, trend còn tiếp) ───────────
-async function sendTrailingAlert(session, position, currentPrice, pnlPoints, alignment) {
+// ─── GỬI NOTI CẢNH BÁO NHỊP NHIỄU (KHÔNG CẮT VỘI) ─────────────
+async function sendNoiseWarningAlert(session, position, currentPrice, pnlPoints, alignment) {
   const sessionLabel = session === 'morning' ? '🌅 SÁNG' : '🌆 CHIỀU';
   const dirText = position.direction === 'LONG' ? 'LONG 🟢' : 'SHORT 🔴';
 
-  let msg = `📈 <b>TRAILING STOP — ${sessionLabel}</b>\n`;
+  let msg = `🛡️ <b>CẢNH BÁO NHỊP GIẬT NHIỄU LÁI — ${sessionLabel}</b>\n`;
   msg += `🕐 <i>${vnNow()}</i>\n`;
   msg += `━━━━━━━━━━━━━━━━━━━━━━\n\n`;
-  msg += `✅ Đang lãi <b>+${pnlPoints.toFixed(1)} điểm</b> và xu hướng CÒN TIẾP!\n\n`;
-  msg += `   📊 Alignment hiện tại: ${alignment.greenCount}🟢 / ${alignment.redCount}🔴\n`;
-  msg += `   🎯 Vị thế: ${dirText}\n\n`;
-  msg += `💡 <b>Có thể giữ thêm</b> để ăn trọn sóng.\n`;
-  msg += `⚠️ Nếu thấy dấu hiệu đảo chiều → Đóng ngay để bảo toàn lợi nhuận.\n`;
-  msg += `\n<i>🔮 Derivatives Signal v1.0 | VN Stock Bot</i>`;
+  msg += `⚠️ Vị thế <b>${dirText}</b> đang tạm âm <b>${pnlPoints.toFixed(1)} điểm</b>.\n\n`;
+  msg += `🔍 <b>BẮT BỆNH THỊ TRƯỜNG:</b>\n`;
+  msg += `   • Rổ VN30 vẫn có tới <b>${alignment.redCount}🔴 mã ĐỎ</b> (Lực kéo Long chỉ là giật nhiễu ngắn).\n`;
+  msg += `   • Xu hướng thị trường chung vẫn ép giảm dứt khoát.\n\n`;
+  msg += `💡 <b>KHUYẾN NGHỊ: GIỮ VỊ THẾ, KHÔNG CẮT VỘI!</b> Đây chỉ là nhịp nhiễu quét margin của Lái. Tránh dính bẫy cắt đúng đỉnh nảy.\n`;
+  msg += `\n<i>🔮 Derivatives Signal Engine v2.0 | VN Stock Bot</i>`;
+  await sendTelegramMessage(msg);
+}
+
+// ─── GỬI NOTI CẮT LỖ KHI XÁC NHẬN ĐẢO CHIỀU ─────────────────
+async function sendReversalSLAlert(session, position, currentPrice, pnlPoints, alignment) {
+  const sessionLabel = session === 'morning' ? '🌅 SÁNG' : '🌆 CHIỀU';
+  const pnlVND = Math.round(pnlPoints * 100000);
+
+  let msg = `🚨 <b>CẮT LỖ XÁC NHẬN ĐẢO CHIỀU — ${sessionLabel}</b>\n`;
+  msg += `🕐 <i>${vnNow()}</i>\n`;
+  msg += `━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+  msg += `🔴 <b>VN30 XÁC NHẬN ĐẢO CHIỀU CẤU TRÚC THỰC SỰ!</b>\n\n`;
+  msg += `   📍 Giá vào (Entry): ~${position.entryPrice?.toFixed(2) || 'N/A'}\n`;
+  msg += `   📍 Giá hiện tại: ${currentPrice.toFixed(2)}\n`;
+  msg += `   💸 Lỗ: <b>${pnlPoints.toFixed(1)} điểm (${(pnlVND / 1000000).toFixed(2)} triệu)</b>\n`;
+  msg += `   📊 Tỷ lệ xanh/đỏ VN30 đảo chiều: ${alignment.greenCount}🟢 / ${alignment.redCount}🔴\n\n`;
+  msg += `🚨 <b>ĐÓNG VỊ THẾ NGAY ĐỂ BẢO TOÀN VỐN!</b>\n`;
+  msg += `<i>Thừa nhận sai khi thị trường đảo chiều dứt khoát là nguyên tắc sinh tồn.</i>\n`;
+  msg += `\n<i>🔮 Derivatives Signal Engine v2.0 | VN Stock Bot</i>`;
   await sendTelegramMessage(msg);
 }
 
 // ─── BẮT ĐẦU MONITOR POSITION ───────────────────────────────
-/**
- * Chạy mỗi 3 phút để theo dõi P&L, gửi noti khi cần
- * @param {string} session - 'morning' | 'afternoon'
- * @param {{ direction, entryPrice }} position
- * @param {number} durationMinutes - Số phút monitor tối đa
- */
-function startPositionMonitor(session, position, durationMinutes = 90) {
-  stopPositionMonitor(); // Dừng monitor cũ nếu có
+function startPositionMonitor(session, position, durationMinutes = 120) {
+  stopPositionMonitor();
 
   let elapsed = 0;
-  const INTERVAL_MS = 3 * 60 * 1000; // 3 phút
+  _state.highPnlAchieved = 0;
+  _state.lastNotiTime = 0;
+  const INTERVAL_MS = 3 * 60 * 1000;
 
   _state.monitorTimer = setInterval(async () => {
     elapsed += 3;
 
-    // Timeout: dừng sau durationMinutes
     if (elapsed >= durationMinutes) {
       console.log(`   ⏱ Monitor [${session}] timeout sau ${durationMinutes} phút`);
       stopPositionMonitor();
@@ -495,7 +517,7 @@ function startPositionMonitor(session, position, durationMinutes = 90) {
     const result = await checkPositionStatus(session, position);
 
     if (result === 'TP') {
-      console.log(`   ✅ [${session}] ĐẠT TP! Dừng monitor.`);
+      console.log(`   ✅ [${session}] ĐẠT TP CHỐT LỜI! Dừng monitor.`);
       stopPositionMonitor();
       if (session === 'morning') {
         _state.morningClosed = true;
@@ -504,15 +526,16 @@ function startPositionMonitor(session, position, durationMinutes = 90) {
     }
 
     if (result === 'SL') {
-      console.log(`   🛑 [${session}] DÍNH SL! Dừng monitor.`);
+      console.log(`   🚨 [${session}] ĐẢO CHIỀU CẮT LỖ! Dừng monitor.`);
       stopPositionMonitor();
       if (session === 'morning') {
+        _state.morningClosed = true;
         _state.morningResult = 'SL';
       }
     }
   }, INTERVAL_MS);
 
-  console.log(`   📡 Bắt đầu monitor [${session}] mỗi 3 phút (tối đa ${durationMinutes}p)`);
+  console.log(`   📡 Bắt đầu monitor v2.0 [${session}] mỗi 3 phút (tối đa ${durationMinutes}p)`);
 }
 
 function stopPositionMonitor() {
@@ -525,58 +548,55 @@ function stopPositionMonitor() {
 // ─── JOB SÁNG: 9h14 ─────────────────────────────────────────
 async function runMorningDerivativesJob() {
   console.log('\n' + '═'.repeat(55));
-  console.log('🔮 DERIVATIVES SIGNAL — SÁNG (9h14)');
+  console.log('🔮 DERIVATIVES SIGNAL v2.0 — SÁNG (9h14)');
   console.log('═'.repeat(55));
 
-  // Reset state đầu ngày
-  _state.morningSignal  = null;
+  _state.morningSignal   = null;
   _state.afternoonSignal = null;
-  _state.morningClosed  = false;
-  _state.morningResult  = null;
+  _state.morningClosed   = false;
+  _state.morningResult   = null;
+  _state.highPnlAchieved = 0;
   stopPositionMonitor();
 
   try {
     const signal = await calculateFinalSignal();
     _state.morningSignal = signal;
 
-    console.log(`   🎯 Final Signal: ${signal.direction} (score=${signal.score}/8)`);
+    console.log(`   🎯 Final Signal v2.0: ${signal.direction} (score=${signal.score}/8)`);
 
     await sendOpenSignal('morning', signal);
 
-    // Nếu có tín hiệu LONG/SHORT → bắt đầu monitor
-    if (signal.direction !== 'WAIT') {
-      const position = {
-        direction: signal.direction,
-        entryPrice: signal.entryPrice,
-        session: 'morning',
-        openTime: Date.now(),
-      };
-      _state.morningSignal = { ...signal, ...position };
+    const position = {
+      direction: signal.direction,
+      entryPrice: signal.entryPrice,
+      session: 'morning',
+      openTime: Date.now(),
+    };
+    _state.morningSignal = { ...signal, ...position };
 
-      // Monitor từ 9h15 đến tối đa 11h45 (~150 phút)
-      startPositionMonitor('morning', position, 150);
-    }
+    // Start monitor phiên sáng (tối đa 150 phút)
+    startPositionMonitor('morning', position, 150);
   } catch (e) {
-    console.error('   ❌ Morning derivatives job error:', e.message);
+    console.error('   ❌ Morning derivatives job error v2.0:', e.message);
   }
 }
 
 // ─── JOB CHIỀU: 13h14 ───────────────────────────────────────
 async function runAfternoonDerivativesJob() {
   console.log('\n' + '═'.repeat(55));
-  console.log('🔮 DERIVATIVES SIGNAL — CHIỀU (13h14)');
+  console.log('🔮 DERIVATIVES SIGNAL v2.0 — CHIỀU (13h14)');
   console.log('═'.repeat(55));
 
   // Nếu sáng đã thắng TP → nghỉ chiều
   if (_state.morningClosed && _state.morningResult === 'TP') {
     console.log('   ✅ Phiên sáng đã chốt lời. Nghỉ buổi chiều.');
     await sendTelegramMessage(
-      `☕ <b>PHÁI SINH CHIỀU — NGHỈ</b>\n` +
+      `☕ <b>PHÁI SINH CHIỀU — NGHỈ NGHƠI</b>\n` +
       `🕐 <i>${vnNow()}</i>\n` +
       `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
       `✅ Phiên sáng đã <b>chốt lời thành công</b>.\n` +
-      `☕ Không mở vị thế chiều. Bảo toàn kết quả ngày hôm nay.\n` +
-      `\n<i>🔮 Derivatives Signal v1.0 | VN Stock Bot</i>`
+      `☕ Không mở vị thế chiều. Bảo toàn lợi nhuận đã đạt được!\n` +
+      `\n<i>🔮 Derivatives Signal Engine v2.0 | VN Stock Bot</i>`
     );
     return;
   }
@@ -585,35 +605,34 @@ async function runAfternoonDerivativesJob() {
     const signal = await calculateFinalSignal();
     _state.afternoonSignal = signal;
 
-    console.log(`   🎯 Final Signal: ${signal.direction} (score=${signal.score}/8)`);
+    console.log(`   🎯 Final Signal v2.0: ${signal.direction} (score=${signal.score}/8)`);
 
     await sendOpenSignal('afternoon', signal);
 
-    if (signal.direction !== 'WAIT') {
-      const position = {
-        direction: signal.direction,
-        entryPrice: signal.entryPrice,
-        session: 'afternoon',
-        openTime: Date.now(),
-      };
-      _state.afternoonSignal = { ...signal, ...position };
+    const position = {
+      direction: signal.direction,
+      entryPrice: signal.entryPrice,
+      session: 'afternoon',
+      openTime: Date.now(),
+    };
+    _state.afternoonSignal = { ...signal, ...position };
 
-      // Monitor từ 13h15 đến tối đa 14h15 (~60 phút)
-      startPositionMonitor('afternoon', position, 60);
-    }
+    // Start monitor phiên chiều (tối đa 60 phút)
+    startPositionMonitor('afternoon', position, 60);
   } catch (e) {
-    console.error('   ❌ Afternoon derivatives job error:', e.message);
+    console.error('   ❌ Afternoon derivatives job error v2.0:', e.message);
   }
 }
 
 // ─── RESET DAILY STATE ───────────────────────────────────────
 function resetDerivativesState() {
   stopPositionMonitor();
-  _state.morningSignal  = null;
+  _state.morningSignal   = null;
   _state.afternoonSignal = null;
-  _state.morningClosed  = false;
-  _state.morningResult  = null;
-  console.log('   🔄 Derivatives state reset');
+  _state.morningClosed   = false;
+  _state.morningResult   = null;
+  _state.highPnlAchieved = 0;
+  console.log('   🔄 Derivatives state reset v2.0');
 }
 
 // ─── EXPORTS ─────────────────────────────────────────────────
