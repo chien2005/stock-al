@@ -96,6 +96,15 @@ async function analyzeComponentAlignment() {
       const changePct = (price - refPrice) / refPrice * 100;
       const isGreen   = changePct >= 0;
 
+      const item = {
+        sym: comp.sym,
+        changePct: parseFloat(changePct.toFixed(2)),
+        price,
+        refPrice,
+        weight: comp.weight,
+      };
+      details.push(item);
+
       if (isGreen) {
         weightedGreen += comp.weight;
         greenCount++;
@@ -103,9 +112,12 @@ async function analyzeComponentAlignment() {
         weightedRed += comp.weight;
         redCount++;
       }
-
-      details.push(`${comp.sym}:${changePct >= 0 ? '+' : ''}${changePct.toFixed(1)}%`);
     }
+
+    // Sort items by changePct descending
+    const sorted = [...details].sort((a, b) => b.changePct - a.changePct);
+    const topStrong = sorted.slice(0, 5);
+    const topWeak = [...sorted].reverse().slice(0, 5);
 
     const total = weightedGreen + weightedRed;
     const alignScore = total > 0 ? (weightedGreen - weightedRed) / total : 0;
@@ -115,10 +127,18 @@ async function analyzeComponentAlignment() {
     if (alignScore >= 0.30) signal = 'LONG';
     if (alignScore <= -0.30) signal = 'SHORT';
 
-    return { signal, alignScore: parseFloat(alignScore.toFixed(3)), greenCount, redCount, details };
+    return {
+      signal,
+      alignScore: parseFloat(alignScore.toFixed(3)),
+      greenCount,
+      redCount,
+      topStrong,
+      topWeak,
+      details: sorted,
+    };
   } catch (e) {
     console.error('   ❌ ComponentAlignment error:', e.message);
-    return { signal: 'NEUTRAL', alignScore: 0, greenCount: 0, redCount: 0, details: [] };
+    return { signal: 'NEUTRAL', alignScore: 0, greenCount: 0, redCount: 0, topStrong: [], topWeak: [], details: [] };
   }
 }
 
@@ -261,10 +281,10 @@ async function sendOpenSignal(session, signal) {
   const { direction, score, entryPrice, breakdown } = signal;
   const { alignment, gap, volume } = breakdown;
 
-  const sessionLabel = session === 'morning' ? '🌅 SÁNG' : '🌆 CHIỀU';
+  const sessionLabel = session === 'morning' ? '🌅 SÁNG (9h14)' : '🌆 CHIỀU (13h14)';
   const dirIcon  = direction === 'LONG'  ? '🟢' : direction === 'SHORT' ? '🔴' : '⚪';
   const dirText  = direction === 'LONG'  ? 'LONG (MUA)'
-                 : direction === 'SHORT' ? 'SHORT (BÁN)' : 'KHÔNG MỞ VỊ THẾ';
+                 : direction === 'SHORT' ? 'SHORT (BÁN)' : 'KHÔNG MỞ VỊ THẾ (ĐỨNG NGOÀI)';
 
   const alignBar = `${'🟢'.repeat(alignment.greenCount)}${'🔴'.repeat(alignment.redCount)}`.substring(0, 20);
 
@@ -273,34 +293,55 @@ async function sendOpenSignal(session, signal) {
   msg += `━━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
   msg += `${dirIcon} <b>HƯỚNG: ${dirText}</b>\n`;
-  msg += `📊 Điểm tổng hợp: <b>${score}/8</b>\n\n`;
+  msg += `📊 Điểm tổng hợp: <b>${score}/8 điểm</b>\n\n`;
 
   if (direction === 'WAIT') {
-    msg += `⚪ <i>${signal.reason || 'Tín hiệu không đủ mạnh. Nghỉ ngơi hôm nay.'}</i>\n`;
-  } else {
-    msg += `📋 <b>CHI TIẾT PHÂN TÍCH:</b>\n`;
-    msg += `   📊 CP VN30 xanh/đỏ: ${alignment.greenCount}🟢 / ${alignment.redCount}🔴\n`;
-    msg += `      ${alignBar}\n`;
-    msg += `      (Score=${alignment.alignScore}, tín hiệu: ${alignment.signal})\n\n`;
-
-    msg += `   📈 Gap ATO: <b>${gap.gapPoints >= 0 ? '+' : ''}${gap.gapPoints} điểm</b>`;
-    msg += ` → ${gap.signal}\n\n`;
-
-    msg += `   📦 Thanh khoản: <b>${volume.volumeRatio}x</b> TB 5 phiên`;
-    msg += ` (TT ${volume.todayChange >= 0 ? '+' : ''}${volume.todayChange}%) → ${volume.signal}\n\n`;
-
-    msg += `━━━━━━━━━━━━━━━━━━━━━━\n`;
-    msg += `🎯 <b>HÀNH ĐỘNG NGAY:</b>\n`;
-    msg += `   ${dirIcon} Mở vị thế <b>${direction}</b> VN30F1M\n`;
-    msg += `   ✅ Chốt lời (TP): <b>+12 điểm</b> (+1.200.000đ)\n`;
-    msg += `   🛑 Cắt lỗ  (SL): <b>-2 điểm</b>  (-200.000đ)\n`;
-    if (entryPrice) {
-      msg += `   📍 Entry ước tính: ~<b>${entryPrice.toFixed(2)}</b>\n`;
-    }
-    msg += `\n⚠️ <i>Cài lệnh OCO ngay sau khi khớp. Không gồng tay!</i>\n`;
+    msg += `⚪ <b>LÝ DO:</b> <i>${signal.reason || 'Tín hiệu mâu thuẫn hoặc thanh khoản yếu. Đứng ngoài bảo toàn vốn.'}</i>\n\n`;
   }
 
-  msg += `\n<i>🔮 Derivatives Signal v1.0 | VN Stock Bot</i>`;
+  msg += `📋 <b>CHỈ SỐ & TÍN HIỆU THỊ TRƯỜNG:</b>\n`;
+  msg += `   📊 Tỷ lệ VN30 Xanh/Đỏ: <b>${alignment.greenCount}🟢 / ${alignment.redCount}🔴</b>\n`;
+  msg += `      <code>${alignBar}</code>\n`;
+  msg += `      (Trọng số AlignScore: ${alignment.alignScore > 0 ? '+' : ''}${alignment.alignScore})\n`;
+  msg += `   📈 Gap ATO VN30: <b>${gap.gapPoints >= 0 ? '+' : ''}${gap.gapPoints} điểm</b> (Tín hiệu: ${gap.signal})\n`;
+  msg += `   📦 Thanh khoản đầu phiên: <b>${volume.volumeRatio}x</b> TB5 (TT: ${volume.todayChange >= 0 ? '+' : ''}${volume.todayChange}%)\n`;
+  if (entryPrice) {
+    msg += `   📍 Tham chiếu VN30: ~<b>${entryPrice.toFixed(2)} điểm</b>\n`;
+  }
+  msg += `\n`;
+
+  // Thêm Top mã MẠNH nhất & YẾU nhất VN30
+  if (alignment.topStrong && alignment.topStrong.length > 0) {
+    msg += `💪 <b>TOP 5 CP MẠNH NHẤT VN30 (Dẫn dắt):</b>\n`;
+    for (const s of alignment.topStrong) {
+      const sign = s.changePct >= 0 ? '+' : '';
+      msg += `   🟢 <b>${s.sym}</b>: ${(s.price / 1000).toFixed(2)}k (<b>${sign}${s.changePct}%</b>)\n`;
+    }
+    msg += `\n`;
+  }
+
+  if (alignment.topWeak && alignment.topWeak.length > 0) {
+    msg += `💀 <b>TOP 5 CP YẾU NHẤT VN30 (Đè chỉ số):</b>\n`;
+    for (const s of alignment.topWeak) {
+      const sign = s.changePct >= 0 ? '+' : '';
+      msg += `   🔴 <b>${s.sym}</b>: ${(s.price / 1000).toFixed(2)}k (<b>${sign}${s.changePct}%</b>)\n`;
+    }
+    msg += `\n`;
+  }
+
+  if (direction !== 'WAIT') {
+    msg += `━━━━━━━━━━━━━━━━━━━━━━\n`;
+    msg += `🎯 <b>HÀNH ĐỘNG KHUYẾN NGHỊ:</b>\n`;
+    msg += `   ${dirIcon} Mở vị thế <b>${direction}</b> VN30F1M (9h15 - 9h25)\n`;
+    msg += `   ✅ Chốt lời (TP): <b>+12 điểm</b> (+1.200.000đ/HĐ)\n`;
+    msg += `   🛑 Cắt lỗ  (SL): <b>-2 điểm</b>  (-200.000đ/HĐ)\n`;
+    msg += `\n⚠️ <i>Cài ngay lệnh điều kiện OCO sau khi khớp. Tuyệt đối không gồng tay!</i>\n`;
+  } else {
+    msg += `━━━━━━━━━━━━━━━━━━━━━━\n`;
+    msg += `💡 <i>Tham khảo sức mạnh các mã VN30 ở trên. Không mở vị thế hôm nay để tránh bẫy của Lái.</i>\n`;
+  }
+
+  msg += `\n<i>🔮 Derivatives Signal Engine v1.1 | VN Stock Bot</i>`;
 
   await sendTelegramMessage(msg);
   return msg;
