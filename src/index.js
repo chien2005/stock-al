@@ -591,8 +591,8 @@ async function main() {
     try { resetDerivativesState(); } catch (err) { console.error('🔮 [Derivatives Reset] Lỗi:', err.message); }
   }, { scheduled: true, timezone: config.timezone });
 
-  // ─── SCHEDULE: DERIVATIVES SIGNAL SÁNG (9h14, T2-T6) ───
-  cron.schedule('14 9 * * 1-5', async () => {
+  // ─── SCHEDULE: DERIVATIVES SIGNAL SÁNG (9h01, T2-T6) ───
+  cron.schedule('1 9 * * 1-5', async () => {
     if (!isWeekday()) return;
     if (isDuplicate('derivativesMorning')) return;
     const now = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
@@ -605,7 +605,7 @@ async function main() {
       jobLastError['derivativesMorning'] = { time: Date.now(), message: err.message };
     }
   }, { scheduled: true, timezone: config.timezone });
-  console.log('   🔮 Derivatives Signal Sáng: 9:14 (T2-T6)');
+  console.log('   🔮 Derivatives Signal Sáng: 9:01 (T2-T6)');
 
   // ─── SCHEDULE: DERIVATIVES SIGNAL CHIỀU (13h14, T2-T6) ─
   cron.schedule('14 13 * * 1-5', async () => {

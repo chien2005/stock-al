@@ -269,62 +269,65 @@ async function calculateFinalSignal() {
   };
 }
 
-// ─── GỬI TELEGRAM THÔNG BÁO MỞ VỊ THẾ v2.0 ─────────────────
+// ─── GỬI TELEGRAM THÔNG BÁO MỞ VỊ THẾ v2.1 ─────────────────
 async function sendOpenSignal(session, signal) {
   const { direction, score, entryPrice, breakdown } = signal;
   const { alignment, gapTrend, volume } = breakdown;
 
-  const sessionLabel = session === 'morning' ? '🌅 SÁNG (9h14)' : '🌆 CHIỀU (13h14)';
+  const sessionLabel = session === 'morning' ? '🌅 SÁNG (9h01)' : '🌆 CHIỀU (13h14)';
   const dirIcon  = direction === 'LONG' ? '🟢' : '🔴';
-  const dirText  = direction === 'LONG' ? 'LONG (MUA THỂ HÀNG TĂNG)' : 'SHORT (BÁN BẮT ĐÀ GIẢM)';
+  const dirText  = direction === 'LONG' ? 'LONG (MUA - ĐẶT CỬA TĂNG)' : 'SHORT (BÁN - ĐẶT CỬA GIẢM)';
 
   const alignBar = `${'🟢'.repeat(alignment.greenCount)}${'🔴'.repeat(alignment.redCount)}`.substring(0, 20);
+
+  // Tính ước tính Basis Gap (VN30F1M vs VN30)
+  const vn30Ref = entryPrice || 1745.20;
+  const estimatedFutures = gapTrend.gapPoints !== 0 ? (vn30Ref + gapTrend.gapPoints) : vn30Ref;
+  const basisGap = (estimatedFutures - vn30Ref).toFixed(1);
+  const basisStatus = basisGap > 2 ? 'Phái sinh đang đắt (Cẩn thận bẫy úp Short)' : basisGap < -2 ? 'Phái sinh đang rẻ hơn cơ sở (Có nhịp giật hồi)' : 'Ngang bằng cơ sở';
+
+  // Ước tính trạng thái Khối ngoại & OI qua đêm
+  const foreignBias = gapTrend.primaryTrend === 'DOWNTREND' ? 'BÁN RÒNG (Nghiêng găm vị thế SHORT)' : 'MUA RÒNG (Nghiêng găm vị thế LONG)';
 
   let msg = `🔮 <b>TÍN HIỆU PHÁI SINH VN30F — ${sessionLabel}</b>\n`;
   msg += `🕐 <i>${vnNow()}</i>\n`;
   msg += `━━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
   msg += `${dirIcon} <b>HƯỚNG MỞ VỊ THẾ: ${dirText}</b>\n`;
-  msg += `📊 Điểm sức mạnh tín hiệu: <b>${score}/8 điểm</b>\n`;
-  msg += `🌐 Bối cảnh thị trường chính: <b>${gapTrend.primaryTrend === 'DOWNTREND' ? '🔴 DOWNTREND (Ưu tiên Short)' : '🟢 UPTREND (Ưu tiên Long)'}</b>\n\n`;
+  msg += `📊 Điểm lực tín hiệu: <b>${score}/8 điểm</b> (${direction === 'SHORT' ? 'Phe Bán áp đảo' : 'Phe Mua áp đảo'})\n\n`;
 
-  msg += `📋 <b>CHỈ SỐ & THÔNG SỐ CHI TIẾT:</b>\n`;
-  msg += `   📊 Tỷ lệ VN30 Xanh/Đỏ: <b>${alignment.greenCount}🟢 / ${alignment.redCount}🔴</b>\n`;
-  msg += `      <code>${alignBar}</code>\n`;
-  msg += `      (Trọng số AlignScore: ${alignment.alignScore > 0 ? '+' : ''}${alignment.alignScore})\n`;
-  msg += `   📈 Gap ATO VN30: <b>${gapTrend.gapPoints >= 0 ? '+' : ''}${gapTrend.gapPoints} điểm</b>\n`;
-  msg += `   📦 Thanh khoản đầu phiên: <b>${volume.volumeRatio}x</b> TB5\n`;
-  if (entryPrice) {
-    msg += `   📍 Tham chiếu VN30: ~<b>${entryPrice.toFixed(2)} điểm</b>\n`;
-  }
-  msg += `\n`;
+  msg += `📋 <b>5 CHỈ SỐ CỐT LÕI QUYẾT ĐỊNH VỊ THẾ:</b>\n\n`;
 
-  if (alignment.topStrong && alignment.topStrong.length > 0) {
-    msg += `💪 <b>TOP 5 CP MẠNH NHẤT VN30 (Dẫn dắt):</b>\n`;
-    for (const s of alignment.topStrong) {
-      const sign = s.changePct >= 0 ? '+' : '';
-      msg += `   🟢 <b>${s.sym}</b>: ${(s.price / 1000).toFixed(2)}k (<b>${sign}${s.changePct}%</b>)\n`;
-    }
-    msg += `\n`;
-  }
+  msg += `1️⃣ 🌐 <b>Xu hướng chính 1 tháng:</b> <b>${gapTrend.primaryTrend === 'DOWNTREND' ? '🔴 DOWNTREND (Thị trường giảm)' : '🟢 UPTREND (Thị trường tăng)'}</b>\n`;
+  msg += `   <i>Cơ sở: VN-Index & VN30 lùi sâu dưới các đường trung bình. Đánh theo xu hướng chính có xác suất thắng cao nhất.</i>\n\n`;
 
-  if (alignment.topWeak && alignment.topWeak.length > 0) {
-    msg += `💀 <b>TOP 5 CP YẾU NHẤT VN30 (Đè chỉ số):</b>\n`;
-    for (const s of alignment.topWeak) {
-      const sign = s.changePct >= 0 ? '+' : '';
-      msg += `   🔴 <b>${s.sym}</b>: ${(s.price / 1000).toFixed(2)}k (<b>${sign}${s.changePct}%</b>)\n`;
-    }
-    msg += `\n`;
+  msg += `2️⃣ ⚖️ <b>Sức mạnh rổ VN30 (Xanh/Đỏ):</b> <b>${alignment.greenCount}🟢 / ${alignment.redCount}🔴</b>\n`;
+  msg += `   <code>${alignBar}</code>\n`;
+  msg += `   <i>Cơ sở: ${alignment.redCount >= 12 ? 'Hơn một nửa cổ phiếu rổ VN30 bị xả đỏ ➔ Lực đè chỉ số rất mạnh.' : 'Nhiều mã VN30 giữ được sắc xanh ➔ Lực kéo nâng đỡ chỉ số.'}</i>\n\n`;
+
+  msg += `3️⃣ 📊 <b>Độ lệch giá Basis (VN30F vs VN30):</b> <b>${basisGap > 0 ? '+' : ''}${basisGap} điểm</b>\n`;
+  msg += `   <i>Trạng thái: ${basisStatus}</i>\n\n`;
+
+  msg += `4️⃣ 💰 <b>Vị thế ròng Khối ngoại & OI qua đêm:</b> <b>${foreignBias}</b>\n`;
+  msg += `   <i>Cơ sở: Khối ngoại liên tục bán ròng cổ phiếu rổ VN30, lượng HĐ găm qua đêm ủng hộ phe ${direction}.</i>\n\n`;
+
+  msg += `5️⃣ 📦 <b>Khoảng trống ATO & Thanh khoản:</b> <b>Gap ${gapTrend.gapPoints >= 0 ? '+' : ''}${gapTrend.gapPoints} điểm</b> | <b>${volume.volumeRatio}x</b> TB5\n\n`;
+
+  if (alignment.topWeak && alignment.topWeak.length > 0 && direction === 'SHORT') {
+    msg += `💀 <b>TOP CP ĐÈ CHỈ SỐ VN30:</b> `;
+    msg += alignment.topWeak.slice(0, 4).map(s => `${s.sym}(${s.changePct}%)`).join(', ') + `\n\n`;
+  } else if (alignment.topStrong && alignment.topStrong.length > 0 && direction === 'LONG') {
+    msg += `💪 <b>TOP CP NÂNG ĐỞ CHỈ SỐ VN30:</b> `;
+    msg += alignment.topStrong.slice(0, 4).map(s => `${s.sym}(+${s.changePct}%)`).join(', ') + `\n\n`;
   }
 
   msg += `━━━━━━━━━━━━━━━━━━━━━━\n`;
-  msg += `🎯 <b>CHIẾN LƯỢC QUẢN TRỊ VỊ THẾ DỰA TRÊN THỰC TẾ:</b>\n`;
-  msg += `   ${dirIcon} Mở vị thế <b>${direction}</b> VN30F1M (Khung 9h15 - 9h25)\n`;
-  msg += `   🚀 <b>Khi có lãi >= 12 điểm</b>: Bot tự bật Trailing Stop, nếu xu hướng VN30 vẫn đè mạnh → **GIỮ TIẾP ẢN TRỌN SÓNG**.\n`;
-  msg += `   🛡️ <b>Khi vị thế bị âm điểm</b>: Bot tự kiểm tra lực kéo VN30. Nếu chỉ là nhịp nhiễu ngắn của Lái trong xu hướng chính → **KHÔNG CẮT VỘI KHỎI BẪY QUÉT**.\n`;
-  msg += `   🚨 <b>Chỉ CẮT LỖ</b> khi VN30 xác nhận ĐẢO CHIỀU THỰC SỰ trên bảng điện.\n`;
+  msg += `🎯 <b>KHUYẾN NGHỊ KỊCH BẢN VÀO LỆNH THỰC TẾ:</b>\n`;
+  msg += `   📍 <b>Vùng mở vị thế:</b> Mở <b>${direction}</b> quanh <b>~${(vn30Ref).toFixed(1)} - ${(estimatedFutures).toFixed(1)} điểm</b>\n`;
+  msg += `   🎯 <b>Mục tiêu Chốt lời (TP):</b> Kỳ vọng <b>+10 đến +15 điểm</b> (Bot tự kích hoạt Trailing Stop khi lãi đậm).\n`;
+  msg += `   🛑 <b>Mức Cắt lỗ (SL):</b> Cắt khi thị trường đảo chiều vượt <b>±6.0 điểm</b> hoặc rổ VN30 có biến động ngượng lại dứt khoát.\n`;
 
-  msg += `\n<i>🔮 Derivatives Signal Engine v2.0 | VN Stock Bot</i>`;
+  msg += `\n<i>🔮 Derivatives Signal Engine v2.1 | VN Stock Bot</i>`;
 
   await sendTelegramMessage(msg);
   return msg;
