@@ -33,7 +33,7 @@ const { startBotHandler, stopBotHandler } = require('./botHandler');
 const { startAlertMonitor, stopAlertMonitor, resetDailyData, flushBigTradeBuffer } = require('./alertService');
 const { runSmartMoneyReport } = require('./smartMoneyReport');
 const { runWhaleTrackerReport } = require('./whaleTracker');
-const { runMorningDerivativesJob, runAfternoonDerivativesJob, resetDerivativesState } = require('./derivativesSignal');
+const { runMorningDerivativesJob, runAfternoonDerivativesJob, runAIDerivativesJob, resetDerivativesState } = require('./derivativesSignal');
 
 // ─── Thời điểm khởi động (cho health check) ─────────────
 const startedAt = new Date();
@@ -628,6 +628,32 @@ async function main() {
     }, { scheduled: true, timezone: config.timezone });
   }
   console.log('   🔮 Derivatives Signal Chiều: 13:14 & 13:55 (T2-T6)');
+
+  // ─── SCHEDULE: AI DERIVATIVES FORECAST (9h22 & 13h50, T2-T6) ───
+  cron.schedule('22 9 * * 1-5', async () => {
+    if (!isWeekday()) return;
+    if (isDuplicate('aiDerivativesMorning')) return;
+    console.log(`\n🤖 [AI Derivatives Morning] Cron triggered`);
+    try {
+      await runAIDerivativesJob('morning');
+      jobLastSuccess['aiDerivativesMorning'] = Date.now();
+    } catch (err) {
+      console.error('🤖 [AI Derivatives Morning] Lỗi:', err.message);
+    }
+  }, { scheduled: true, timezone: config.timezone });
+
+  cron.schedule('50 13 * * 1-5', async () => {
+    if (!isWeekday()) return;
+    if (isDuplicate('aiDerivativesAfternoon')) return;
+    console.log(`\n🤖 [AI Derivatives Afternoon] Cron triggered`);
+    try {
+      await runAIDerivativesJob('afternoon');
+      jobLastSuccess['aiDerivativesAfternoon'] = Date.now();
+    } catch (err) {
+      console.error('🤖 [AI Derivatives Afternoon] Lỗi:', err.message);
+    }
+  }, { scheduled: true, timezone: config.timezone });
+  console.log('   🤖 AI Derivatives Forecast: 9:22 & 13:50 (T2-T6)');
 
   // ─── HEARTBEAT: Gửi "đang sống" mỗi ngày 9:00 T2-T6 ───────
   // DISABLED: Bỏ tin nhắn heartbeat hàng ngày theo yêu cầu của user

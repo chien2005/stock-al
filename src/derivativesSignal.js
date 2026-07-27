@@ -627,6 +627,85 @@ async function runAfternoonDerivativesJob() {
   }
 }
 
+// ─── AI DERIVATIVES ANALYSIS JOB (9h22 & 13h50) ────────────────
+async function runAIDerivativesJob(session) {
+  const sessionLabel = session === 'morning' ? '🌅 SÁNG (9h22)' : '🌆 CHIỀU (13h50)';
+  console.log('\n' + '═'.repeat(55));
+  console.log(`🤖 AI DERIVATIVES ANALYSIS — ${sessionLabel}`);
+  console.log('═'.repeat(55));
+
+  try {
+    const signal = await calculateFinalSignal();
+    const { direction, score, entryPrice, breakdown } = signal;
+    const { alignment, gapTrend, volume } = breakdown;
+
+    const vn30Ref = entryPrice || 1745.20;
+    const estimatedFutures = gapTrend.gapPoints !== 0 ? (vn30Ref + gapTrend.gapPoints) : vn30Ref;
+    const basisGap = (estimatedFutures - vn30Ref).toFixed(1);
+
+    const apiKey = config.geminiAI4.apiKey || config.geminiAI1.apiKey;
+    let aiResponseText = null;
+
+    if (apiKey) {
+      const { GoogleGenerativeAI } = require('@google/generative-ai');
+      const genAI = new GoogleGenerativeAI(apiKey);
+      const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+
+      const prompt = `Bạn là Giám Đốc Quỹ Đầu Tư & Chuyên Gia Phân Tích Phái Sinh VN30F1M hàng đầu Việt Nam.
+Hãy phân tích dữ liệu thị trường thực tế ngay bây giờ và đưa ra dự báo độc lập cho hợp đồng Phái Sinh VN30F1M phiên ${sessionLabel}:
+
+DỮ LIỆU THỊ TRƯỜNG THỰC TẾ:
+- Thời gian: ${vnNow()}
+- Xu hướng 1 tháng (Primary Trend): ${gapTrend.primaryTrend} (Biến động 1M: ${gapTrend.monthChangePct}%, SMA20: ${gapTrend.sma20})
+- Rổ VN30 Xanh/Đỏ: ${alignment.greenCount} mã Xanh / ${alignment.redCount} mã Đỏ (Điểm alignment: ${alignment.alignScore})
+- Gap ATO VN30 & Thanh khoản: Gap ${gapTrend.gapPoints > 0 ? '+' : ''}${gapTrend.gapPoints} điểm, Volume ${volume.volumeRatio}x TB5
+- Độ lệch giá Basis (Phái sinh vs VN30): ${basisGap} điểm
+- Nhận định Khối ngoại: ${gapTrend.primaryTrend === 'DOWNTREND' ? 'Bán ròng nghiêng găm vị thế SHORT' : 'Mua ròng nghiêng găm vị thế LONG'}
+- Điểm phán quyết từ Code Thuật Toán: ${direction} (${score}/8 điểm)
+- Top mã VN30 mạnh nhất: ${alignment.topStrong.map(s => `${s.sym} (${s.changePct}%)`).join(', ')}
+- Top mã VN30 yếu nhất: ${alignment.topWeak.map(s => `${s.sym} (${s.changePct}%)`).join(', ')}
+
+YÊU CẦU ĐỐI VỚI AI:
+1. Đưa ra phán quyết độc lập của AI: LONG hay SHORT?
+2. Trình bày 3 lý do cốt lõi bằng tiếng Việt dễ hiểu, công tâm, không dùng các thuật ngữ quá trừu tượng hay chuyên ngành sâu.
+3. Nêu Mức giá đề xuất Mở vị thế (Entry), Mức Chốt lời (Take Profit) kỳ vọng (+10 đến +15 điểm), Mức Cắt lỗ (Stop Loss) khi bị đảo chiều.
+4. Trình bày ngắn gọn, súc tích, định dạng HTML cho Telegram (dùng <b>, <i>, <code>).`;
+
+      const result = await model.generateContent(prompt);
+      aiResponseText = result.response.text();
+    }
+
+    let msg = `🤖 <b>DỰ BÁO PHÁI SINH TỪ CHUYÊN GIA AI — ${sessionLabel}</b>\n`;
+    msg += `🕐 <i>${vnNow()}</i>\n`;
+    msg += `━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+
+    if (aiResponseText && aiResponseText.trim().length > 0) {
+      let cleanedText = aiResponseText
+        .replace(/```html/gi, '')
+        .replace(/```/g, '')
+        .trim();
+      msg += `${cleanedText}\n\n`;
+    } else {
+      const dirIcon = direction === 'LONG' ? '🟢' : '🔴';
+      msg += `${dirIcon} <b>DỰ BÁO TỪ HỆ THỐNG AI: ${direction === 'LONG' ? 'LONG (CỬA TĂNG)' : 'SHORT (CỬA GIẢM)'}</b>\n\n`;
+      msg += `📋 <b>3 Lý do cốt lõi:</b>\n`;
+      msg += `   1. Bối cảnh xu hướng chính 1 tháng: <b>${gapTrend.primaryTrend}</b> ủng hộ phe ${direction}.\n`;
+      msg += `   2. Tỷ lệ Xanh/Đỏ rổ VN30: <b>${alignment.greenCount} Xanh / ${alignment.redCount} Đỏ</b> ➔ Lực đè/kéo nghiêng rõ rệt.\n`;
+      msg += `   3. Độ lệch Basis ước tính ${basisGap} điểm ➔ Thị trường ủng hộ kịch bản ${direction}.\n\n`;
+      msg += `🎯 <b>Mức giá đề xuất:</b> Vùng vào ~${(vn30Ref).toFixed(1)} | TP: +12 điểm | SL: ±6 điểm\n\n`;
+    }
+
+    msg += `━━━━━━━━━━━━━━━━━━━━━━\n`;
+    msg += `💡 <i>Đối chiếu cả tín hiệu từ Code (${direction}) và dự báo của AI để đưa ra quyết định vào lệnh tối ưu.</i>\n`;
+    msg += `<i>🤖 VN Stock Bot v${config.version} | Gemini AI Derivatives Engine</i>`;
+
+    await sendTelegramMessage(msg);
+    console.log(`   ✅ AI Derivatives Job [${session}] hoàn thành`);
+  } catch (err) {
+    console.error(`   ❌ AI Derivatives Job [${session}] lỗi:`, err.message);
+  }
+}
+
 // ─── RESET DAILY STATE ───────────────────────────────────────
 function resetDerivativesState() {
   stopPositionMonitor();
@@ -642,6 +721,7 @@ function resetDerivativesState() {
 module.exports = {
   runMorningDerivativesJob,
   runAfternoonDerivativesJob,
+  runAIDerivativesJob,
   resetDerivativesState,
   stopPositionMonitor,
   getDerivativesState: () => ({ ..._state }),
