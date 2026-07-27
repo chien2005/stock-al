@@ -56,6 +56,11 @@ const THRESHOLDS = {
   accumulationMaxPriceMove: 1.0,  // Giá chỉ dao động ±1% = gom âm thầm
   distributionMinPriceDrop: 1.0,  // Giá giảm > 1% = xả mạnh
 
+  // Anti-phantom order filter (Chống spam rút lệnh ảo kê xa giá)
+  minOrderDepthValue: 5e9,        // Tối thiểu 5 tỷ VND mới xem xét rút lệnh đệm
+  minOrderDepthVol: 100000,       // Tối thiểu 100.000 CP
+  maxOrderPriceDistancePct: 1.0,  // Chỉ tính lệnh sát giá khớp ≤ 1.0%
+
   // Alert limits
   maxAlertsPerSymbol: 3,     // Tối đa 3 noti/mã/ngày (trừ HIGH priority)
 };
@@ -374,38 +379,42 @@ async function pollAndCheck(isFirstPoll) {
         }
       }
 
-      // ═══ CHECK 1.1: Sáng kiến 3 — RÚT LỆNH ĐỆM MUA MẠNH ═══
-      if (prev.bidDepth >= 30000 && bidDepth <= prev.bidDepth * 0.5) {
+      // ═══ CHECK 1.1: RÚT LỆNH ĐỆM MUA MẠNH (Chống Lệnh Ảo/Spam) ═══
+      const dropDepthVol = prev.bidDepth - bidDepth;
+      const dropDepthValue = dropDepthVol * price;
+
+      if (prev.bidDepth >= THRESHOLDS.minOrderDepthVol && dropDepthValue >= THRESHOLDS.minOrderDepthValue && bidDepth <= prev.bidDepth * 0.5) {
         const key = `${symbol}_cancel_bid`;
-        if (!isCooldown(key, now) && canAlertSymbol(symbol, 'HIGH')) {
-          const dropPct = ((prev.bidDepth - bidDepth) / prev.bidDepth * 100).toFixed(0);
-          let detail = `Lực chặn mua (Bid Depth) đột ngột giảm mạnh: <b>-${dropPct}%</b>\n`;
+        if (!isCooldown(key, now) && canAlertSymbol(symbol, 'MEDIUM')) {
+          const dropPct = (dropDepthVol / prev.bidDepth * 100).toFixed(0);
+          let detail = `Lực chặn mua (Bid Depth) rút lớn: <b>-${dropPct}%</b> (~${fmtValue(dropDepthValue)})\n`;
           detail += `   Trước: ${fmtVol(prev.bidDepth)} CP → Hiện tại: ${fmtVol(bidDepth)} CP\n`;
           detail += `   Chỉ số OBI: ${prev.OBI?.toFixed(2)} → ${OBI.toFixed(2)}\n`;
-          detail += `   <i>Cảnh báo: Có dấu hiệu tạo lập/tay to rút lệnh đệm mua ảo ở dưới để buông giá.</i>`;
+          detail += `   <i>Cảnh báo: Tay to/tạo lập vừa rút bớt đệm mua <b>${fmtValue(dropDepthValue)}</b> gần sát giá khớp.</i>`;
 
           alerts.push({
-            symbol, icon: '🚨🔌', title: 'RÚT LỆNH ĐỆM MUA', detail,
-            price, changePct, volume, priority: 'HIGH'
+            symbol, icon: '🚨🔌', title: 'RÚT LỆNH ĐỆM MUA (≥5 tỷ)', detail,
+            price, changePct, volume, priority: 'MEDIUM'
           });
           _alertedToday[key] = now;
           incrementAlertCount(symbol);
         }
       }
 
-      // ═══ CHECK 1.2: Sáng kiến 2 — KIỆT LỰC ĐỠ (Absorption Exhaustion) ═══
-      if (foreignNet < -40000 && fnDelta < -15000 && (bidDepth <= prev.bidDepth * 0.6 || OBI < -0.5) && changePct < prev.changePct - 0.4) {
+      // ═══ CHECK 1.2: KIỆT LỰC ĐỠ (Absorption Exhaustion) ═══
+      const fnAbsVal = Math.abs(fnDelta) * price;
+      if (foreignNet < -40000 && fnDelta < -15000 && fnAbsVal >= effectiveMinValue && (bidDepth <= prev.bidDepth * 0.6 || OBI < -0.5) && changePct < prev.changePct - 0.4) {
         const key = `${symbol}_exhaust_support`;
-        if (!isCooldown(key, now) && canAlertSymbol(symbol, 'HIGH')) {
+        if (!isCooldown(key, now) && canAlertSymbol(symbol, 'MEDIUM')) {
           let detail = `Lực đỡ mua ròng của Nội cạn kiệt/rút lui dưới áp lực xả ròng mạnh của Ngoại.\n`;
-          detail += `   NN thay đổi 3ph: <b>${fmtVol(fnDelta)}</b> CP | Ròng ngày: <b>${fmtVol(foreignNet)}</b> CP\n`;
+          detail += `   NN thay đổi 3ph: <b>${fmtVol(fnDelta)}</b> CP (~${fmtValue(fnAbsVal)}) | Ròng ngày: <b>${fmtVol(foreignNet)}</b> CP\n`;
           detail += `   Bid Depth giảm: ${fmtVol(prev.bidDepth)} → ${fmtVol(bidDepth)} CP (OBI: ${OBI.toFixed(2)})\n`;
           detail += `   Giá trượt nhanh: ${fmtPrice(prev.price)} → <b>${fmtPrice(price)}</b> (${changePct >= 0 ? '+' : ''}${changePct}%)\n`;
           detail += `   <i>Khuyến nghị: Theo dõi sát sao mốc hỗ trợ, hạ tỷ trọng sớm tránh cú gãy trung hạn.</i>`;
 
           alerts.push({
             symbol, icon: '🚨🛡️', title: 'KIỆT LỰC ĐỠ (Exhausted)', detail,
-            price, changePct, volume, priority: 'HIGH'
+            price, changePct, volume, priority: 'MEDIUM'
           });
           _alertedToday[key] = now;
           incrementAlertCount(symbol);
