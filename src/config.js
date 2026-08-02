@@ -63,17 +63,15 @@ const config = {
     modelAI4: process.env.OPENROUTER_MODEL_AI4 || 'openai/gpt-oss-120b:free',
   },
 
-  // Stock symbols (đọc trực tiếp từ userConfig.js)
+  // Stock symbols (đọc từ .env hoặc userConfig.js)
   stockSymbols: (() => {
-    let symbols = userConfig.stockSymbols || [];
+    let raw = process.env.STOCK_SYMBOLS 
+      ? process.env.STOCK_SYMBOLS.split(',').map(s => s.trim())
+      : (userConfig.stockSymbols || []);
     
     // Always exclude VNM and index symbols (which are fetched separately)
     const excluded = ['VNM', 'VN30', 'VN30INDEX', 'VNINDEX'];
-    symbols = symbols.filter(s => !excluded.includes(s));
-    
-    // Always guarantee TCB and ACB are included
-    if (!symbols.includes('TCB')) symbols.push('TCB');
-    if (!symbols.includes('ACB')) symbols.push('ACB');
+    let symbols = raw.filter(s => s && !excluded.includes(s));
     
     return symbols;
   })(),

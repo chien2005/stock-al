@@ -7,7 +7,7 @@
 module.exports = {
   // Danh sách các mã cổ phiếu theo dõi trong rổ dự án (báo giá hàng ngày)
   stockSymbols: [
-    'VCB', 'HPG', 'BID', 'MWG', 'SSI', 'FPT', 'VIC', 'CTR', 'MBB', 'TCB', 'ACB', 'E1VFVN30'
+    'VCB', 'HPG', 'BID', 'MWG', 'SSI', 'FPT', 'VIC', 'CTR', 'MBB', 'TCB', 'VHM', 'VRE', 'HHV', 'E1VFVN30'
   ],
 
   // ─── LỊCH PHÁT THÔNG BÁO (CRON JOBS) ──────────────────────────

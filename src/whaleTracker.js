@@ -22,7 +22,7 @@ const HEADERS = {
 };
 
 // 14 CP theo yêu cầu chính xác của user
-const WHALE_STOCKS = ['VCB', 'HPG', 'BID', 'MWG', 'SSI', 'FPT', 'VIC', 'VHM', 'CTR', 'MBB', 'TCB', 'ACB', 'CTG', 'VPB'];
+const WHALE_STOCKS = ['VCB', 'HPG', 'BID', 'MWG', 'SSI', 'FPT', 'VIC', 'CTR', 'MBB', 'TCB', 'VHM', 'VRE', 'HHV', 'E1VFVN30'];
 
 const WHALE_OWNERS = {
   VCB: ['Dragon', 'Vina', 'KIM', 'Fubon', 'VanEck', 'SSIAM', 'VCBF'],
@@ -32,13 +32,13 @@ const WHALE_OWNERS = {
   SSI: ['Dragon', 'Vina', 'Fubon', 'VanEck', 'SSIAM', 'VCBF'],
   FPT: ['Dragon', 'Vina', 'PYN', 'Fubon', 'VanEck', 'VCBF'],
   VIC: ['Dragon', 'Vina', 'KIM', 'Fubon', 'VanEck', 'SSIAM', 'VCBF', 'PNV'],
-  VHM: ['Dragon', 'Vina', 'KIM', 'Fubon', 'VanEck', 'SSIAM', 'VCBF'],
   CTR: ['Dragon', 'Vina', 'VanEck'],
   MBB: ['Dragon', 'KIM', 'Fubon', 'VanEck', 'SSIAM', 'VCBF'],
   TCB: ['Dragon', 'Vina', 'KIM', 'Fubon', 'VanEck', 'SSIAM', 'VCBF'],
-  ACB: ['Dragon', 'Vina', 'KIM', 'Fubon', 'VanEck', 'SSIAM', 'VCBF'],
-  CTG: ['Dragon', 'Vina', 'KIM', 'Fubon', 'VanEck', 'SSIAM', 'VCBF'],
-  VPB: ['Vina', 'KIM', 'Fubon', 'VCBF'],
+  VHM: ['Dragon', 'Vina', 'KIM', 'Fubon', 'VanEck', 'SSIAM', 'VCBF'],
+  VRE: ['Dragon', 'Vina', 'KIM', 'Fubon', 'VanEck', 'SSIAM', 'VCBF'],
+  HHV: ['Dragon', 'Vina', 'PYN', 'SSIAM', 'VCBF'],
+  E1VFVN30: ['Dragon', 'Vina', 'KIM', 'Fubon', 'VanEck', 'SSIAM', 'VCBF'],
 };
 
 let _prevDayForeignNet = {};
