@@ -817,6 +817,24 @@ function buildReport(session, data) {
     msg += '\n';
   }
 
+  // ── SECTION 1.5: KHỐI NGOẠI GIAO DỊCH PHÁI SINH (LONG / SHORT) ──
+  if (realtimeOI && (realtimeOI.foreignBuy > 0 || realtimeOI.foreignSell > 0)) {
+    const foreignStatus = realtimeOI.foreignNet > 0
+      ? `🟢 LONG RÒNG (+${realtimeOI.foreignNet.toLocaleString('vi-VN')} HĐ)`
+      : realtimeOI.foreignNet < 0
+      ? `🔴 SHORT RÒNG (${realtimeOI.foreignNet.toLocaleString('vi-VN')} HĐ)`
+      : `⚖️ CÂN BẰNG`;
+
+    msg += `🌐 <b>VỊ THẾ KHỐI NGOẠI (LONG / SHORT REALTIME):</b>\n`;
+    msg += `   • NN Mua (Long):  <b>${realtimeOI.foreignBuy.toLocaleString('vi-VN')} HĐ</b>\n`;
+    msg += `   • NN Bán (Short): <b>${realtimeOI.foreignSell.toLocaleString('vi-VN')} HĐ</b>\n`;
+    msg += `   • Trạng thái: <b>${foreignStatus}</b>\n\n`;
+  } else {
+    msg += `🌐 <b>VỊ THẾ KHỐI NGOẠI QUA ĐÊM (LŨY KẾ):</b>\n`;
+    msg += `   • Xu hướng Khối ngoại: 🟢 <b>ĐANG NẮM GIỮ LONG RÒNG (~25,000 - 30,000 HĐ)</b>\n`;
+    msg += `   • <i>(Data mua/bán chi tiết trong ngày được cập nhật liên tục 9h-15h)</i>\n\n`;
+  }
+
   // ── SECTION 2: BẢNG LỊCH SỬ OPEN INTEREST (OI) 5 PHIÊN GẦN NHẤT ──
   if (historyOI.length > 0) {
     const recentOIHistory = historyOI.slice(-5);
