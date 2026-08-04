@@ -253,6 +253,11 @@ function parseRealtimeOI(realtimeDataArr) {
       }
     }
 
+    // Foreign trade data
+    const foreignBuy = parseInt(raw.fBVol || '0');
+    const foreignSell = parseInt(raw.fSVolume || '0');
+    const foreignNet = foreignBuy - foreignSell;
+
     if (oi > 0) hasOI = true;
     totalOI += oi;
     totalOIChange += oiChange;
@@ -269,6 +274,9 @@ function parseRealtimeOI(realtimeDataArr) {
       changePct: parseFloat(changePct.toFixed(2)),
       bidVolume: bidVol,   // KL chờ mua (Long demand)
       askVolume: askVol,   // KL chờ bán (Short demand)
+      foreignBuy,
+      foreignSell,
+      foreignNet,
     });
   }
 
@@ -286,6 +294,10 @@ function parseRealtimeOI(realtimeDataArr) {
   const estimatedLong = hasOI ? Math.round(totalOI * longPct) : null;
   const estimatedShort = hasOI ? Math.round(totalOI * shortPct) : null;
 
+  const totalForeignBuy = contracts.reduce((sum, c) => sum + (c.foreignBuy || 0), 0);
+  const totalForeignSell = contracts.reduce((sum, c) => sum + (c.foreignSell || 0), 0);
+  const totalForeignNet = totalForeignBuy - totalForeignSell;
+
   return {
     contracts: contracts.sort((a, b) => b.oi - a.oi),
     totalOI: hasOI ? totalOI : null,
@@ -297,6 +309,9 @@ function parseRealtimeOI(realtimeDataArr) {
     estimatedShort,
     longPct: parseFloat((longPct * 100).toFixed(1)),
     shortPct: parseFloat((shortPct * 100).toFixed(1)),
+    foreignBuy: totalForeignBuy,
+    foreignSell: totalForeignSell,
+    foreignNet: totalForeignNet,
   };
 }
 
