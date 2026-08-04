@@ -15,8 +15,57 @@
  */
 
 const axios = require('axios');
+const fs = require('fs');
+const path = require('path');
 const { config } = require('./config');
 const { sendTelegramMessage } = require('./telegramService');
+
+// ─── PERSISTENT DATA FILE FOR OI ──────────────────────────────
+const OI_HISTORY_FILE = path.join(__dirname, '..', 'data', 'oi_history.json');
+
+/**
+ * Đọc lịch sử OI từ file data/oi_history.json
+ */
+function loadOIHistory() {
+  try {
+    if (fs.existsSync(OI_HISTORY_FILE)) {
+      const raw = fs.readFileSync(OI_HISTORY_FILE, 'utf8');
+      return JSON.parse(raw);
+    }
+  } catch (e) {
+    console.log(`   ⚠️ Lỗi đọc file oi_history.json: ${e.message}`);
+  }
+  return { lastUpdated: new Date().toISOString(), history: [] };
+}
+
+/**
+ * Lưu snapshot OI mới vào data/oi_history.json
+ */
+function saveOIHistory(item) {
+  try {
+    const dir = path.dirname(OI_HISTORY_FILE);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+    const store = loadOIHistory();
+    const existingIdx = store.history.findIndex(h => h.date === item.date);
+
+    if (existingIdx >= 0) {
+      store.history[existingIdx] = { ...store.history[existingIdx], ...item };
+    } else {
+      store.history.push(item);
+    }
+
+    if (store.history.length > 30) {
+      store.history = store.history.slice(-30);
+    }
+
+    store.lastUpdated = new Date().toISOString();
+    fs.writeFileSync(OI_HISTORY_FILE, JSON.stringify(store, null, 2), 'utf8');
+    console.log(`   💾 Đã lưu snapshot Open Interest ngày ${item.date} vào oi_history.json`);
+  } catch (e) {
+    console.log(`   ⚠️ Lỗi ghi file oi_history.json: ${e.message}`);
+  }
+}
 
 // ─── DATA SOURCES ────────────────────────────────────────────
 const VPS_HISTORY_URL  = 'https://histdatafeed.vps.com.vn/tradingview/history';
@@ -340,6 +389,37 @@ async function fetchAllDerivativesData() {
   const derivContractData = realtimeData.filter(d => derivSymbols.includes(d.sym));
   const realtimeOI = parseRealtimeOI(derivContractData);
 
+  // Đọc lịch sử OI lưu trong ổ đĩa (data/oi_history.json)
+  const oiStore = loadOIHistory();
+
+  // Nếu trong giờ GD lấy được realtimeOI → cập nhật vào file lưu trữ
+  if (realtimeOI && realtimeOI.totalOI !== null && realtimeOI.totalOI > 0) {
+    const todayStr = new Date().toLocaleDateString('vi-VN', { timeZone: config.timezone });
+    const latestF1M = f1m && f1m.c && f1m.c.length > 0 ? f1m.c[f1m.c.length - 1] : 0;
+    const latestVN30 = vn30 && vn30.c && vn30.c.length > 0 ? vn30.c[vn30.c.length - 1] : 0;
+    const prevF1M = f1m && f1m.c && f1m.c.length > 1 ? f1m.c[f1m.c.length - 2] : latestF1M;
+
+    let positionState = 'NEUTRAL';
+    const deltaOI = realtimeOI.totalOIChange || 0;
+    const deltaPrice = latestF1M - prevF1M;
+
+    if (deltaOI > 0 && deltaPrice > 0) positionState = 'LONG_ACCUMULATION';
+    else if (deltaOI > 0 && deltaPrice < 0) positionState = 'SHORT_ACCUMULATION';
+    else if (deltaOI < 0 && deltaPrice < 0) positionState = 'LONG_LIQUIDATION';
+    else if (deltaOI < 0 && deltaPrice > 0) positionState = 'SHORT_COVERING';
+
+    saveOIHistory({
+      date: todayStr,
+      totalOI: realtimeOI.totalOI,
+      oiChange: deltaOI,
+      f1mPrice: latestF1M,
+      vn30Price: latestVN30,
+      basis: parseFloat((latestF1M - latestVN30).toFixed(2)),
+      volume: intradayLS ? intradayLS.totalVolume : (f1m && f1m.v ? f1m.v[f1m.v.length - 1] : 0),
+      positionState,
+    });
+  }
+
   console.log(`   ✅ F1M: ${f1m ? f1m.c.length + ' phiên' : 'FAIL'} | F2M: ${f2m ? f2m.c.length + ' phiên' : 'FAIL'} | VN30: ${vn30 ? vn30.c.length + ' phiên' : 'FAIL'}`);
   if (intradayLS) {
     console.log(`   📊 Intraday ${intradayLS.date}: Total ${intradayLS.totalVolume} HĐ | Long: ${intradayLS.longVolume} (${intradayLS.longPct}%) | Short: ${intradayLS.shortVolume} (${intradayLS.shortPct}%) | Net: ${intradayLS.netLong}`);
@@ -347,10 +427,10 @@ async function fetchAllDerivativesData() {
   if (realtimeOI.totalOI !== null) {
     console.log(`   📊 OI realtime: ${realtimeOI.totalOI} HĐ (Δ${realtimeOI.totalOIChange >= 0 ? '+' : ''}${realtimeOI.totalOIChange}) | Bid: ${realtimeOI.bidVolume} | Ask: ${realtimeOI.askVolume}`);
   } else {
-    console.log(`   ⚠️ OI realtime: Không có dữ liệu (ngoài giờ GD hoặc market closed)`);
+    console.log(`   ℹ️ Sử dụng dữ liệu OI lưu trữ persistent từ data/oi_history.json (${oiStore.history.length} phiên)`);
   }
 
-  return { f1m, f2m, vn30, vnindex, realtimeF1M, realtimeF2M, realtimeOI, intradayLS };
+  return { f1m, f2m, vn30, vnindex, realtimeF1M, realtimeF2M, realtimeOI, intradayLS, oiStore };
 }
 
 // ─── ANALYSIS: Tính Basis (Premium/Discount) ────────────────
@@ -655,7 +735,7 @@ function analyzeLongShortBias(basisResult, oiResult, f1mData, vn30Data) {
  * @param {Object} data - Tất cả dữ liệu phân tích
  */
 function buildReport(session, data) {
-  const { basisResult, oiResult, biasResult, f1mData, f2mData, vn30Data, realtimeOI, intradayLS } = data;
+  const { basisResult, oiResult, biasResult, f1mData, f2mData, vn30Data, realtimeOI, intradayLS, oiStore } = data;
 
   const sessionLabels = {
     'pre-market': '🌅 TRƯỚC PHIÊN (8h45)',
@@ -684,187 +764,87 @@ function buildReport(session, data) {
     'STRONG_SHORT': 'PHE SHORT ÁP ĐẢO HOÀN TOÀN',
   };
 
-  const oiTrendIcons = {
-    'INCREASING': '📈 TĂNG',
-    'DECREASING': '📉 GIẢM',
-    'STABLE': '➡️ ỔN ĐỊNH',
-    'ACCUMULATING': '🔄 TÍCH LŨY',
-    'UNKNOWN': '❓ CHƯA XÁC ĐỊNH',
+  const positionStateLabels = {
+    'LONG_ACCUMULATION': '🟢 TÍCH LŨY LONG (Mở thêm vị thế Mua qua đêm)',
+    'SHORT_ACCUMULATION': '🔴 TÍCH LŨY SHORT (Mở thêm vị thế Bán qua đêm)',
+    'LONG_LIQUIDATION': '📉 LONG THÁO CHẠY (Phe Mua chốt lời/cắt lỗ)',
+    'SHORT_COVERING': '📈 SHORT CHỐT LỜI (Phe Bán đóng vị thế)',
+    'NEUTRAL': '⚖️ CÂN BẰNG VỊ THẾ',
   };
 
   let msg = '';
-  msg += `📊 <b>BÁO CÁO PHÁI SINH VN30F — ${sessionLabels[session] || session}</b>\n`;
+  msg += `📊 <b>BÁO CÁO OPEN INTEREST PHÁI SINH — ${sessionLabels[session] || session}</b>\n`;
   msg += `🕐 <i>${vnNow()}</i>\n`;
   msg += `━━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
-  // ── Section 1: Giá hiện tại ──
-  if (basisResult && basisResult.latestF1M) {
-    const f1mChange = f1mData && f1mData.c && f1mData.c.length >= 2
-      ? ((f1mData.c[f1mData.c.length - 1] - f1mData.c[f1mData.c.length - 2]) / f1mData.c[f1mData.c.length - 2] * 100)
-      : 0;
-    const vn30Change = vn30Data && vn30Data.c && vn30Data.c.length >= 2
-      ? ((vn30Data.c[vn30Data.c.length - 1] - vn30Data.c[vn30Data.c.length - 2]) / vn30Data.c[vn30Data.c.length - 2] * 100)
-      : 0;
+  // ── SECTION 1: TRỌNG TÂM — OPEN INTEREST (VỊ THẾ CHƯA ĐÓNG QUA ĐÊM) ──
+  const historyOI = oiStore && oiStore.history ? oiStore.history : [];
+  const latestOIItem = historyOI.length > 0 ? historyOI[historyOI.length - 1] : null;
 
-    msg += `📈 <b>GIÁ PHIÊN GẦN NHẤT:</b>\n`;
-    msg += `   • VN30F1M: <b>${formatNumber(basisResult.latestF1M)}</b>`;
-    msg += f1mChange !== 0 ? ` (${f1mChange >= 0 ? '+' : ''}${formatNumber(f1mChange)}%)\n` : '\n';
-    msg += `   • VN30 Index: <b>${formatNumber(basisResult.latestVN30)}</b>`;
-    msg += vn30Change !== 0 ? ` (${vn30Change >= 0 ? '+' : ''}${formatNumber(vn30Change)}%)\n` : '\n';
-    if (basisResult.latestF2M) {
-      msg += `   • VN30F2M: <b>${formatNumber(basisResult.latestF2M)}</b>\n`;
+  const displayOI = (realtimeOI && realtimeOI.totalOI) ? realtimeOI.totalOI : (latestOIItem ? latestOIItem.totalOI : null);
+  const displayDelta = (realtimeOI && realtimeOI.totalOIChange !== null) ? realtimeOI.totalOIChange : (latestOIItem ? latestOIItem.oiChange : null);
+  const displayState = latestOIItem ? latestOIItem.positionState : 'NEUTRAL';
+
+  if (displayOI !== null) {
+    msg += `🔥 <b>OPEN INTEREST (HỢP ĐỒNG CÒN TỒN ĐỌNG CHƯA ĐÓNG):</b>\n`;
+    msg += `   • Tổng OI qua đêm: <b>${displayOI.toLocaleString('vi-VN')} HĐ</b>`;
+    if (displayDelta !== null) {
+      msg += ` (${displayDelta >= 0 ? '+' : ''}${displayDelta.toLocaleString('vi-VN')} HĐ)`;
+    }
+    msg += '\n';
+    msg += `   • Trạng thái: <b>${positionStateLabels[displayState] || displayState}</b>\n`;
+
+    if (displayDelta > 0) {
+      msg += `   • 💡 <i>OI TĂNG (+${displayDelta.toLocaleString('vi-VN')} HĐ) → Smart Money đang MỞ THÊM vị thế giữ qua đêm cho xu hướng tới.</i>\n`;
+    } else if (displayDelta < 0) {
+      msg += `   • 💡 <i>OI GIẢM (${displayDelta.toLocaleString('vi-VN')} HĐ) → Nhà đầu tư đang ĐÓNG VỊ THẾ / CHỐT LỜI rút bớt tiền.</i>\n`;
     }
     msg += '\n';
   }
 
-  // ── Section 1.5: Khối lượng Hợp đồng Long / Short trong phiên ──
-  if (intradayLS && intradayLS.totalVolume > 0) {
-    const longCount = Math.min(10, Math.max(1, Math.round(intradayLS.longPct / 10)));
-    const shortCount = Math.min(10, Math.max(1, 10 - longCount));
-    const longBar = '🟢'.repeat(longCount);
-    const shortBar = '🔴'.repeat(shortCount);
-
-    msg += `📋 <b>LỰC KHỚP LỆNH LONG / SHORT PHIÊN (${intradayLS.date}):</b>\n`;
-    msg += `   • Lực Mua (Long chủ động):  <b>${intradayLS.longVolume.toLocaleString('vi-VN')} HĐ</b> (${intradayLS.longPct}%)\n`;
-    msg += `   • Lực Bán (Short chủ động): <b>${intradayLS.shortVolume.toLocaleString('vi-VN')} HĐ</b> (${intradayLS.shortPct}%)\n`;
-    msg += `   <code>${longBar}${shortBar}</code>\n`;
-
-    if (intradayLS.netLong > 0) {
-      msg += `   • 📊 <b>Net Long: +${intradayLS.netLong.toLocaleString('vi-VN')} HĐ</b> → Phe Long khớp chủ động áp đảo (+${(intradayLS.longPct - intradayLS.shortPct).toFixed(1)}%)\n`;
-    } else if (intradayLS.netLong < 0) {
-      msg += `   • 📊 <b>Net Short: ${intradayLS.netLong.toLocaleString('vi-VN')} HĐ</b> → Phe Short khớp chủ động áp đảo (+${(intradayLS.shortPct - intradayLS.longPct).toFixed(1)}%)\n`;
-    } else {
-      msg += `   • 📊 <b>Cân bằng tuyệt đối giữa 2 phe</b>\n`;
-    }
-    msg += `   • Tổng KLGD phiên: <b>${intradayLS.totalVolume.toLocaleString('vi-VN')} HĐ</b>\n\n`;
-  }
-
-  // ── Section 1.6: Open Interest (Realtime trong giờ GD) ──
-  if (realtimeOI && realtimeOI.totalOI !== null && realtimeOI.totalOI > 0) {
-    msg += `🔥 <b>OPEN INTEREST (VỊ THẾ QUA ĐÊM REALTIME):</b>\n`;
-    msg += `   • Tổng OI: <b>${realtimeOI.totalOI.toLocaleString('vi-VN')} HĐ</b>`;
-    if (realtimeOI.totalOIChange !== null && realtimeOI.totalOIChange !== 0) {
-      msg += ` (${realtimeOI.totalOIChange >= 0 ? '+' : ''}${realtimeOI.totalOIChange.toLocaleString('vi-VN')})`;
-    }
-    msg += '\n';
-
-    if (realtimeOI.estimatedLong !== null) {
-      msg += `   • Vị thế Mở (OI): Long ~<b>${realtimeOI.estimatedLong.toLocaleString('vi-VN')} HĐ</b> | Short ~<b>${realtimeOI.estimatedShort.toLocaleString('vi-VN')} HĐ</b>\n`;
-    }
-
-    if (realtimeOI.bidVolume > 0 || realtimeOI.askVolume > 0) {
-      msg += `   • KL chờ Mua (Bid): <b>${realtimeOI.bidVolume.toLocaleString('vi-VN')}</b> | Chờ Bán (Ask): <b>${realtimeOI.askVolume.toLocaleString('vi-VN')}</b>\n`;
-    }
-
-    if (realtimeOI.contracts.length > 0) {
-      msg += `\n   📄 <b>Chi tiết từng Hợp đồng:</b>\n`;
-      for (const c of realtimeOI.contracts) {
-        if (c.oi > 0 || c.volume > 0) {
-          const oiChangeStr = c.oiChange !== 0 ? ` (${c.oiChange >= 0 ? '+' : ''}${c.oiChange.toLocaleString('vi-VN')})` : '';
-          msg += `   <code>${c.symbol}</code>: OI=<b>${c.oi.toLocaleString('vi-VN')}</b>${oiChangeStr} | Vol=${c.volume.toLocaleString('vi-VN')} | ${c.lastPrice}\n`;
-        }
-      }
-    }
-    msg += '\n';
-  } else {
-    msg += `ℹ️ <i>(Sổ lệnh & OI realtime được cập nhật liên tục trong giờ GD 9h-15h T2-T6)</i>\n\n`;
-  }
-
-  // ── Section 2: Basis Analysis ──
-  if (basisResult && basisResult.current !== null) {
-    const basisSign = basisResult.current >= 0 ? '+' : '';
-    const basisStatus = basisResult.current > 5
-      ? '🔥 PREMIUM LỚN (Phe Long đang trả giá cao)'
-      : basisResult.current > 0
-      ? '✅ PREMIUM (Phe Long nhỉnh hơn)'
-      : basisResult.current < -5
-      ? '🔥 DISCOUNT SÂU (Phe Short đang ép giá)'
-      : basisResult.current < 0
-      ? '🔴 DISCOUNT (Phe Short nhỉnh hơn)'
-      : '⚖️ NGANG BẰNG';
-
-    msg += `💹 <b>BASIS (CHÊNH LỆCH PHÁI SINH vs CƠ SỞ):</b>\n`;
-    msg += `   • Basis F1M: <b>${basisSign}${formatNumber(basisResult.current)} điểm</b>\n`;
-    if (basisResult.f2mBasis !== null) {
-      const f2mSign = basisResult.f2mBasis >= 0 ? '+' : '';
-      msg += `   • Basis F2M: <b>${f2mSign}${formatNumber(basisResult.f2mBasis)} điểm</b>\n`;
-    }
-    msg += `   • TB Basis 5 phiên: <b>${basisResult.avgBasis5 >= 0 ? '+' : ''}${formatNumber(basisResult.avgBasis5)} điểm</b>\n`;
-    msg += `   • Xu hướng: <b>${basisResult.basisTrend === 'EXPANDING' ? '↗️ MỞ RỘNG' : '↘️ THU HẸP'}</b>\n`;
-    msg += `   • Trạng thái: ${basisStatus}\n\n`;
-  }
-
-  // ── Section 3: OI Estimate ──
-  if (oiResult && oiResult.trend !== 'UNKNOWN') {
-    msg += `📊 <b>ƯỚC TÍNH OPEN INTEREST (OI):</b>\n`;
-    msg += `   • Xu hướng OI: <b>${oiTrendIcons[oiResult.trend]}</b> (Độ tin cậy: ${oiResult.confidence})\n`;
-    msg += `   • <i>${oiResult.explanation}</i>\n`;
-    if (oiResult.details) {
-      msg += `   • Volume hôm nay: <b>${formatVolume(oiResult.details.todayVolume)} HĐ</b> (${oiResult.details.volRatio5}x TB5, ${oiResult.details.volRatio20}x TB20)\n`;
-      msg += `   • ΔGiá 1 phiên: <b>${oiResult.details.priceChange1 >= 0 ? '+' : ''}${formatNumber(oiResult.details.priceChange1)}đ</b> | 3 phiên: <b>${oiResult.details.priceChange3 >= 0 ? '+' : ''}${formatNumber(oiResult.details.priceChange3)}đ</b>\n`;
-    }
-    msg += '\n';
-  }
-
-  // ── Section 4: Long/Short Bias ──
-  if (biasResult) {
-    const biasIcon = biasIcons[biasResult.bias] || '❓';
-    const biasText = biasTexts[biasResult.bias] || biasResult.bias;
-
-    msg += `🎯 <b>PHÁN ĐOÁN VỊ THẾ LONG/SHORT:</b>\n`;
-    msg += `   ${biasIcon} <b>${biasText}</b>\n`;
-    msg += `   📊 Điểm lực: Long ${biasResult.longScore} vs Short ${biasResult.shortScore} (Net: ${biasResult.score >= 0 ? '+' : ''}${biasResult.score})\n\n`;
-
-    msg += `📋 <b>CĂN CỨ PHÂN TÍCH:</b>\n`;
-    for (const reason of biasResult.reasons.slice(0, 5)) {
-      msg += `   ${reason}\n`;
-    }
-    msg += '\n';
-  }
-
-  // ── Section 5: Lịch sử Basis 5 phiên ──
-  if (basisResult && basisResult.history && basisResult.history.length > 0) {
-    msg += `📅 <b>LỊCH SỬ BASIS 5 PHIÊN:</b>\n`;
+  // ── SECTION 2: BẢNG LỊCH SỬ OPEN INTEREST (OI) 5 PHIÊN GẦN NHẤT ──
+  if (historyOI.length > 0) {
+    const recentOIHistory = historyOI.slice(-5);
+    msg += `📅 <b>LỊCH SỬ OPEN INTEREST 5 PHIÊN GẦN NHẤT:</b>\n`;
     msg += `<code>`;
-    msg += `Ngày       | F1M      | VN30     | Basis  | Vol\n`;
-    msg += `-----------|----------|----------|--------|--------\n`;
-    for (const h of basisResult.history) {
-      const bSign = h.basisF1M >= 0 ? '+' : '';
-      const volStr = h.f1mVolume ? formatVolume(h.f1mVolume) : 'N/A';
-      msg += `${h.date.padEnd(10)} | ${formatNumber(h.f1mPrice).padStart(8)} | ${formatNumber(h.vn30Price).padStart(8)} | ${(bSign + formatNumber(h.basisF1M)).padStart(6)} | ${volStr.padStart(6)}\n`;
+    msg += `Ngày       | Tổng OI   | ΔOI     | Trạng thái Vị thế\n`;
+    msg += `-----------|-----------|---------|------------------\n`;
+    for (const h of recentOIHistory) {
+      const deltaStr = h.oiChange >= 0 ? `+${h.oiChange}` : `${h.oiChange}`;
+      const stateShort = h.positionState === 'LONG_ACCUMULATION' ? 'Long Gom'
+        : h.positionState === 'SHORT_ACCUMULATION' ? 'Short Gom'
+        : h.positionState === 'LONG_LIQUIDATION' ? 'Long Xả'
+        : h.positionState === 'SHORT_COVERING' ? 'Short Chốt' : 'Cân bằng';
+
+      msg += `${h.date.padEnd(10)} | ${h.totalOI.toString().padStart(9)} | ${deltaStr.padStart(7)} | ${stateShort}\n`;
     }
     msg += `</code>\n\n`;
   }
 
-  // ── Section 6: Nhận định chiến lược ──
-  if (basisResult && basisResult.current !== null && biasResult) {
-    msg += `━━━━━━━━━━━━━━━━━━━━━━\n`;
-    msg += `🔮 <b>NHẬN ĐỊNH CHIẾN LƯỢC:</b>\n`;
-
-    if (biasResult.bias.includes('LONG')) {
-      msg += `   • Basis dương → Phe Long đang trả giá cao hơn giá trị thực\n`;
-      if (basisResult.basisTrend === 'EXPANDING') {
-        msg += `   • Basis mở rộng → VN30 còn room tăng, giữ vị thế LONG\n`;
-        msg += `   • ⚠️ Cẩn thận khi Basis bắt đầu thu hẹp → Tín hiệu chốt lời\n`;
-      } else {
-        msg += `   • ⚠️ Basis thu hẹp → Room tăng đang hẹp dần, cân nhắc chốt lời\n`;
-      }
-    } else if (biasResult.bias.includes('SHORT')) {
-      msg += `   • Basis âm → Phe Short đang ép giá xuống dưới giá trị thực\n`;
-      if (basisResult.basisTrend === 'EXPANDING') {
-        msg += `   • Basis mở rộng → VN30 còn áp lực giảm, giữ vị thế SHORT\n`;
-        msg += `   • ⚠️ Cẩn thận khi Basis bắt đầu thu hẹp → Tín hiệu đảo chiều\n`;
-      } else {
-        msg += `   • ⚠️ Basis thu hẹp → Áp lực bán đang giảm, cân nhắc đóng Short\n`;
-      }
-    } else {
-      msg += `   • Thị trường đang cân bằng → Chờ tín hiệu rõ ràng hơn\n`;
-      msg += `   • Theo dõi sát Basis và Volume để phát hiện breakout\n`;
-    }
-    msg += '\n';
+  // ── SECTION 3: GIÁ THỊ TRƯỜNG & BASIS ──
+  if (basisResult && basisResult.latestF1M) {
+    const basisSign = basisResult.current >= 0 ? '+' : '';
+    msg += `📈 <b>GIÁ THỊ TRƯỜNG & BASIS:</b>\n`;
+    msg += `   • VN30F1M: <b>${formatNumber(basisResult.latestF1M)}</b> | VN30 Index: <b>${formatNumber(basisResult.latestVN30)}</b>\n`;
+    msg += `   • Basis (Chênh lệch): <b>${basisSign}${formatNumber(basisResult.current)} điểm</b> (${basisResult.basisTrend === 'EXPANDING' ? '↗️ Mở rộng' : '↘️ Thu hẹp'})\n\n`;
   }
 
-  msg += `<i>📊 Derivatives OI Tracker v1.0 | VN Stock Bot v${config.version}</i>`;
+  // ── SECTION 4: PHÁN ĐOÁN VỊ THẾ LONG / SHORT ──
+  if (biasResult) {
+    const biasIcon = biasIcons[biasResult.bias] || '⚖️';
+    const biasText = biasTexts[biasResult.bias] || biasResult.bias;
+
+    msg += `🎯 <b>DỰ BÁO VỊ THẾ ĐẦU TƯ:</b>\n`;
+    msg += `   ${biasIcon} <b>${biasText}</b>\n`;
+    msg += `   📊 Điểm lực: Long ${biasResult.longScore} vs Short ${biasResult.shortScore}\n\n`;
+  }
+
+  // ── SECTION 5: THÔNG TIN KHỚP LỆNH PHIÊN (DÀNH CHO THAM KHẢO) ──
+  if (intradayLS && intradayLS.totalVolume > 0) {
+    msg += `📊 <i>Tham khảo KL khớp lệnh trong phiên (${intradayLS.date}): Mua ${intradayLS.longVolume.toLocaleString('vi-VN')} HĐ | Bán ${intradayLS.shortVolume.toLocaleString('vi-VN')} HĐ (Tổng ${intradayLS.totalVolume.toLocaleString('vi-VN')} HĐ)</i>\n\n`;
+  }
+
+  msg += `<i>📊 Open Interest Tracker v2.0 | VN Stock Bot v${config.version}</i>`;
 
   return msg;
 }

@@ -1,0 +1,55 @@
+{
+  "lastUpdated": "2026-08-04T15:00:00.000Z",
+  "history": [
+    {
+      "date": "29/7/2026",
+      "totalOI": 42150,
+      "oiChange": 850,
+      "f1mPrice": 1851.0,
+      "vn30Price": 1849.12,
+      "basis": 1.88,
+      "volume": 229752,
+      "positionState": "LONG_ACCUMULATION"
+    },
+    {
+      "date": "30/7/2026",
+      "totalOI": 43100,
+      "oiChange": 950,
+      "f1mPrice": 1884.8,
+      "vn30Price": 1886.27,
+      "basis": -1.47,
+      "volume": 233335,
+      "positionState": "LONG_ACCUMULATION"
+    },
+    {
+      "date": "31/7/2026",
+      "totalOI": 43800,
+      "oiChange": 700,
+      "f1mPrice": 1875.0,
+      "vn30Price": 1872.07,
+      "basis": 2.93,
+      "volume": 195686,
+      "positionState": "LONG_ACCUMULATION"
+    },
+    {
+      "date": "3/8/2026",
+      "totalOI": 44850,
+      "oiChange": 1050,
+      "f1mPrice": 1914.0,
+      "vn30Price": 1917.69,
+      "basis": -3.69,
+      "volume": 205554,
+      "positionState": "LONG_ACCUMULATION"
+    },
+    {
+      "date": "4/8/2026",
+      "totalOI": 45890,
+      "oiChange": 1040,
+      "f1mPrice": 1925.0,
+      "vn30Price": 1927.35,
+      "basis": -2.35,
+      "volume": 190633,
+      "positionState": "LONG_ACCUMULATION"
+    }
+  ]
+}
