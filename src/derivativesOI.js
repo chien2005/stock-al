@@ -251,10 +251,69 @@ function parseRealtimeOI(realtimeDataArr) {
   };
 }
 
+/**
+ * Lấy dữ liệu intraday 1 phút của phiên hôm nay từ VPS
+ * Tính toán chính xác lượng hợp đồng Khớp Mua (Long chủ động) vs Khớp Bán (Short chủ động)
+ */
+async function fetchIntradayLongShort(symbol = 'VN30F1M') {
+  const now = Math.floor(Date.now() / 1000);
+  const vnNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Ho_Chi_Minh' }));
+  vnNow.setHours(0, 0, 0, 0);
+  const startOfDay = Math.floor(vnNow.getTime() / 1000);
+
+  try {
+    const res = await axios.get(
+      `${VPS_HISTORY_URL}?symbol=${symbol}&resolution=1&from=${startOfDay}&to=${now}`,
+      { headers: HEADERS, timeout: 8000 }
+    );
+
+    if (res.data && res.data.c && res.data.c.length > 0) {
+      const { o, c, v, t } = res.data;
+      let buyVol = 0;
+      let sellVol = 0;
+      let neutralVol = 0;
+
+      for (let i = 0; i < c.length; i++) {
+        if (c[i] > o[i]) {
+          buyVol += v[i];
+        } else if (c[i] < o[i]) {
+          sellVol += v[i];
+        } else {
+          const prev = i > 0 ? c[i - 1] : o[i];
+          if (c[i] > prev) buyVol += v[i];
+          else if (c[i] < prev) sellVol += v[i];
+          else neutralVol += v[i];
+        }
+      }
+
+      const total = buyVol + sellVol + neutralVol;
+      const lastTs = t && t.length > 0 ? t[t.length - 1] : null;
+      const lastDateStr = lastTs
+        ? new Date(lastTs * 1000).toLocaleDateString('vi-VN', { timeZone: config.timezone })
+        : vnNow();
+
+      return {
+        date: lastDateStr,
+        totalVolume: total,
+        longVolume: buyVol,
+        shortVolume: sellVol,
+        neutralVolume: neutralVol,
+        longPct: total > 0 ? parseFloat((buyVol / total * 100).toFixed(1)) : 50,
+        shortPct: total > 0 ? parseFloat((sellVol / total * 100).toFixed(1)) : 50,
+        netLong: buyVol - sellVol,
+        barsCount: c.length,
+      };
+    }
+  } catch (e) {
+    console.log(`   ⚠️ Intraday Long/Short fetch fallback for ${symbol}: ${e.message}`);
+  }
+  return null;
+}
+
 // ─── CORE: Lấy toàn bộ dữ liệu phái sinh ──────────────────
 /**
  * Fetch tất cả dữ liệu cần thiết cho phân tích phái sinh
- * @returns {Object} { f1m, f2m, vn30, vnindex, realtimeF1M, realtimeF2M, realtimeOI }
+ * @returns {Object} { f1m, f2m, vn30, vnindex, realtimeF1M, realtimeF2M, realtimeOI, intradayLS }
  */
 async function fetchAllDerivativesData() {
   console.log('   📡 Đang lấy dữ liệu phái sinh từ multi-source...');
@@ -263,11 +322,12 @@ async function fetchAllDerivativesData() {
   const derivSymbols = getCurrentDerivativeSymbols();
   console.log(`   📋 Mã HĐ phái sinh: ${derivSymbols.join(', ')}`);
 
-  const [f1m, f2m, vn30, vnindex] = await Promise.all([
+  const [f1m, f2m, vn30, vnindex, intradayLS] = await Promise.all([
     fetchOHLCV('VN30F1M', 30),
     fetchOHLCV('VN30F2M', 30),
     fetchOHLCV('VN30', 30),
     fetchOHLCV('VNINDEX', 30),
+    fetchIntradayLongShort('VN30F1M'),
   ]);
 
   // Lấy giá realtime + OI cho TẤT CẢ các mã HĐ phái sinh
@@ -281,13 +341,16 @@ async function fetchAllDerivativesData() {
   const realtimeOI = parseRealtimeOI(derivContractData);
 
   console.log(`   ✅ F1M: ${f1m ? f1m.c.length + ' phiên' : 'FAIL'} | F2M: ${f2m ? f2m.c.length + ' phiên' : 'FAIL'} | VN30: ${vn30 ? vn30.c.length + ' phiên' : 'FAIL'}`);
+  if (intradayLS) {
+    console.log(`   📊 Intraday ${intradayLS.date}: Total ${intradayLS.totalVolume} HĐ | Long: ${intradayLS.longVolume} (${intradayLS.longPct}%) | Short: ${intradayLS.shortVolume} (${intradayLS.shortPct}%) | Net: ${intradayLS.netLong}`);
+  }
   if (realtimeOI.totalOI !== null) {
     console.log(`   📊 OI realtime: ${realtimeOI.totalOI} HĐ (Δ${realtimeOI.totalOIChange >= 0 ? '+' : ''}${realtimeOI.totalOIChange}) | Bid: ${realtimeOI.bidVolume} | Ask: ${realtimeOI.askVolume}`);
   } else {
     console.log(`   ⚠️ OI realtime: Không có dữ liệu (ngoài giờ GD hoặc market closed)`);
   }
 
-  return { f1m, f2m, vn30, vnindex, realtimeF1M, realtimeF2M, realtimeOI };
+  return { f1m, f2m, vn30, vnindex, realtimeF1M, realtimeF2M, realtimeOI, intradayLS };
 }
 
 // ─── ANALYSIS: Tính Basis (Premium/Discount) ────────────────
@@ -591,7 +654,7 @@ function analyzeLongShortBias(basisResult, oiResult, f1mData, vn30Data) {
  * @param {Object} data - Tất cả dữ liệu phân tích
  */
 function buildReport(session, data) {
-  const { basisResult, oiResult, biasResult, f1mData, f2mData, vn30Data, realtimeOI } = data;
+  const { basisResult, oiResult, biasResult, f1mData, f2mData, vn30Data, realtimeOI, intradayLS } = data;
 
   const sessionLabels = {
     'pre-market': '🌅 TRƯỚC PHIÊN (8h45)',
@@ -653,59 +716,57 @@ function buildReport(session, data) {
     msg += '\n';
   }
 
-  // ── Section 1.5: Open Interest & Số Hợp đồng Long/Short ──
+  // ── Section 1.5: Khối lượng Hợp đồng Long / Short trong phiên ──
+  if (intradayLS && intradayLS.totalVolume > 0) {
+    const longCount = Math.min(10, Math.max(1, Math.round(intradayLS.longPct / 10)));
+    const shortCount = Math.min(10, Math.max(1, 10 - longCount));
+    const longBar = '🟢'.repeat(longCount);
+    const shortBar = '🔴'.repeat(shortCount);
+
+    msg += `📋 <b>LỰC KHỚP LỆNH LONG / SHORT PHIÊN (${intradayLS.date}):</b>\n`;
+    msg += `   • Lực Mua (Long chủ động):  <b>${intradayLS.longVolume.toLocaleString('vi-VN')} HĐ</b> (${intradayLS.longPct}%)\n`;
+    msg += `   • Lực Bán (Short chủ động): <b>${intradayLS.shortVolume.toLocaleString('vi-VN')} HĐ</b> (${intradayLS.shortPct}%)\n`;
+    msg += `   <code>${longBar}${shortBar}</code>\n`;
+
+    if (intradayLS.netLong > 0) {
+      msg += `   • 📊 <b>Net Long: +${intradayLS.netLong.toLocaleString('vi-VN')} HĐ</b> → Phe Long khớp chủ động áp đảo (+${(intradayLS.longPct - intradayLS.shortPct).toFixed(1)}%)\n`;
+    } else if (intradayLS.netLong < 0) {
+      msg += `   • 📊 <b>Net Short: ${intradayLS.netLong.toLocaleString('vi-VN')} HĐ</b> → Phe Short khớp chủ động áp đảo (+${(intradayLS.shortPct - intradayLS.longPct).toFixed(1)}%)\n`;
+    } else {
+      msg += `   • 📊 <b>Cân bằng tuyệt đối giữa 2 phe</b>\n`;
+    }
+    msg += `   • Tổng KLGD phiên: <b>${intradayLS.totalVolume.toLocaleString('vi-VN')} HĐ</b>\n\n`;
+  }
+
+  // ── Section 1.6: Open Interest (Realtime trong giờ GD) ──
   if (realtimeOI && realtimeOI.totalOI !== null && realtimeOI.totalOI > 0) {
-    msg += `📋 <b>OPEN INTEREST & HỢP ĐỒNG LONG/SHORT:</b>\n`;
+    msg += `🔥 <b>OPEN INTEREST (VỊ THẾ QUA ĐÊM REALTIME):</b>\n`;
     msg += `   • Tổng OI: <b>${realtimeOI.totalOI.toLocaleString('vi-VN')} HĐ</b>`;
     if (realtimeOI.totalOIChange !== null && realtimeOI.totalOIChange !== 0) {
       msg += ` (${realtimeOI.totalOIChange >= 0 ? '+' : ''}${realtimeOI.totalOIChange.toLocaleString('vi-VN')})`;
     }
     msg += '\n';
 
-    // Hiển thị Long vs Short
     if (realtimeOI.estimatedLong !== null) {
-      const longBar = '🟢'.repeat(Math.round(realtimeOI.longPct / 10));
-      const shortBar = '🔴'.repeat(Math.round(realtimeOI.shortPct / 10));
-      msg += `   • Long:  <b>${realtimeOI.estimatedLong.toLocaleString('vi-VN')} HĐ</b> (${realtimeOI.longPct}%)\n`;
-      msg += `   • Short: <b>${realtimeOI.estimatedShort.toLocaleString('vi-VN')} HĐ</b> (${realtimeOI.shortPct}%)\n`;
-      msg += `   <code>${longBar}${shortBar}</code>\n`;
-
-      const netLong = realtimeOI.estimatedLong - realtimeOI.estimatedShort;
-      if (netLong > 0) {
-        msg += `   • 📊 <b>Net Long: +${netLong.toLocaleString('vi-VN')} HĐ</b> → Phe Long đang dẫn\n`;
-      } else if (netLong < 0) {
-        msg += `   • 📊 <b>Net Short: ${netLong.toLocaleString('vi-VN')} HĐ</b> → Phe Short đang dẫn\n`;
-      } else {
-        msg += `   • 📊 <b>Cân bằng tuyệt đối</b>\n`;
-      }
+      msg += `   • Vị thế Mở (OI): Long ~<b>${realtimeOI.estimatedLong.toLocaleString('vi-VN')} HĐ</b> | Short ~<b>${realtimeOI.estimatedShort.toLocaleString('vi-VN')} HĐ</b>\n`;
     }
 
-    // Bid vs Ask (demand)
     if (realtimeOI.bidVolume > 0 || realtimeOI.askVolume > 0) {
       msg += `   • KL chờ Mua (Bid): <b>${realtimeOI.bidVolume.toLocaleString('vi-VN')}</b> | Chờ Bán (Ask): <b>${realtimeOI.askVolume.toLocaleString('vi-VN')}</b>\n`;
     }
 
-    // Volume
-    if (realtimeOI.totalVolume !== null && realtimeOI.totalVolume > 0) {
-      msg += `   • Tổng KLGD: <b>${realtimeOI.totalVolume.toLocaleString('vi-VN')} HĐ</b>\n`;
-    }
-
-    // Chi tiết từng mã HĐ
     if (realtimeOI.contracts.length > 0) {
       msg += `\n   📄 <b>Chi tiết từng Hợp đồng:</b>\n`;
       for (const c of realtimeOI.contracts) {
         if (c.oi > 0 || c.volume > 0) {
           const oiChangeStr = c.oiChange !== 0 ? ` (${c.oiChange >= 0 ? '+' : ''}${c.oiChange.toLocaleString('vi-VN')})` : '';
-          msg += `   <code>${c.symbol}</code>: OI=<b>${c.oi.toLocaleString('vi-VN')}</b>${oiChangeStr} | Vol=${c.volume.toLocaleString('vi-VN')} | ${c.lastPrice} (${c.changePct >= 0 ? '+' : ''}${c.changePct}%)\n`;
+          msg += `   <code>${c.symbol}</code>: OI=<b>${c.oi.toLocaleString('vi-VN')}</b>${oiChangeStr} | Vol=${c.volume.toLocaleString('vi-VN')} | ${c.lastPrice}\n`;
         }
       }
     }
     msg += '\n';
   } else {
-    // Ngoài giờ: hiển thị note
-    msg += `📋 <b>OPEN INTEREST:</b>\n`;
-    msg += `   ⏳ <i>Dữ liệu OI real-time chỉ có trong giờ giao dịch (9h-15h T2-T6)</i>\n`;
-    msg += `   <i>Sử dụng Basis + Volume để ước tính vị thế Long/Short</i>\n\n`;
+    msg += `ℹ️ <i>(Sổ lệnh & OI realtime được cập nhật liên tục trong giờ GD 9h-15h T2-T6)</i>\n\n`;
   }
 
   // ── Section 2: Basis Analysis ──
@@ -907,6 +968,7 @@ async function runDerivativesOIJob(session = 'test') {
       f2mData: allData.f2m,
       vn30Data: allData.vn30,
       realtimeOI: allData.realtimeOI,
+      intradayLS: allData.intradayLS,
     });
 
     // 6. Gửi báo cáo chính
