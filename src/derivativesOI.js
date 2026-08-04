@@ -368,11 +368,12 @@ function calculateBasis(f1mData, f2mData, vn30Data) {
   const vn30Closes = vn30Data.c;
   const f2mCloses = f2mData ? f2mData.c : [];
 
-  // Lấy các phiên có dữ liệu song song (align theo index cuối)
+  // Lấy 10 phiên gần nhất (align theo index cuối, kết thúc ở hôm nay)
   const minLen = Math.min(f1mCloses.length, vn30Closes.length);
   const history = [];
+  const startIdx = Math.max(0, minLen - 10);
 
-  for (let i = 0; i < Math.min(minLen, 10); i++) {
+  for (let i = startIdx; i < minLen; i++) {
     const idx1 = f1mCloses.length - minLen + i;
     const idx2 = vn30Closes.length - minLen + i;
     const basisF1M = f1mCloses[idx1] - vn30Closes[idx2];
