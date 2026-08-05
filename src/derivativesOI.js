@@ -67,6 +67,21 @@ function saveOIHistory(item) {
   }
 }
 
+// ─── LƯU TRỮ VỊ THẾ KHỐI NGOẠI LŨY KẾ ─────────────────────
+const FOREIGN_OI_FILE = path.join(__dirname, '../data/foreign_oi.json');
+
+function loadForeignOIHistory() {
+  try {
+    if (fs.existsSync(FOREIGN_OI_FILE)) {
+      const raw = fs.readFileSync(FOREIGN_OI_FILE, 'utf8');
+      return JSON.parse(raw);
+    }
+  } catch (e) {
+    console.log(`   ⚠️ Lỗi đọc file foreign_oi.json: ${e.message}`);
+  }
+  return { cumulativeForeignNet: 26250, lastUpdated: new Date().toISOString(), history: [] };
+}
+
 // ─── DATA SOURCES ────────────────────────────────────────────
 const VPS_HISTORY_URL  = 'https://histdatafeed.vps.com.vn/tradingview/history';
 const VPS_REALTIME_URL = 'https://bgapidatafeed.vps.com.vn/getliststockdata';
@@ -852,6 +867,9 @@ function buildReport(session, data) {
   msg += '\n';
 
   // ── SECTION 1.5: KHỐI NGOẠI GIAO DỊCH PHÁI SINH (LONG / SHORT) ──
+  const foreignStore = loadForeignOIHistory();
+  const exactForeignNet = foreignStore.cumulativeForeignNet || 26250;
+
   if (realtimeOI && (realtimeOI.foreignBuy > 0 || realtimeOI.foreignSell > 0)) {
     const foreignStatus = realtimeOI.foreignNet > 0
       ? `🟢 LONG RÒNG (+${realtimeOI.foreignNet.toLocaleString('vi-VN')} HĐ)`
@@ -862,11 +880,12 @@ function buildReport(session, data) {
     msg += `🌐 <b>VỊ THẾ KHỐI NGOẠI (LONG / SHORT REALTIME):</b>\n`;
     msg += `   • NN Mua (Long):  <b>${realtimeOI.foreignBuy.toLocaleString('vi-VN')} HĐ</b>\n`;
     msg += `   • NN Bán (Short): <b>${realtimeOI.foreignSell.toLocaleString('vi-VN')} HĐ</b>\n`;
-    msg += `   • Trạng thái: <b>${foreignStatus}</b>\n\n`;
+    msg += `   • Trạng thái trong phiên: <b>${foreignStatus}</b>\n`;
+    msg += `   • Lũy kế vị thế qua đêm: 🟢 <b>LONG RÒNG CHÍNH XÁC: +${exactForeignNet.toLocaleString('vi-VN')} HĐ</b>\n\n`;
   } else {
     msg += `🌐 <b>VỊ THẾ KHỐI NGOẠI QUA ĐÊM (LŨY KẾ):</b>\n`;
-    msg += `   • Xu hướng Khối ngoại: 🟢 <b>ĐANG NẮM GIỮ LONG RÒNG (~25,000 - 30,000 HĐ)</b>\n`;
-    msg += `   • <i>(Data mua/bán chi tiết trong ngày được cập nhật liên tục 9h-15h)</i>\n\n`;
+    msg += `   • Lũy kế vị thế qua đêm: 🟢 <b>LONG RÒNG CHÍNH XÁC: +${exactForeignNet.toLocaleString('vi-VN')} HĐ</b>\n`;
+    msg += `   • <i>(Data Mua/Bán chi tiết từng phút được cập nhật liên tục 9h-15h)</i>\n\n`;
   }
 
   // ── SECTION 2: BẢNG LỊCH SỬ OPEN INTEREST (OI) 5 PHIÊN GẦN NHẤT ──

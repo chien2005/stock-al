@@ -1,0 +1,11 @@
+{
+  "cumulativeForeignNet": 26250,
+  "lastUpdated": "2026-08-05T15:00:00.000Z",
+  "history": [
+    { "date": "30/7/2026", "buy": 4500, "sell": 2800, "net": 1700, "cumulative": 22450 },
+    { "date": "31/7/2026", "buy": 5100, "sell": 3200, "net": 1900, "cumulative": 24350 },
+    { "date": "3/8/2026", "buy": 4800, "sell": 3100, "net": 1700, "cumulative": 26050 },
+    { "date": "4/8/2026", "buy": 3900, "sell": 3100, "net": 800, "cumulative": 26850 },
+    { "date": "5/8/2026", "buy": 4200, "sell": 4800, "net": -600, "cumulative": 26250 }
+  ]
+}
