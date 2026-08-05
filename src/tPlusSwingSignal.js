@@ -176,11 +176,17 @@ async function runTPlusSwingReport() {
     msg += `📅 <i>Phiên ngày ${todayStr} | Khung thời gian nắm giữ T+</i>\n`;
     msg += `━━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
+function formatVNDPrice(price) {
+  if (!price || isNaN(price)) return '0 vnđ';
+  const fullPrice = price < 1000 ? Math.round(price * 1000) : Math.round(price);
+  return fullPrice.toLocaleString('vi-VN') + ' vnđ';
+}
+
     // ── PHẦN 1: TÍNH HIỆU KIỆT BÁN TÍCH CỰC (SELLING EXHAUSTION) ──
     msg += `🔥 <b>1. PHÁT HIỆN CP KIỆT BÁN TÍCH CỰC (CẠN CUNG):</b>\n`;
     if (exhaustionList.length > 0) {
       for (const item of exhaustionList) {
-        msg += `   • <b>${item.symbol}</b> (${item.price.toLocaleString('vi-VN')}₫ | ${item.changePct >= 0 ? '+' : ''}${item.changePct}%)\n`;
+        msg += `   • <b>${item.symbol}</b> (${formatVNDPrice(item.price)} | ${item.changePct >= 0 ? '+' : ''}${item.changePct}%)\n`;
         msg += `     <i>💡 Cạn cung phiên trước, lực mua nhỏ đẩy giá giật mạnh +${item.changePct}%. Khuyến nghị T+: Gom nền ngắn hạn.</i>\n`;
       }
     } else {
@@ -193,7 +199,7 @@ async function runTPlusSwingReport() {
     for (let i = 0; i < topTPlus.length; i++) {
       const item = topTPlus[i];
       const rankIcon = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '🔹';
-      msg += `${rankIcon} <b>${item.symbol}</b> | Giá: <b>${item.price.toLocaleString('vi-VN')}₫</b> (${item.changePct >= 0 ? '+' : ''}${item.changePct}%)\n`;
+      msg += `${rankIcon} <b>${item.symbol}</b> | Giá: <b>${formatVNDPrice(item.price)}</b> (${item.changePct >= 0 ? '+' : ''}${item.changePct}%)\n`;
       msg += `   • <b>Điểm T+:</b> ${item.score}/10 | <b>RS vs VNINDEX:</b> ${item.rsRating >= 0 ? '+' : ''}${item.rsRating}%\n`;
       if (item.signals.length > 0) {
         msg += `   • <b>Tín hiệu:</b> ${item.signals.join(' | ')}\n`;
