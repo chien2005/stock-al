@@ -218,13 +218,15 @@ async function runAfterCloseJob() {
   }
 }
 
-// ─── JOB 2: AI PHÂN TÍCH CUỐI NGÀY (20h30 T2-T6) ────────
-// AI 1 trigger → AI 4 (DeepSeek R1) phân tích → Gửi qua bot AI 4
+const { runTPlusSwingReport } = require('./tPlusSwingSignal');
+
+// ─── JOB 2: AI PHÂN TÍCH ĐẦU TƯ NGẮN HẠN T+ & KIỆT BÁN (20h30 T2-T6) ────────
+// Thay thế 3 noti trùng cũ bằng 1 Báo cáo AI T+ Swing Investment tập trung vào Kiệt bán & Tín hiệu kỹ thuật cao
 
 async function runAiJob() {
   // Guard: skip nếu T7/CN
   if (!isWeekday()) {
-    console.log('⏭️  [GUARD] Hôm nay T7/CN - skip AI report');
+    console.log('⏭️  [GUARD] Hôm nay T7/CN - skip T+ Swing AI report');
     return;
   }
 
@@ -233,74 +235,17 @@ async function runAiJob() {
 
   const startTime = Date.now();
   console.log('\n' + '═'.repeat(55));
-  console.log('🤖 AI 1 TRIGGER → AI 4 PHÂN TÍCH CUỐI NGÀY...');
+  console.log('🚀 AI BÁO CÁO ĐẦU TƯ NGẮN HẠN T+ (20h30)...');
   console.log('═'.repeat(55));
 
   try {
-    // Ưu tiên dùng data từ cache 16h00 (giá cuối phiên chính xác)
-    // Chỉ fetch mới nếu chưa có cache trong ngày
-    let stocks;
-    let liquidity = lastLiquidity;
-    const cacheAge = Date.now() - lastStockDataTime;
-    const MAX_CACHE_AGE = 8 * 60 * 60 * 1000; // 8 tiếng (đủ cho cache từ 10h/13h/16h)
-
-    if (lastStockData && lastStockData.length > 0 && cacheAge < MAX_CACHE_AGE) {
-      stocks = lastStockData;
-      const cacheTimeStr = new Date(lastStockDataTime).toLocaleString('vi-VN', { timeZone: config.timezone });
-      console.log(`   💾 Sử dụng data cache từ ${cacheTimeStr} (${Math.round(cacheAge / 60000)} phút trước)`);
-    } else {
-      console.log('   ⚠️ Không có cache, fetch data mới...');
-      stocks = await fetchAllStocks();
-      liquidity = await fetchMarketLiquidity();
-    }
-
-    if (!stocks || stocks.length === 0) {
-      console.error('❌ Không có dữ liệu!');
-      await sendTelegramMessage('⚠️ VN Stock Bot: Không có dữ liệu để phân tích AI.');
-      return;
-    }
-
-    // Fetch market scan (dòng tiền toàn thị trường)
-    console.log('\n🔍 Quét dòng tiền toàn thị trường...');
-    const trackedSymbols = config.stockSymbols;
-    const marketScan = await fetchMarketScan(trackedSymbols);
-    lastMarketScan = marketScan;
-
-    // Fetch VN30 index nếu chưa có cache
-    let vn30Index = lastVN30Index;
-    if (!vn30Index) {
-      vn30Index = await fetchVN30Index();
-    }
-
-    // 🧠 Smart Money Report — chạy TRƯỚC AI để AI có thêm context
-    let smartMoneyData = null;
-    try {
-      console.log('\n🧠 Chạy Smart Money Report...');
-      smartMoneyData = await runSmartMoneyReport();
-      if (smartMoneyData && smartMoneyData.message) {
-        // Gửi báo cáo Smart Money riêng trước báo cáo AI
-        const { sendTelegramMessage } = require('./telegramService');
-        await sendTelegramMessage(smartMoneyData.message);
-        console.log('   ✅ Đã gửi Smart Money Report');
-      } else {
-        console.log('   ℹ️ Không phát hiện pattern Smart Money hôm nay');
-      }
-    } catch (smError) {
-      console.error('   ⚠️ Lỗi Smart Money Report:', smError.message);
-    }
-
-    // runScheduledAnalysis với market scan data, liquidity và smart money patterns
-    await runScheduledAnalysis(stocks, { marketScan, vn30Index, liquidity, smartMoneyPatterns: smartMoneyData?.patterns });
+    await runTPlusSwingReport();
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
     jobLastSuccess['aiJob'] = Date.now();
-    console.log(`\n✅ BÁO CÁO CUỐI NGÀY HOÀN THÀNH! (${elapsed}s)`);
-
+    console.log(`\n✅ BÁO CÁO T+ SWING 20H30 HOÀN THÀNH! (${elapsed}s)`);
   } catch (error) {
     jobLastError['aiJob'] = { time: Date.now(), message: error.message };
-    console.error('\n💥 LỖI AI:', error.message);
-    try {
-      await sendTelegramMessage(`💥 VN Stock Bot lỗi AI analysis:\n<code>${error.message}</code>`);
-    } catch (e) { /* ignore */ }
+    console.error('\n💥 LỖI AI T+ Swing:', error.message);
   }
 }
 

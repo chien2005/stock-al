@@ -1066,4 +1066,5 @@ module.exports = {
   calculateBasis,
   estimateOITrend,
   analyzeLongShortBias,
+  fetchOHLCV,
 };

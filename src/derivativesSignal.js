@@ -274,7 +274,7 @@ async function sendOpenSignal(session, signal) {
   const { direction, score, entryPrice, breakdown } = signal;
   const { alignment, gapTrend, volume } = breakdown;
 
-  const sessionLabel = session === 'morning' ? '🌅 SÁNG (9h01)' : '🌆 CHIỀU (13h14)';
+  const sessionLabel = session === 'morning' ? '🌅 SÁNG (9h01)' : session === 'midmorning' ? '⛅ GIỮA SÁNG (10h20)' : '🌆 CHIỀU (13h14)';
   const dirIcon  = direction === 'LONG' ? '🟢' : '🔴';
   const dirText  = direction === 'LONG' ? 'LONG (MUA - ĐẶT CỬA TĂNG)' : 'SHORT (BÁN - ĐẶT CỬA GIẢM)';
 
@@ -584,6 +584,35 @@ async function runMorningDerivativesJob() {
   }
 }
 
+// ─── JOB GIỮA SÁNG: 10h20 ────────────────────────────────────
+async function runMidMorningDerivativesJob() {
+  console.log('\n' + '═'.repeat(55));
+  console.log('🔮 DERIVATIVES SIGNAL v2.0 — GIỮA SÁNG (10h20)');
+  console.log('═'.repeat(55));
+
+  try {
+    const signal = await calculateFinalSignal();
+    _state.midmorningSignal = signal;
+
+    console.log(`   🎯 Final Signal v2.0: ${signal.direction} (score=${signal.score}/8)`);
+
+    await sendOpenSignal('midmorning', signal);
+
+    const position = {
+      direction: signal.direction,
+      entryPrice: signal.entryPrice,
+      session: 'midmorning',
+      openTime: Date.now(),
+    };
+    _state.midmorningSignal = { ...signal, ...position };
+
+    // Start monitor giữa sáng (tối đa 120 phút)
+    startPositionMonitor('midmorning', position, 120);
+  } catch (e) {
+    console.error('   ❌ Mid-morning derivatives job error v2.0:', e.message);
+  }
+}
+
 // ─── JOB CHIỀU: 13h14 ───────────────────────────────────────
 async function runAfternoonDerivativesJob() {
   console.log('\n' + '═'.repeat(55));
@@ -627,9 +656,9 @@ async function runAfternoonDerivativesJob() {
   }
 }
 
-// ─── AI DERIVATIVES ANALYSIS JOB (9h22 & 13h50) ────────────────
+// ─── AI DERIVATIVES ANALYSIS JOB (9h22, 10h22 & 13h50) ────────────────
 async function runAIDerivativesJob(session) {
-  const sessionLabel = session === 'morning' ? '🌅 SÁNG (9h22)' : '🌆 CHIỀU (13h50)';
+  const sessionLabel = session === 'morning' ? '🌅 SÁNG (9h22)' : session === 'midmorning' ? '⛅ GIỮA SÁNG (10h22)' : '🌆 CHIỀU (13h50)';
   console.log('\n' + '═'.repeat(55));
   console.log(`🤖 AI DERIVATIVES ANALYSIS — ${sessionLabel}`);
   console.log('═'.repeat(55));
@@ -710,6 +739,7 @@ YÊU CẦU ĐỐI VỚI AI:
 function resetDerivativesState() {
   stopPositionMonitor();
   _state.morningSignal   = null;
+  _state.midmorningSignal = null;
   _state.afternoonSignal = null;
   _state.morningClosed   = false;
   _state.morningResult   = null;
@@ -720,6 +750,7 @@ function resetDerivativesState() {
 // ─── EXPORTS ─────────────────────────────────────────────────
 module.exports = {
   runMorningDerivativesJob,
+  runMidMorningDerivativesJob,
   runAfternoonDerivativesJob,
   runAIDerivativesJob,
   resetDerivativesState,
