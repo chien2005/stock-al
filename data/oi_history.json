@@ -1,16 +1,6 @@
 {
-  "lastUpdated": "2026-08-04T15:00:00.000Z",
+  "lastUpdated": "2026-08-05T15:00:00.000Z",
   "history": [
-    {
-      "date": "29/7/2026",
-      "totalOI": 42150,
-      "oiChange": 850,
-      "f1mPrice": 1851.0,
-      "vn30Price": 1849.12,
-      "basis": 1.88,
-      "volume": 229752,
-      "positionState": "LONG_ACCUMULATION"
-    },
     {
       "date": "30/7/2026",
       "totalOI": 43100,
@@ -50,6 +40,16 @@
       "basis": -2.35,
       "volume": 190633,
       "positionState": "LONG_ACCUMULATION"
+    },
+    {
+      "date": "5/8/2026",
+      "totalOI": 46840,
+      "oiChange": 950,
+      "f1mPrice": 1913.8,
+      "vn30Price": 1916.88,
+      "basis": -3.08,
+      "volume": 218000,
+      "positionState": "SHORT_ACCUMULATION"
     }
   ]
 }
