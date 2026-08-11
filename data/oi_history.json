@@ -1,5 +1,5 @@
 {
-  "lastUpdated": "2026-08-05T15:00:00.000Z",
+  "lastUpdated": "2026-08-07T14:03:53.648Z",
   "history": [
     {
       "date": "30/7/2026",
@@ -15,7 +15,7 @@
       "date": "31/7/2026",
       "totalOI": 43800,
       "oiChange": 700,
-      "f1mPrice": 1875.0,
+      "f1mPrice": 1875,
       "vn30Price": 1872.07,
       "basis": 2.93,
       "volume": 195686,
@@ -25,7 +25,7 @@
       "date": "3/8/2026",
       "totalOI": 44850,
       "oiChange": 1050,
-      "f1mPrice": 1914.0,
+      "f1mPrice": 1914,
       "vn30Price": 1917.69,
       "basis": -3.69,
       "volume": 205554,
@@ -35,7 +35,7 @@
       "date": "4/8/2026",
       "totalOI": 45890,
       "oiChange": 1040,
-      "f1mPrice": 1925.0,
+      "f1mPrice": 1925,
       "vn30Price": 1927.35,
       "basis": -2.35,
       "volume": 190633,
@@ -50,6 +50,16 @@
       "basis": -3.08,
       "volume": 218000,
       "positionState": "SHORT_ACCUMULATION"
+    },
+    {
+      "date": "7/8/2026",
+      "totalOI": 47640,
+      "oiChange": 800,
+      "f1mPrice": 1890.1,
+      "vn30Price": 1911.09,
+      "basis": -20.99,
+      "volume": 229511,
+      "positionState": "LONG_LIQUIDATION"
     }
   ]
 }

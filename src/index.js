@@ -33,7 +33,7 @@ const { startBotHandler, stopBotHandler } = require('./botHandler');
 const { startAlertMonitor, stopAlertMonitor, resetDailyData, flushBigTradeBuffer } = require('./alertService');
 const { runSmartMoneyReport } = require('./smartMoneyReport');
 const { runWhaleTrackerReport } = require('./whaleTracker');
-const { runMorningDerivativesJob, runMidMorningDerivativesJob, runAfternoonDerivativesJob, runAIDerivativesJob, resetDerivativesState } = require('./derivativesSignal');
+const { runMorningDerivativesJob, runMidMorningDerivativesJob, runAfternoonDerivativesJob, runAIDerivativesJob, resetDerivativesState, startMomentumMonitor } = require('./derivativesSignal');
 const { runDerivativesOIJob } = require('./derivativesOI');
 
 // ─── Thời điểm khởi động (cho health check) ─────────────
@@ -48,7 +48,7 @@ let lastLiquidity = null;
 
 // ─── DEDUP LOCK: Chống double message ──────────────────────
 const lastJobRun = {};
-const DEDUP_WINDOW = 4 * 60 * 1000; // 4 phút (chống double trigger)
+const DEDUP_WINDOW = 2 * 60 * 1000; // 2 phút (chống double trigger)
 
 // ─── JOB TRACKING: Ghi nhận lần chạy cuối của mỗi job ─────
 const jobLastSuccess = {};  // { jobName: timestamp }
@@ -530,47 +530,49 @@ async function main() {
   }, { scheduled: true, timezone: config.timezone });
   console.log('   🐋 Whale Tracker: 19:45 (T2-T6)');
 
-  // ─── SCHEDULE: DERIVATIVES SIGNAL — RESET 9h00 ─────────
+  // ─── SCHEDULE: DERIVATIVES SIGNAL — RESET & START MONITOR 9h00 ───
   cron.schedule('0 9 * * 1-5', async () => {
     if (!isWeekday()) return;
-    console.log('\n🔮 [Derivatives] Reset daily state');
-    try { resetDerivativesState(); } catch (err) { console.error('🔮 [Derivatives Reset] Lỗi:', err.message); }
+    console.log('\n🔮 [Derivatives v3.0] Reset daily state & start momentum monitor');
+    try { 
+      resetDerivativesState();
+      startMomentumMonitor();
+    } catch (err) { console.error('🔮 [Derivatives Reset] Lỗi:', err.message); }
   }, { scheduled: true, timezone: config.timezone });
 
-  // ─── SCHEDULE: DERIVATIVES SIGNAL SÁNG (9h01 & 9h20, T2-T6) ───
-  const morningDerivativesCron = ['1 9 * * 1-5', '20 9 * * 1-5'];
+  // ─── SCHEDULE: DERIVATIVES SIGNAL SÁNG (9h-9h30 5p/lần, 9h45, 10h05, 10h15, 10h20, 10h30) ───
+  const morningDerivativesCron = [
+    '0 9 * * 1-5',  // 9h00
+    '5 9 * * 1-5',  // 9h05
+    '10 9 * * 1-5', // 9h10
+    '15 9 * * 1-5', // 9h15
+    '20 9 * * 1-5', // 9h20
+    '25 9 * * 1-5', // 9h25
+    '30 9 * * 1-5', // 9h30
+    '45 9 * * 1-5', // 9h45
+    '5 10 * * 1-5', // 10h05
+    '15 10 * * 1-5',// 10h15
+    '20 10 * * 1-5',// 10h20
+    '30 10 * * 1-5',// 10h30
+  ];
   for (const expr of morningDerivativesCron) {
     cron.schedule(expr, async () => {
       if (!isWeekday()) return;
-      if (isDuplicate('derivativesMorning')) return;
       const now = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
-      console.log(`\n🔮 [Derivatives Morning] Cron triggered: ${now}`);
+      const minKey = new Date().getMinutes();
+      const hourKey = new Date().getHours();
+      if (isDuplicate(`derivativesMorning_${hourKey}_${minKey}`)) return;
+      console.log(`\n🔮 [Derivatives Morning v3.0] Cron triggered: ${now}`);
       try {
         await runMorningDerivativesJob();
         jobLastSuccess['derivativesMorning'] = Date.now();
       } catch (err) {
-        console.error('🔮 [Derivatives Morning] Lỗi:', err.message);
+        console.error('🔮 [Derivatives Morning v3.0] Lỗi:', err.message);
         jobLastError['derivativesMorning'] = { time: Date.now(), message: err.message };
       }
     }, { scheduled: true, timezone: config.timezone });
   }
-  console.log('   🔮 Derivatives Signal Sáng: 9:01 & 9:20 (T2-T6)');
-
-  // ─── SCHEDULE: DERIVATIVES SIGNAL GIỮA SÁNG (10h20, T2-T6) ───
-  cron.schedule('20 10 * * 1-5', async () => {
-    if (!isWeekday()) return;
-    if (isDuplicate('derivativesMidMorning')) return;
-    const now = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
-    console.log(`\n🔮 [Derivatives Mid-Morning] Cron triggered: ${now}`);
-    try {
-      await runMidMorningDerivativesJob();
-      jobLastSuccess['derivativesMidMorning'] = Date.now();
-    } catch (err) {
-      console.error('🔮 [Derivatives Mid-Morning] Lỗi:', err.message);
-      jobLastError['derivativesMidMorning'] = { time: Date.now(), message: err.message };
-    }
-  }, { scheduled: true, timezone: config.timezone });
-  console.log('   🔮 Derivatives Signal Giữa Sáng: 10:20 (T2-T6)');
+  console.log('   🔮 Derivatives Signal Sáng: 9:00-9:30 (5p/lần) | 9:45 | 10:05 | 10:15 | 10:20 | 10:30 (T2-T6)');
 
   // ─── SCHEDULE: DERIVATIVES SIGNAL CHIỀU (13h14 & 13h55, T2-T6) ─
   const afternoonDerivativesCron = ['14 13 * * 1-5', '55 13 * * 1-5'];
@@ -579,12 +581,12 @@ async function main() {
       if (!isWeekday()) return;
       if (isDuplicate('derivativesAfternoon')) return;
       const now = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
-      console.log(`\n🔮 [Derivatives Afternoon] Cron triggered: ${now}`);
+      console.log(`\n🔮 [Derivatives Afternoon v3.0] Cron triggered: ${now}`);
       try {
         await runAfternoonDerivativesJob();
         jobLastSuccess['derivativesAfternoon'] = Date.now();
       } catch (err) {
-        console.error('🔮 [Derivatives Afternoon] Lỗi:', err.message);
+        console.error('🔮 [Derivatives Afternoon v3.0] Lỗi:', err.message);
         jobLastError['derivativesAfternoon'] = { time: Date.now(), message: err.message };
       }
     }, { scheduled: true, timezone: config.timezone });
@@ -595,7 +597,7 @@ async function main() {
   cron.schedule('22 9 * * 1-5', async () => {
     if (!isWeekday()) return;
     if (isDuplicate('aiDerivativesMorning')) return;
-    console.log(`\n🤖 [AI Derivatives Morning] Cron triggered`);
+    console.log(`\n🤖 [AI Derivatives Morning v3.0] Cron triggered`);
     try {
       await runAIDerivativesJob('morning');
       jobLastSuccess['aiDerivativesMorning'] = Date.now();
@@ -607,7 +609,7 @@ async function main() {
   cron.schedule('22 10 * * 1-5', async () => {
     if (!isWeekday()) return;
     if (isDuplicate('aiDerivativesMidMorning')) return;
-    console.log(`\n🤖 [AI Derivatives Mid-Morning] Cron triggered`);
+    console.log(`\n🤖 [AI Derivatives Mid-Morning v3.0] Cron triggered`);
     try {
       await runAIDerivativesJob('midmorning');
       jobLastSuccess['aiDerivativesMidMorning'] = Date.now();
@@ -619,7 +621,7 @@ async function main() {
   cron.schedule('50 13 * * 1-5', async () => {
     if (!isWeekday()) return;
     if (isDuplicate('aiDerivativesAfternoon')) return;
-    console.log(`\n🤖 [AI Derivatives Afternoon] Cron triggered`);
+    console.log(`\n🤖 [AI Derivatives Afternoon v3.0] Cron triggered`);
     try {
       await runAIDerivativesJob('afternoon');
       jobLastSuccess['aiDerivativesAfternoon'] = Date.now();
@@ -629,35 +631,8 @@ async function main() {
   }, { scheduled: true, timezone: config.timezone });
   console.log('   🤖 AI Derivatives Forecast: 9:22, 10:22 & 13:50 (T2-T6)');
 
-  // ─── SCHEDULE: DERIVATIVES OI & BASIS TRACKER (8h45, 9h18, 19h30 T2-T6) ───
-  cron.schedule('45 8 * * 1-5', async () => {
-    if (!isWeekday()) return;
-    if (isDuplicate('derivativesOI_premarket')) return;
-    const now = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
-    console.log(`\n📊 [Derivatives OI Pre-Market] Cron triggered: ${now}`);
-    try {
-      await runDerivativesOIJob('pre-market');
-      jobLastSuccess['derivativesOI_premarket'] = Date.now();
-    } catch (err) {
-      console.error('📊 [Derivatives OI Pre-Market] Lỗi:', err.message);
-      jobLastError['derivativesOI_premarket'] = { time: Date.now(), message: err.message };
-    }
-  }, { scheduled: true, timezone: config.timezone });
-
-  cron.schedule('18 9 * * 1-5', async () => {
-    if (!isWeekday()) return;
-    if (isDuplicate('derivativesOI_morning')) return;
-    const now = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
-    console.log(`\n📊 [Derivatives OI Morning] Cron triggered: ${now}`);
-    try {
-      await runDerivativesOIJob('morning');
-      jobLastSuccess['derivativesOI_morning'] = Date.now();
-    } catch (err) {
-      console.error('📊 [Derivatives OI Morning] Lỗi:', err.message);
-      jobLastError['derivativesOI_morning'] = { time: Date.now(), message: err.message };
-    }
-  }, { scheduled: true, timezone: config.timezone });
-
+  // ─── SCHEDULE: DERIVATIVES OI & BASIS TRACKER (19h30 T2-T6) ───
+  // Note: Bỏ noti 8h45 (pre-market) & 9h18 (morning) theo yêu cầu của user
   cron.schedule('30 19 * * 1-5', async () => {
     if (!isWeekday()) return;
     if (isDuplicate('derivativesOI_evening')) return;
@@ -671,7 +646,7 @@ async function main() {
       jobLastError['derivativesOI_evening'] = { time: Date.now(), message: err.message };
     }
   }, { scheduled: true, timezone: config.timezone });
-  console.log('   📊 Derivatives OI Tracker: 8:45 | 9:18 | 19:30 (T2-T6)');
+  console.log('   📊 Derivatives OI Tracker: 19:30 (T2-T6)');
 
   // ─── HEARTBEAT: Gửi "đang sống" mỗi ngày 9:00 T2-T6 ───────
   // DISABLED: Bỏ tin nhắn heartbeat hàng ngày theo yêu cầu của user
