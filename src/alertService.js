@@ -136,7 +136,7 @@ function isTradingHours() {
   const day = vnTime.getDay();
   if (day < 1 || day > 5) return false;
   const t = vnTime.getHours() * 100 + vnTime.getMinutes();
-  return (t >= 915 && t <= 1130) || (t >= 1300 && t <= 1445);
+  return (t >= 845 && t <= 1130) || (t >= 1300 && t <= 1445);
 }
 
 // ─── LOAD KLTB 20 PHIÊN ────────────────────────────────────

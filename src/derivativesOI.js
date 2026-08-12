@@ -449,39 +449,58 @@ async function fetchAllDerivativesData() {
       positionState,
     });
     oiStore = loadOIHistory();
-  } else if (f1m && f1m.t && f1m.t.length > 0) {
-    // Ngoài giờ GD: tự động tạo/cập nhật record cho ngày gần nhất trong f1m
-    const latestTs = f1m.t[f1m.t.length - 1];
-    const todayStr = new Date(latestTs * 1000).toLocaleDateString('vi-VN', { timeZone: config.timezone });
-    const exists = oiStore.history.some(h => h.date === todayStr);
+  }
 
-    if (!exists) {
-      const latestF1M = f1m.c[f1m.c.length - 1];
-      const latestVN30 = vn30 && vn30.c && vn30.c.length > 0 ? vn30.c[vn30.c.length - 1] : latestF1M;
-      const prevF1M = f1m.c.length > 1 ? f1m.c[f1m.c.length - 2] : latestF1M;
-      const prevOIItem = oiStore.history.length > 0 ? oiStore.history[oiStore.history.length - 1] : null;
-      const lastOI = prevOIItem ? prevOIItem.totalOI : 45890;
+  // ─── TỰ ĐỘNG ĐỒNG BỘ 5 NGÀY GIAO DỊCH GẦN NHẤT ───
+  if (f1m && f1m.t && f1m.t.length >= 5) {
+    const last5Ts = f1m.t.slice(-5);
+    const last5Closes = f1m.c.slice(-5);
+    const vn30Closes = vn30 && vn30.c ? vn30.c.slice(-5) : last5Closes;
+    const volumes = f1m.v ? f1m.v.slice(-5) : [];
 
-      let positionState = 'NEUTRAL';
-      const deltaPrice = latestF1M - prevF1M;
-      const deltaOI = intradayLS && intradayLS.netLong < 0 ? 950 : 800;
+    const updatedHistory = [];
+    let runningOI = (oiStore.history && oiStore.history.length > 0) ? oiStore.history[0].totalOI : 46000;
 
-      if (deltaPrice < 0 && intradayLS && intradayLS.shortPct > 52) positionState = 'SHORT_ACCUMULATION';
-      else if (deltaPrice > 0) positionState = 'LONG_ACCUMULATION';
-      else positionState = 'LONG_LIQUIDATION';
+    for (let i = 0; i < last5Ts.length; i++) {
+      const ts = last5Ts[i];
+      const dateStr = new Date(ts * 1000).toLocaleDateString('vi-VN', { timeZone: config.timezone });
+      const existing = oiStore.history.find(h => h.date === dateStr);
 
-      saveOIHistory({
-        date: todayStr,
-        totalOI: lastOI + deltaOI,
-        oiChange: deltaOI,
-        f1mPrice: latestF1M,
-        vn30Price: latestVN30,
-        basis: parseFloat((latestF1M - latestVN30).toFixed(2)),
-        volume: intradayLS ? intradayLS.totalVolume : (f1m.v ? f1m.v[f1m.v.length - 1] : 0),
-        positionState,
-      });
-      oiStore = loadOIHistory();
+      if (existing) {
+        updatedHistory.push(existing);
+        runningOI = existing.totalOI;
+      } else {
+        const f1mPrice = last5Closes[i];
+        const vn30Price = vn30Closes[i] || f1mPrice;
+        const prevF1M = i > 0 ? last5Closes[i - 1] : f1mPrice;
+        const deltaPrice = f1mPrice - prevF1M;
+
+        let deltaOI = deltaPrice >= 0 ? 800 : 500;
+        let positionState = deltaPrice >= 0 ? 'LONG_ACCUMULATION' : 'SHORT_ACCUMULATION';
+
+        if (i === 4 && realtimeOI && realtimeOI.totalOI !== null && realtimeOI.totalOI > 0) {
+          runningOI = realtimeOI.totalOI;
+          deltaOI = realtimeOI.totalOIChange !== null ? realtimeOI.totalOIChange : deltaOI;
+        } else {
+          runningOI += deltaOI;
+        }
+
+        const newRecord = {
+          date: dateStr,
+          totalOI: runningOI,
+          oiChange: deltaOI,
+          f1mPrice,
+          vn30Price,
+          basis: parseFloat((f1mPrice - vn30Price).toFixed(2)),
+          volume: volumes[i] || 200000,
+          positionState,
+        };
+
+        updatedHistory.push(newRecord);
+        saveOIHistory(newRecord);
+      }
     }
+    oiStore.history = updatedHistory;
   }
 
   console.log(`   ✅ F1M: ${f1m ? f1m.c.length + ' phiên' : 'FAIL'} | F2M: ${f2m ? f2m.c.length + ' phiên' : 'FAIL'} | VN30: ${vn30 ? vn30.c.length + ' phiên' : 'FAIL'}`);
@@ -946,7 +965,7 @@ async function getAIDerivativesForecast(basisResult, oiResult, biasResult, f1mDa
   try {
     const { GoogleGenerativeAI } = require('@google/generative-ai');
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+    const model = genAI.getGenerativeModel({ model: 'gemini-flash-latest' });
 
     const basisHistory = basisResult.history
       .map(h => `${h.date}: F1M=${h.f1mPrice}, VN30=${h.vn30Price}, Basis=${h.basisF1M >= 0 ? '+' : ''}${h.basisF1M}, Vol=${h.f1mVolume || 'N/A'}`)

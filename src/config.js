@@ -33,15 +33,15 @@ const config = {
   geminiAI1: { apiKey: geminiKey1 },
   geminiAI2: {
     apiKey: geminiKey2,
-    model: 'gemini-2.5-flash',
+    model: 'gemini-flash-latest',
   },
   geminiAI3: { 
     apiKey: geminiKey3,
-    model: 'gemini-2.5-flash',
+    model: 'gemini-flash-latest',
   },
   geminiAI4: {
     apiKey: geminiKey4,
-    model: 'gemini-2.5-flash',
+    model: 'gemini-flash-latest',
   },
 
   // ═══════════════════════════════════════════════════════════

@@ -540,20 +540,11 @@ async function main() {
     } catch (err) { console.error('🔮 [Derivatives Reset] Lỗi:', err.message); }
   }, { scheduled: true, timezone: config.timezone });
 
-  // ─── SCHEDULE: DERIVATIVES SIGNAL SÁNG (9h-9h30 5p/lần, 9h45, 10h05, 10h15, 10h20, 10h30) ───
+  // ─── SCHEDULE: DERIVATIVES SIGNAL SÁNG (9h05 - 11h30 5p/lần, BỎ 9h00) ───
   const morningDerivativesCron = [
-    '0 9 * * 1-5',  // 9h00
-    '5 9 * * 1-5',  // 9h05
-    '10 9 * * 1-5', // 9h10
-    '15 9 * * 1-5', // 9h15
-    '20 9 * * 1-5', // 9h20
-    '25 9 * * 1-5', // 9h25
-    '30 9 * * 1-5', // 9h30
-    '45 9 * * 1-5', // 9h45
-    '5 10 * * 1-5', // 10h05
-    '15 10 * * 1-5',// 10h15
-    '20 10 * * 1-5',// 10h20
-    '30 10 * * 1-5',// 10h30
+    '5,10,15,20,25,30,35,40,45,50,55 9 * * 1-5',   // 9h05 -> 9h55 (bỏ 9h00)
+    '0,5,10,15,20,25,30,35,40,45,50,55 10 * * 1-5', // 10h00 -> 10h55
+    '0,5,10,15,20,25,30 11 * * 1-5',                // 11h00 -> 11h30
   ];
   for (const expr of morningDerivativesCron) {
     cron.schedule(expr, async () => {
@@ -572,7 +563,7 @@ async function main() {
       }
     }, { scheduled: true, timezone: config.timezone });
   }
-  console.log('   🔮 Derivatives Signal Sáng: 9:00-9:30 (5p/lần) | 9:45 | 10:05 | 10:15 | 10:20 | 10:30 (T2-T6)');
+  console.log('   🔮 Derivatives Signal Sáng: 9:05 - 11:30 (5p/lần, BỎ 9h00) (T2-T6)');
 
   // ─── SCHEDULE: DERIVATIVES SIGNAL CHIỀU (13h14 & 13h55, T2-T6) ─
   const afternoonDerivativesCron = ['14 13 * * 1-5', '55 13 * * 1-5'];

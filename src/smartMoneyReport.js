@@ -189,12 +189,12 @@ async function runSmartMoneyReport() {
     }
 
     // ─── PATTERN 3: Quay đầu thất bại (Failed Reversal) ──
-    // CP đang trong nhịp tăng (ROC5 > 3%) nhưng hôm nay giảm mạnh (< -2%)
+    // CP đang trong nhịp tăng (ROC5 > 3%) nhưng hôm nay giảm (> -1.2% hoặc -1.5đ)
     if (closes.length >= 6) {
       const close5Ago = closes[closes.length - 6] * 1000; // 5 phiên trước hôm nay
       const roc5 = close5Ago > 0 ? ((prevClose - close5Ago) / close5Ago * 100) : 0;
 
-      if (roc5 > 3 && rt.changePct < -2) {
+      if (roc5 > 3 && (rt.changePct < -1.2 || (rt.price - prevClose) / 1000 <= -1.5)) {
         patterns.failedReversal.push({
           symbol,
           price: rt.price,

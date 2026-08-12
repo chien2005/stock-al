@@ -174,13 +174,13 @@ function detectAdvancedPattern(symbol, foreignNet, changePct, volRatio, totalVal
   const streakCount = streak ? streak.count : 0;
   const streakDir = streak ? streak.direction : 0;
 
-  if (changePct >= 2.0 && volRatio >= 1.2 && fnValue <= 2.0) {
+  if (changePct >= 1.2 && volRatio >= 1.2 && fnValue <= 2.0) {
     return { icon: '🔥', text: 'Nội Kéo', priority: 'HIGH' };
   }
   if (fnValue <= -5.0 && changePct >= -0.5) {
     return { icon: '🛡️', text: 'Nội Đỡ', priority: 'HIGH' };
   }
-  if (changePct <= -2.0 && volRatio >= 1.2 && fnValue >= -2.0) {
+  if (changePct <= -1.2 && volRatio >= 1.2 && fnValue >= -2.0) {
     return { icon: '💔', text: 'Nội Xả', priority: 'HIGH' };
   }
   if (streakDir > 0 && streakCount >= 3 && Math.abs(changePct) <= 1.2) {

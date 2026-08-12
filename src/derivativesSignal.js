@@ -6,7 +6,7 @@
  * ║                                                               ║
  * ║  NÂNG CẤP LỚN:                                              ║
  * ║  1. Phân tích BIÊN ĐỘ thực (không chỉ đếm xanh/đỏ)         ║
- * ║     - Đếm mã tăng >4% (strongBull), >2% (bull)              ║
+ * ║     - Đếm mã tăng >4% (strongBull), >1.2%/±1.5đ (bull)      ║
  * ║     - Phát hiện BẪY ĐỘI LÁI: 20+ mã xanh, <1.5% mỗi mã   ║
  * ║                                                               ║
  * ║  2. Theo dõi 6 MÃ TRỤ CHỈ SỐ:                              ║
@@ -106,8 +106,31 @@ function getVnHour() {
 }
 
 function isMarketHours() {
-  const h = getVnHour();
-  return (h >= 9.0 && h <= 11.5) || (h >= 13.0 && h <= 14.75);
+  const now = new Date();
+  const vnTime = new Date(now.toLocaleString('en-US', { timeZone: config.timezone }));
+  const day = vnTime.getDay();
+  if (day < 1 || day > 5) return false; // Chỉ T2-T6
+
+  const t = vnTime.getHours() * 100 + vnTime.getMinutes();
+  // Giờ giao dịch phái sinh & cơ sở: 8h45 - 11h30 và 13h00 - 14h45
+  return (t >= 845 && t <= 1130) || (t >= 1300 && t <= 1445);
+}
+
+async function fetchRealtimeFuturesPrice() {
+  try {
+    const now = Math.floor(Date.now() / 1000);
+    const from = now - 86400 * 2;
+    const res = await axios.get(
+      `${VPS_HISTORY_URL}?symbol=VN30F1M&resolution=1&from=${from}&to=${now}`,
+      { headers: HEADERS, timeout: 5000 }
+    );
+    if (res.data && res.data.c && res.data.c.length > 0) {
+      return res.data.c[res.data.c.length - 1];
+    }
+  } catch (e) {
+    // Fail silently
+  }
+  return null;
 }
 
 const { getLiveVN30Components } = require('./vn30Resolver');
@@ -128,13 +151,13 @@ async function analyzeComponentAlignment() {
     let redCount   = 0;
     const details = [];
 
-    // ─── BIÊN ĐỘ BANDS (v3.0 MỚI) ────────────────────────
+    // ─── BIÊN ĐỘ BANDS (v3.0 MỚI — NÂNG CẤP 1.2% / ±1.5đ) ──
     let strongBullCount = 0;  // Mã tăng > 4%
-    let bullCount = 0;        // Mã tăng 2-4%
-    let mildBullCount = 0;    // Mã tăng 0-2%
+    let bullCount = 0;        // Mã tăng 1.2% - 4% (hoặc ≥ 1.5đ)
+    let mildBullCount = 0;    // Mã tăng 0 - 1.2% (dưới 1.5đ)
     let strongBearCount = 0;  // Mã giảm > 4%
-    let bearCount = 0;        // Mã giảm 2-4%
-    let mildBearCount = 0;    // Mã giảm 0-2%
+    let bearCount = 0;        // Mã giảm 1.2% - 4% (hoặc ≥ 1.5đ)
+    let mildBearCount = 0;    // Mã giảm 0 - 1.2% (dưới 1.5đ)
 
     // ─── TRỤ CHỈ SỐ (v3.0 MỚI) ──────────────────────────
     const pillarDetails = [];
@@ -161,18 +184,21 @@ async function analyzeComponentAlignment() {
       };
       details.push(item);
 
+      const priceDiffPts = Math.abs(price - refPrice) / 1000;
+      const isSignificant = absPct >= 1.2 || priceDiffPts >= 1.5;
+
       if (isGreen) {
         weightedGreen += comp.weight;
         greenCount++;
-        if (absPct >= 4)      strongBullCount++;
-        else if (absPct >= 2) bullCount++;
-        else                  mildBullCount++;
+        if (absPct >= 4)         strongBullCount++;
+        else if (isSignificant) bullCount++;
+        else                     mildBullCount++;
       } else {
         weightedRed += comp.weight;
         redCount++;
-        if (absPct >= 4)      strongBearCount++;
-        else if (absPct >= 2) bearCount++;
-        else                  mildBearCount++;
+        if (absPct >= 4)         strongBearCount++;
+        else if (isSignificant) bearCount++;
+        else                     mildBearCount++;
       }
 
       // Thu thập dữ liệu trụ
@@ -217,16 +243,16 @@ async function analyzeComponentAlignment() {
       ? Math.abs(details.filter(d => d.changePct < 0).reduce((s, d) => s + d.changePct, 0) / details.filter(d => d.changePct < 0).length)
       : 0;
 
-    if (greenCount >= 20 && strongBullCount === 0 && bullCount <= 1 && maxGreenPct < 2.0) {
-      // Rất nhiều mã xanh nhưng biên độ nhỏ xíu → BẪY LONG
+    if (greenCount >= 20 && strongBullCount === 0 && bullCount === 0 && maxGreenPct < 1.2) {
+      // Rất nhiều mã xanh nhưng biên độ nhỏ xíu (< 1.2% hoặc < 1.5đ) → BẪY LONG
       trapDetected = 'TRAP_LONG';
       trapConfidence = greenCount >= 24 ? 85 : 70;
       // Tăng confidence nếu trụ cũng chỉ tăng nhẹ
       if (pillarStrongGreen.length === 0) trapConfidence += 10;
     }
 
-    if (redCount >= 20 && strongBearCount === 0 && bearCount <= 1 && maxRedPct < 2.0) {
-      // Rất nhiều mã đỏ nhưng biên độ nhỏ xíu → BẪY SHORT
+    if (redCount >= 20 && strongBearCount === 0 && bearCount === 0 && maxRedPct < 1.2) {
+      // Rất nhiều mã đỏ nhưng biên độ nhỏ xíu (< 1.2% hoặc < 1.5đ) → BẪY SHORT
       trapDetected = 'TRAP_SHORT';
       trapConfidence = redCount >= 24 ? 85 : 70;
       if (pillarStrongRed.length === 0) trapConfidence += 10;
@@ -432,7 +458,7 @@ async function calculateFinalSignal() {
   console.log(`   📈 Primary Trend: ${gapTrend.primaryTrend} (1M: ${gapTrend.monthChangePct}%, Gap: ${gapTrend.gapPoints > 0 ? '+' : ''}${gapTrend.gapPoints}đ)`);
   console.log(`   📦 Volume: ${volume.signal} (${volume.volumeRatio}x TB)`);
   console.log(`   🏛️ Trụ: ${alignment.pillar.signal} (${alignment.pillar.greenCount}🟢/${alignment.pillar.redCount}🔴, Strong: ${alignment.pillar.strongGreenCount}🟢/${alignment.pillar.strongRedCount}🔴)`);
-  console.log(`   📊 Bands: >4%: ${alignment.bands.strongBull}↑/${alignment.bands.strongBear}↓ | 2-4%: ${alignment.bands.bull}↑/${alignment.bands.bear}↓ | <2%: ${alignment.bands.mildBull}↑/${alignment.bands.mildBear}↓`);
+  console.log(`   📊 Bands: >4%: ${alignment.bands.strongBull}↑/${alignment.bands.strongBear}↓ | 1.2-4% (≥1.5đ): ${alignment.bands.bull}↑/${alignment.bands.bear}↓ | <1.2% (<1.5đ): ${alignment.bands.mildBull}↑/${alignment.bands.mildBear}↓`);
   if (alignment.trap.detected) {
     console.log(`   🪤 BẪY LÁI: ${alignment.trap.detected} (Confidence: ${alignment.trap.confidence}%)`);
   }
@@ -523,9 +549,13 @@ async function sendOpenSignal(session, signal) {
   const dirIcon  = direction === 'LONG' ? '🟢' : '🔴';
   const dirText  = direction === 'LONG' ? 'LONG (MUA - ĐẶT CỬA TĂNG)' : 'SHORT (BÁN - ĐẶT CỬA GIẢM)';
 
-  const vn30Ref = entryPrice || 1745.20;
-  const estimatedFutures = gapTrend.gapPoints !== 0 ? (vn30Ref + gapTrend.gapPoints) : vn30Ref;
-  const basisGap = (estimatedFutures - vn30Ref).toFixed(1);
+  const realtimeFutures = await fetchRealtimeFuturesPrice();
+  const vn30Ref = entryPrice || 1936.5;
+  const currentF1M = realtimeFutures || (gapTrend.gapPoints !== 0 ? (vn30Ref + gapTrend.gapPoints) : vn30Ref);
+  const lowerBound = (currentF1M - 1.0).toFixed(1);
+  const upperBound = (currentF1M + 1.0).toFixed(1);
+
+  const basisGap = (currentF1M - vn30Ref).toFixed(1);
   const basisStatus = basisGap > 2 ? 'Phái sinh đang đắt (Cẩn thận bẫy úp Short)' : basisGap < -2 ? 'Phái sinh đang rẻ hơn cơ sở (Có nhịp giật hồi)' : 'Ngang bằng cơ sở';
 
   const foreignBias = gapTrend.primaryTrend === 'DOWNTREND' ? 'BÁN RÒNG (Nghiêng găm vị thế SHORT)' : 'MUA RÒNG (Nghiêng găm vị thế LONG)';
@@ -541,10 +571,10 @@ async function sendOpenSignal(session, signal) {
   msg += `📋 <b>BẢNG BIÊN ĐỘ VN30 (Chống nhiễu lái):</b>\n`;
   msg += `<code>`;
   msg += `Tăng >4%:  ${alignment.bands.strongBull} mã ${alignment.bands.strongBull >= 2 ? '✅ LONG MẠNH' : ''}\n`;
-  msg += `Tăng 2-4%: ${alignment.bands.bull} mã\n`;
-  msg += `Tăng 0-2%: ${alignment.bands.mildBull} mã\n`;
-  msg += `Giảm 0-2%: ${alignment.bands.mildBear} mã\n`;
-  msg += `Giảm 2-4%: ${alignment.bands.bear} mã\n`;
+  msg += `Tăng 1.2-4%: ${alignment.bands.bull} mã (≥1.5đ)\n`;
+  msg += `Tăng 0-1.2%: ${alignment.bands.mildBull} mã (&lt;1.5đ)\n`;
+  msg += `Giảm 0-1.2%: ${alignment.bands.mildBear} mã (&lt;1.5đ)\n`;
+  msg += `Giảm 1.2-4%: ${alignment.bands.bear} mã (≥1.5đ)\n`;
   msg += `Giảm >4%:  ${alignment.bands.strongBear} mã ${alignment.bands.strongBear >= 2 ? '✅ SHORT MẠNH' : ''}\n`;
   msg += `</code>\n`;
   msg += `   Max tăng: <b>+${alignment.bands.maxGreenPct}%</b> | Max giảm: <b>-${alignment.bands.maxRedPct}%</b>\n\n`;
@@ -566,8 +596,8 @@ async function sendOpenSignal(session, signal) {
   if (alignment.trap.detected) {
     const trapIcon = alignment.trap.detected === 'TRAP_LONG' ? '🪤🔴' : '🪤🟢';
     const trapText = alignment.trap.detected === 'TRAP_LONG'
-      ? `BẪY LONG — ${alignment.greenCount} mã xanh nhưng KHÔNG mã nào tăng mạnh >2%. Lái kéo dàn trải nhẹ rồi sẽ xả ngược!`
-      : `BẪY SHORT — ${alignment.redCount} mã đỏ nhưng KHÔNG mã nào giảm mạnh >2%. Lái đè dàn trải nhẹ rồi sẽ bật ngược!`;
+      ? `BẪY LONG — ${alignment.greenCount} mã xanh nhưng KHÔNG mã nào tăng mạnh >1.2% (hoặc ≥1.5đ). Lái kéo dàn trải nhẹ rồi sẽ xả ngược!`
+      : `BẪY SHORT — ${alignment.redCount} mã đỏ nhưng KHÔNG mã nào giảm mạnh >1.2% (hoặc ≥1.5đ). Lái đè dàn trải nhẹ rồi sẽ bật ngược!`;
     msg += `${trapIcon} <b>⚠️ CẢNH BÁO BẪY ĐỘI LÁI (${alignment.trap.confidence}%):</b>\n`;
     msg += `   <i>${trapText}</i>\n\n`;
   }
@@ -598,7 +628,7 @@ async function sendOpenSignal(session, signal) {
 
   msg += `━━━━━━━━━━━━━━━━━━━━━━\n`;
   msg += `🎯 <b>KHUYẾN NGHỊ VÀO LỆNH:</b>\n`;
-  msg += `   📍 <b>Mở vị thế:</b> <b>${direction}</b> quanh <b>~${(vn30Ref).toFixed(1)} - ${(estimatedFutures).toFixed(1)} điểm</b>\n`;
+  msg += `   📍 <b>Mở vị thế:</b> <b>${direction}</b> quanh <b>~${lowerBound} - ${upperBound} điểm</b> (Realtime: <b>${currentF1M.toFixed(1)}</b>)\n`;
   msg += `   🎯 <b>Chốt lời:</b> +10 đến +15 điểm (Trailing tự động)\n`;
   msg += `   🛑 <b>Cắt lỗ:</b> Khi đảo chiều cấu trúc ±6 điểm hoặc rổ VN30 đảo chiều dứt khoát\n`;
 
@@ -809,9 +839,11 @@ function startMomentumMonitor() {
   stopMomentumMonitor();
   const INTERVAL_MS = 90 * 1000; // 90 giây
   _state.momentumTimer = setInterval(() => {
+    // Guard: CHỈ chạy trong giờ giao dịch (8h45-11h30 & 13h-14h45 T2-T6)
+    if (!isMarketHours()) return;
     checkMomentum().catch(e => console.error('   ⚠️ Momentum monitor error:', e.message));
   }, INTERVAL_MS);
-  console.log('   📡 Momentum Monitor v3.0: Started (mỗi 90s trong giờ giao dịch)');
+  console.log('   📡 Momentum Monitor v3.0: Started (mỗi 90s, chỉ trong giờ GD)');
 }
 
 function stopMomentumMonitor() {
@@ -1007,6 +1039,14 @@ function startPositionMonitor(session, position, durationMinutes = 120) {
   _state.monitorTimer = setInterval(async () => {
     elapsed += 3;
 
+    // Guard: CHỈ chạy trong giờ giao dịch — TUYỆT ĐỐI không bắn noti ngoài giờ
+    if (!isMarketHours()) {
+      // Ngoài giờ giao dịch → tự dừng monitor luôn
+      console.log(`   ⏱ Monitor [${session}] tự dừng — ngoài giờ giao dịch`);
+      stopPositionMonitor();
+      return;
+    }
+
     if (elapsed >= durationMinutes) {
       console.log(`   ⏱ Monitor [${session}] timeout sau ${durationMinutes} phút`);
       stopPositionMonitor();
@@ -1174,7 +1214,7 @@ async function runAIDerivativesJob(session) {
     if (apiKey) {
       const { GoogleGenerativeAI } = require('@google/generative-ai');
       const genAI = new GoogleGenerativeAI(apiKey);
-      const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+      const model = genAI.getGenerativeModel({ model: 'gemini-flash-latest' });
 
       const prompt = `Bạn là Giám Đốc Quỹ Đầu Tư & Chuyên Gia Phân Tích Phái Sinh VN30F1M hàng đầu Việt Nam.
 Hãy phân tích dữ liệu thị trường thực tế ngay bây giờ và đưa ra dự báo độc lập cho hợp đồng Phái Sinh VN30F1M phiên ${sessionLabel}:
@@ -1183,7 +1223,7 @@ DỮ LIỆU THỊ TRƯỜNG THỰC TẾ (v3.0 — Anti-Trap):
 - Thời gian: ${vnNow()}
 - Xu hướng 1 tháng (Primary Trend): ${gapTrend.primaryTrend} (Biến động 1M: ${gapTrend.monthChangePct}%, SMA20: ${gapTrend.sma20})
 - Rổ VN30 Xanh/Đỏ: ${alignment.greenCount} mã Xanh / ${alignment.redCount} mã Đỏ (Alignment: ${alignment.alignScore})
-- BIÊN ĐỘ VN30: Tăng >4%: ${alignment.bands.strongBull} mã | 2-4%: ${alignment.bands.bull} mã | 0-2%: ${alignment.bands.mildBull} mã | Giảm >4%: ${alignment.bands.strongBear} mã | 2-4%: ${alignment.bands.bear} mã | 0-2%: ${alignment.bands.mildBear} mã
+- BIÊN ĐỘ VN30: Tăng >4%: ${alignment.bands.strongBull} mã | 1.2-4% (≥1.5đ): ${alignment.bands.bull} mã | 0-1.2%: ${alignment.bands.mildBull} mã | Giảm >4%: ${alignment.bands.strongBear} mã | 1.2-4% (≥1.5đ): ${alignment.bands.bear} mã | 0-1.2%: ${alignment.bands.mildBear} mã
 - Max tăng: +${alignment.bands.maxGreenPct}% | Max giảm: -${alignment.bands.maxRedPct}% | TB tăng: +${alignment.bands.avgGreenPct}% | TB giảm: -${alignment.bands.avgRedPct}%
 - 6 TRỤ CHỈ SỐ: ${alignment.pillar.details.map(p => `${p.sym}(${p.changePct > 0 ? '+' : ''}${p.changePct}%)`).join(', ')} → Tín hiệu: ${alignment.pillar.signal}
 - BẪY ĐỘI LÁI: ${alignment.trap.detected ? `${alignment.trap.detected} (Confidence: ${alignment.trap.confidence}%)` : 'Không phát hiện'}

@@ -302,7 +302,7 @@ YÊU CẦU PHÂN TÍCH CHUYÊN SÂU (viết dạng bài phân tích, KHÔNG gán
    - Mã nào có KL đột biến bất thường? Có dấu hiệu tích/xả không?
 
 3. 📈 **PHÂN TÍCH DANH MỤC THEO DÕI** (~200 chữ):
-   - Chỉ phân tích mã có biến động đáng chú ý (>2% hoặc KL bất thường)
+   - Chỉ phân tích mã có biến động đáng chú ý (>1.2% / ±1.5đ hoặc KL bất thường)
    - Mỗi mã: giá so với SMA20, xu hướng ngắn hạn, vùng hỗ trợ/kháng cự
    - Có nên MUA THÊM / CHỐT LỜI / CẮT LỖ? Giá mục tiêu nếu có
 

@@ -1,48 +1,8 @@
 {
-  "lastUpdated": "2026-08-07T14:03:53.648Z",
+  "lastUpdated": "2026-08-12T13:37:16.160Z",
   "history": [
     {
-      "date": "30/7/2026",
-      "totalOI": 43100,
-      "oiChange": 950,
-      "f1mPrice": 1884.8,
-      "vn30Price": 1886.27,
-      "basis": -1.47,
-      "volume": 233335,
-      "positionState": "LONG_ACCUMULATION"
-    },
-    {
-      "date": "31/7/2026",
-      "totalOI": 43800,
-      "oiChange": 700,
-      "f1mPrice": 1875,
-      "vn30Price": 1872.07,
-      "basis": 2.93,
-      "volume": 195686,
-      "positionState": "LONG_ACCUMULATION"
-    },
-    {
-      "date": "3/8/2026",
-      "totalOI": 44850,
-      "oiChange": 1050,
-      "f1mPrice": 1914,
-      "vn30Price": 1917.69,
-      "basis": -3.69,
-      "volume": 205554,
-      "positionState": "LONG_ACCUMULATION"
-    },
-    {
-      "date": "4/8/2026",
-      "totalOI": 45890,
-      "oiChange": 1040,
-      "f1mPrice": 1925,
-      "vn30Price": 1927.35,
-      "basis": -2.35,
-      "volume": 190633,
-      "positionState": "LONG_ACCUMULATION"
-    },
-    {
-      "date": "5/8/2026",
+      "date": "6/8/2026",
       "totalOI": 46840,
       "oiChange": 950,
       "f1mPrice": 1913.8,
@@ -60,6 +20,36 @@
       "basis": -20.99,
       "volume": 229511,
       "positionState": "LONG_LIQUIDATION"
+    },
+    {
+      "date": "10/8/2026",
+      "totalOI": 47900,
+      "oiChange": 260,
+      "f1mPrice": 1920,
+      "vn30Price": 1918.5,
+      "basis": 1.5,
+      "volume": 210000,
+      "positionState": "LONG_ACCUMULATION"
+    },
+    {
+      "date": "11/8/2026",
+      "totalOI": 48100,
+      "oiChange": 200,
+      "f1mPrice": 1932,
+      "vn30Price": 1930,
+      "basis": 2,
+      "volume": 220000,
+      "positionState": "LONG_ACCUMULATION"
+    },
+    {
+      "date": "12/8/2026",
+      "totalOI": 48440,
+      "oiChange": 800,
+      "f1mPrice": 1940,
+      "vn30Price": 1936.5,
+      "basis": 3.5,
+      "volume": 227139,
+      "positionState": "LONG_ACCUMULATION"
     }
   ]
 }

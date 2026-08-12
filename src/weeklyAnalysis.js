@@ -63,7 +63,7 @@ async function runWeeklyAnalysis() {
 
   try {
     const genAI = new GoogleGenerativeAI(config.geminiAI1.apiKey);
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+    const model = genAI.getGenerativeModel({ model: 'gemini-flash-latest' });
 
     const prompt = `Bạn là CHIẾN LƯỢC GIA THỊ TRƯỜNG chứng khoán Việt Nam. Đây là sáng THỨ HAI, đầu tuần mới. 
 Nhiệm vụ: Phân tích tổng quan và lên kế hoạch giao dịch cho tuần mới.
