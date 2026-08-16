@@ -44,6 +44,36 @@ async function sendTelegramMessage(message) {
 }
 
 /**
+ * Gửi message tới nhóm Phái sinh (Ps) trên Telegram
+ * Dùng cho tất cả noti phái sinh: tín hiệu, trailing, momentum, OI...
+ * @param {string} message - Nội dung message (hỗ trợ HTML)
+ */
+async function sendDerivativesMessage(message) {
+  try {
+    const chatId = config.telegram.chatIdDerivatives || config.telegram.chatId;
+    const chunks = splitMessage(message, 4000);
+
+    for (const chunk of chunks) {
+      await axios.post(`${TELEGRAM_API}/sendMessage`, {
+        chat_id: chatId,
+        text: chunk,
+        parse_mode: 'HTML',
+        disable_web_page_preview: true,
+      });
+      if (chunks.length > 1) {
+        await sleep(500);
+      }
+    }
+
+    console.log('📩 Đã gửi message Telegram (Ps - Phái sinh) thành công!');
+    return true;
+  } catch (error) {
+    console.error('❌ Lỗi gửi Telegram (Ps):', error.response?.data?.description || error.message);
+    return false;
+  }
+}
+
+/**
  * Format dữ liệu stock thành message Telegram đẹp
  * @param {Array} stocks - Danh sách thông tin stock
  * @returns {string} Message HTML formatted
@@ -396,4 +426,4 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-module.exports = { sendTelegramMessage, formatStockMessage };
+module.exports = { sendTelegramMessage, sendDerivativesMessage, formatStockMessage };

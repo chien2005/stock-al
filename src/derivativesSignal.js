@@ -28,7 +28,7 @@
 
 const axios = require('axios');
 const { config } = require('./config');
-const { sendTelegramMessage } = require('./telegramService');
+const { sendDerivativesMessage } = require('./telegramService');
 
 // ─── VN30 SYMBOLS + TRỌNG SỐ VỐN HÓA (Cập nhật rổ 03/08/2026) ───
 const VN30_COMPONENTS = [
@@ -93,6 +93,153 @@ const _state = {
   lastMomentumAlertTime: {},  // { alertType: timestamp } — cooldown per alert type
   prevPillarSnapshot: {},     // { sym: changePct } — snapshot trước để phát hiện đảo chiều trụ
 };
+
+// ═══════════════════════════════════════════════════════════════
+// ║  📡 RADAR THANH KHOẢN VN30 — Phát hiện bẫy lái realtime   ║
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * Lấy dữ liệu dòng tiền realtime rổ VN30 để phát hiện bẫy lái
+ * Tính: Tổng GT GD, NN ròng, Volume ratio, Áp lực mua/bán
+ * @returns {Object} { totalValue, foreignNetValue, volumeRatio, fnBuyCount, fnSellCount, verdict, verdictIcon, detail }
+ */
+async function fetchVN30LiquidityRadar() {
+  try {
+    const vn30Symbols = VN30_COMPONENTS.map(c => c.sym).join(',');
+    const [realtimeRes, histRes] = await Promise.all([
+      axios.get(`${VPS_REALTIME_URL}/${vn30Symbols}`, { headers: HEADERS, timeout: 10000 }),
+      axios.get(`${VPS_HISTORY_URL}?symbol=VNINDEX&resolution=D&from=${Math.floor(Date.now()/1000) - 86400*10}&to=${Math.floor(Date.now()/1000)}`, { headers: HEADERS, timeout: 8000 }).catch(() => null),
+    ]);
+
+    const rawList = realtimeRes.data || [];
+    let totalTradeValue = 0;  // Tổng GT GD VN30 (tỷ VNĐ)
+    let totalFnBuyValue = 0;  // NN mua (tỷ)
+    let totalFnSellValue = 0; // NN bán (tỷ)
+    let totalVolume = 0;      // Tổng KL khớp
+    let fnBuyCount = 0;       // Số mã NN mua ròng
+    let fnSellCount = 0;      // Số mã NN bán ròng
+    let totalChangePct = 0;   // Tổng biến động (để tính trung bình)
+    let validCount = 0;
+
+    for (const raw of rawList) {
+      if (!raw.sym) continue;
+      const price = parseFloat(raw.lastPrice || 0) * 1000;
+      const refPrice = parseFloat(raw.r || 0) * 1000;
+      const vol = parseInt(raw.lot || 0) * 10;
+      const fBuy = parseInt(raw.fBVol || 0) * 10;
+      const fSell = parseInt(raw.fSVolume || 0) * 10;
+      const fNet = fBuy - fSell;
+
+      if (price <= 0 || refPrice <= 0) continue;
+
+      const tradeVal = (vol * price) / 1e9; // tỷ VNĐ
+      totalTradeValue += tradeVal;
+      totalFnBuyValue += (fBuy * price) / 1e9;
+      totalFnSellValue += (fSell * price) / 1e9;
+      totalVolume += vol;
+
+      if (fNet > 0) fnBuyCount++;
+      else if (fNet < 0) fnSellCount++;
+
+      const changePct = (price - refPrice) / refPrice * 100;
+      totalChangePct += changePct;
+      validCount++;
+    }
+
+    const avgChangePct = validCount > 0 ? totalChangePct / validCount : 0;
+    const totalFnNetValue = totalFnBuyValue - totalFnSellValue;
+
+    // Tính volume ratio so với TB5 phiên (VNINDEX volume proxy)
+    let volumeRatio = 1.0;
+    if (histRes && histRes.data && histRes.data.v && histRes.data.v.length >= 5) {
+      const volumes = histRes.data.v;
+      const avg5 = volumes.slice(-6, -1).reduce((s, v) => s + v, 0) / 5;
+      const todayVol = volumes[volumes.length - 1];
+      volumeRatio = avg5 > 0 ? parseFloat((todayVol / avg5).toFixed(2)) : 1.0;
+    }
+
+    // ─── PHÁN QUYẾT DÒNG TIỀN ────────────────────────────
+    let verdict = 'TRUNG LẬP';
+    let verdictIcon = '⚪';
+    const isVN30Green = avgChangePct > 0.1;
+    const isVN30Red = avgChangePct < -0.1;
+    const isLowLiquidity = volumeRatio < 0.8 || totalTradeValue < 3000;
+    const isHighLiquidity = volumeRatio >= 1.2 || totalTradeValue >= 8000;
+    const isFnBuy = totalFnNetValue > 5;    // NN mua ròng > 5 tỷ
+    const isFnSell = totalFnNetValue < -5;  // NN bán ròng > 5 tỷ
+
+    if (isVN30Green && isLowLiquidity && !isFnBuy) {
+      verdict = 'BƠM LƯỚT — Xanh nhưng tiền ÍT, lái bơm nhẹ, cẩn thận bẫy LONG!';
+      verdictIcon = '⚠️🔴';
+    } else if (isVN30Red && isLowLiquidity && !isFnSell) {
+      verdict = 'ĐÈ LƯỚT — Đỏ nhưng lực bán YẾU, lái đè nhẹ, cẩn thận bẫy SHORT!';
+      verdictIcon = '⚠️🟢';
+    } else if (isVN30Green && isHighLiquidity && isFnBuy) {
+      verdict = 'MUA THẬT — Tăng giá kèm dòng tiền mạnh, xanh đáng tin';
+      verdictIcon = '✅🟢';
+    } else if (isVN30Red && isHighLiquidity && isFnSell) {
+      verdict = 'BÁN THẬT — Giảm giá kèm lực bán thực chất, đỏ thật';
+      verdictIcon = '✅🔴';
+    } else if (isVN30Green && isFnSell) {
+      verdict = 'XANH ẢO — Giá tăng nhưng NN BÁN RÒNG, cẩn thận đảo chiều!';
+      verdictIcon = '⚠️🔴';
+    } else if (isVN30Red && isFnBuy) {
+      verdict = 'ĐỎ ẢO — Giá giảm nhưng NN MUA RÒNG, có thể hồi bất ngờ!';
+      verdictIcon = '⚠️🟢';
+    } else if (isVN30Green) {
+      verdict = 'XANH NHẸ — Thanh khoản bình thường, chưa rõ xu hướng';
+      verdictIcon = '🟡';
+    } else if (isVN30Red) {
+      verdict = 'ĐỎ NHẸ — Thanh khoản bình thường, chưa rõ xu hướng';
+      verdictIcon = '🟡';
+    }
+
+    // Thanh khoản label
+    let liqLabel = 'BÌNH THƯỜNG';
+    let liqIcon = '💧';
+    if (isLowLiquidity) { liqLabel = 'CẠN — Lái dễ thao túng'; liqIcon = '🏜️'; }
+    else if (isHighLiquidity) { liqLabel = 'CAO — Dòng tiền thật'; liqIcon = '🌊'; }
+
+    return {
+      totalTradeValue: parseFloat(totalTradeValue.toFixed(1)),
+      totalFnNetValue: parseFloat(totalFnNetValue.toFixed(1)),
+      totalFnBuyValue: parseFloat(totalFnBuyValue.toFixed(1)),
+      totalFnSellValue: parseFloat(totalFnSellValue.toFixed(1)),
+      volumeRatio,
+      fnBuyCount,
+      fnSellCount,
+      avgChangePct: parseFloat(avgChangePct.toFixed(2)),
+      verdict,
+      verdictIcon,
+      liqLabel,
+      liqIcon,
+    };
+  } catch (e) {
+    console.error('   ⚠️ VN30 Liquidity Radar error:', e.message);
+    return null;
+  }
+}
+
+/**
+ * Format Radar Thanh Khoản VN30 thành chuỗi HTML cho Telegram
+ * @param {Object|null} radar - Kết quả từ fetchVN30LiquidityRadar()
+ * @returns {string} HTML formatted string
+ */
+function formatRadarBlock(radar) {
+  if (!radar) return '';
+
+  const volLabel = radar.volumeRatio >= 1.2 ? '↑ TĂNG' : radar.volumeRatio <= 0.8 ? '↓ THẤP' : '~ TB';
+  const fnIcon = radar.totalFnNetValue >= 0 ? '🟢' : '🔴';
+  const fnSign = radar.totalFnNetValue >= 0 ? '+' : '';
+
+  let block = `\n📡 <b>RADAR THANH KHOẢN VN30 (Realtime):</b>\n`;
+  block += `   💰 Tổng GD: <b>${radar.totalTradeValue.toLocaleString('vi-VN')} tỷ</b> (${radar.volumeRatio}x TB5) ← ${volLabel}\n`;
+  block += `   ${fnIcon} NN ròng: <b>${fnSign}${radar.totalFnNetValue.toLocaleString('vi-VN')} tỷ</b> (${radar.fnBuyCount} mã mua / ${radar.fnSellCount} mã bán)\n`;
+  block += `   ${radar.verdictIcon} Áp lực: <b>${radar.verdict}</b>\n`;
+  block += `   ${radar.liqIcon} Thanh khoản: <b>${radar.liqLabel}</b>\n`;
+
+  return block;
+}
 
 // ─── HELPER ─────────────────────────────────────────────────
 function vnNow() {
@@ -549,7 +696,10 @@ async function sendOpenSignal(session, signal) {
   const dirIcon  = direction === 'LONG' ? '🟢' : '🔴';
   const dirText  = direction === 'LONG' ? 'LONG (MUA - ĐẶT CỬA TĂNG)' : 'SHORT (BÁN - ĐẶT CỬA GIẢM)';
 
-  const realtimeFutures = await fetchRealtimeFuturesPrice();
+  const [realtimeFutures, radar] = await Promise.all([
+    fetchRealtimeFuturesPrice(),
+    fetchVN30LiquidityRadar(),
+  ]);
   const vn30Ref = entryPrice || 1936.5;
   const currentF1M = realtimeFutures || (gapTrend.gapPoints !== 0 ? (vn30Ref + gapTrend.gapPoints) : vn30Ref);
   const lowerBound = (currentF1M - 1.0).toFixed(1);
@@ -626,6 +776,9 @@ async function sendOpenSignal(session, signal) {
     msg += alignment.topStrong.slice(0, 4).map(s => `${s.sym}(+${s.changePct}%)`).join(', ') + `\n\n`;
   }
 
+  // ─── RADAR THANH KHOẢN VN30 (v3.1 MỚI) ──────────────
+  msg += formatRadarBlock(radar);
+
   msg += `━━━━━━━━━━━━━━━━━━━━━━\n`;
   msg += `🎯 <b>KHUYẾN NGHỊ VÀO LỆNH:</b>\n`;
   msg += `   📍 <b>Mở vị thế:</b> <b>${direction}</b> quanh <b>~${lowerBound} - ${upperBound} điểm</b> (Realtime: <b>${currentF1M.toFixed(1)}</b>)\n`;
@@ -634,7 +787,7 @@ async function sendOpenSignal(session, signal) {
 
   msg += `\n<i>🔮 Derivatives Signal Engine v3.0 | VN Stock Bot</i>`;
 
-  await sendTelegramMessage(msg);
+  await sendDerivativesMessage(msg);
   return msg;
 }
 
@@ -764,7 +917,7 @@ async function sendMomentumAlert(alertType, priceChange, currentPrice) {
   msg += `💡 <b>HÀNH ĐỘNG:</b>\n`;
   msg += `   ${actionText}\n`;
   msg += `\n<i>🔮 Momentum Monitor v3.0 | VN Stock Bot</i>`;
-  await sendTelegramMessage(msg);
+  await sendDerivativesMessage(msg);
 }
 
 // ─── CẢNH BÁO TRỤ ĐẢO CHIỀU ─────────────────────────────────
@@ -784,7 +937,7 @@ async function sendPillarReversalAlert(sym, prevPct, currentPct, direction) {
   msg += `📊 ${desc}\n\n`;
   msg += `💡 <b>${action}</b>\n`;
   msg += `\n<i>🔮 Momentum Monitor v3.0 | VN Stock Bot</i>`;
-  await sendTelegramMessage(msg);
+  await sendDerivativesMessage(msg);
 }
 
 // ─── CẢNH BÁO BẪY ĐỘI LÁI REALTIME ─────────────────────────
@@ -814,7 +967,7 @@ async function sendTrapAlert(alignment) {
 
   msg += `\n🔒 Confidence: <b>${alignment.trap.confidence}%</b>`;
   msg += `\n<i>🔮 Momentum Monitor v3.0 | VN Stock Bot</i>`;
-  await sendTelegramMessage(msg);
+  await sendDerivativesMessage(msg);
 }
 
 // ─── CẢNH BÁO ĐỒNG THANH TĂNG/GIẢM MẠNH ────────────────────
@@ -831,7 +984,7 @@ async function sendSyncMoveAlert(alignment) {
   msg += `✅ <b>Đây là ${isBull ? 'UPTREND' : 'DOWNTREND'} THẬT</b> — không phải nhiễu lái.\n`;
   msg += `💡 <b>HÀNH ĐỘNG:</b> ${isBull ? 'Mở/giữ vị thế LONG. Không mở SHORT.' : 'Mở/giữ vị thế SHORT. Không mở LONG.'}\n`;
   msg += `\n<i>🔮 Momentum Monitor v3.0 | VN Stock Bot</i>`;
-  await sendTelegramMessage(msg);
+  await sendDerivativesMessage(msg);
 }
 
 // ─── START/STOP MOMENTUM MONITOR ─────────────────────────────
@@ -949,6 +1102,8 @@ async function sendTrailingStrongAlert(session, position, currentPrice, pnlPoint
   const dirText = position.direction === 'LONG' ? 'LONG 🟢' : 'SHORT 🔴';
   const pnlVND = Math.round(pnlPoints * 100000);
 
+  const radar = await fetchVN30LiquidityRadar();
+
   let msg = `🚀 <b>TRAILING STOP — GIỮ ĂN TRỌN SÓNG (${sessionLabel})</b>\n`;
   msg += `🕐 <i>${vnNow()}</i>\n`;
   msg += `━━━━━━━━━━━━━━━━━━━━━━\n\n`;
@@ -956,10 +1111,11 @@ async function sendTrailingStrongAlert(session, position, currentPrice, pnlPoint
   msg += `📊 <b>Phân tích v3.0:</b>\n`;
   msg += `   • Xanh/Đỏ: <b>${alignment.greenCount}🟢 / ${alignment.redCount}🔴</b>\n`;
   msg += `   • Trụ: <b>${alignment.pillar.signal}</b>\n`;
-  msg += `   • Xu hướng vẫn đè/kéo mạnh mẽ theo chiều vị thế.\n\n`;
-  msg += `💡 <b>KHUYẾN NGHỊ: TIẾP TỤC GIỮ VỊ THẾ</b>\n`;
+  msg += `   • Xu hướng vẫn đè/kéo mạnh mẽ theo chiều vị thế.\n`;
+  msg += formatRadarBlock(radar);
+  msg += `\n💡 <b>KHUYẾN NGHỊ: TIẾP TỤC GIỮ VỊ THẾ</b>\n`;
   msg += `\n<i>🔮 Derivatives Signal Engine v3.0 | VN Stock Bot</i>`;
-  await sendTelegramMessage(msg);
+  await sendDerivativesMessage(msg);
 }
 
 // ─── GỬI NOTI CHỐT LỜI KHI XU HƯỚNG YẾU ────────────────────
@@ -981,13 +1137,14 @@ async function sendTPAlert(session, position, currentPrice, pnlPoints) {
   }
 
   msg += `\n<i>🔮 Derivatives Signal Engine v3.0 | VN Stock Bot</i>`;
-  await sendTelegramMessage(msg);
+  await sendDerivativesMessage(msg);
 }
 
 // ─── GỬI NOTI CẢNH BÁO NHỊP NHIỄU (KHÔNG CẮT VỘI) ─────────────
 async function sendNoiseWarningAlert(session, position, currentPrice, pnlPoints, alignment) {
   const sessionLabel = session === 'morning' ? '🌅 SÁNG' : '🌆 CHIỀU';
   const dirText = position.direction === 'LONG' ? 'LONG 🟢' : 'SHORT 🔴';
+  const radar = await fetchVN30LiquidityRadar();
 
   let msg = `🛡️ <b>CẢNH BÁO NHỊP GIẬT NHIỄU LÁI — ${sessionLabel}</b>\n`;
   msg += `🕐 <i>${vnNow()}</i>\n`;
@@ -1001,10 +1158,12 @@ async function sendNoiseWarningAlert(session, position, currentPrice, pnlPoints,
     msg += `   • 🪤 Phát hiện <b>${alignment.trap.detected}</b> — Đây là NHIỄU lái!\n`;
   }
 
+  msg += formatRadarBlock(radar);
+
   msg += `\n💡 <b>KHUYẾN NGHỊ: GIỮ VỊ THẾ, KHÔNG CẮT VỘI!</b>\n`;
   msg += `   Đây chỉ là nhịp nhiễu quét margin của Lái.\n`;
   msg += `\n<i>🔮 Derivatives Signal Engine v3.0 | VN Stock Bot</i>`;
-  await sendTelegramMessage(msg);
+  await sendDerivativesMessage(msg);
 }
 
 // ─── GỬI NOTI CẮT LỖ KHI XÁC NHẬN ĐẢO CHIỀU ─────────────────
@@ -1024,7 +1183,7 @@ async function sendReversalSLAlert(session, position, currentPrice, pnlPoints, a
   msg += `🚨 <b>ĐÓNG VỊ THẾ NGAY ĐỂ BẢO TOÀN VỐN!</b>\n`;
   msg += `<i>Thừa nhận sai khi thị trường đảo chiều dứt khoát là nguyên tắc sinh tồn.</i>\n`;
   msg += `\n<i>🔮 Derivatives Signal Engine v3.0 | VN Stock Bot</i>`;
-  await sendTelegramMessage(msg);
+  await sendDerivativesMessage(msg);
 }
 
 // ─── BẮT ĐẦU MONITOR POSITION ───────────────────────────────
@@ -1159,7 +1318,7 @@ async function runAfternoonDerivativesJob() {
   // Nếu sáng đã thắng TP → nghỉ chiều
   if (_state.morningClosed && _state.morningResult === 'TP') {
     console.log('   ✅ Phiên sáng đã chốt lời. Nghỉ buổi chiều.');
-    await sendTelegramMessage(
+    await sendDerivativesMessage(
       `☕ <b>PHÁI SINH CHIỀU — NGHỈ NGHƠI</b>\n` +
       `🕐 <i>${vnNow()}</i>\n` +
       `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
@@ -1200,7 +1359,10 @@ async function runAIDerivativesJob(session) {
   console.log('═'.repeat(55));
 
   try {
-    const signal = await calculateFinalSignal();
+    const [signal, radar] = await Promise.all([
+      calculateFinalSignal(),
+      fetchVN30LiquidityRadar(),
+    ]);
     const { direction, score, maxScore, entryPrice, breakdown } = signal;
     const { alignment, gapTrend, volume } = breakdown;
 
@@ -1216,6 +1378,10 @@ async function runAIDerivativesJob(session) {
       const genAI = new GoogleGenerativeAI(apiKey);
       const model = genAI.getGenerativeModel({ model: 'gemini-flash-latest' });
 
+      const radarSummary = radar 
+        ? `Tổng GD: ${radar.totalTradeValue} tỷ (${radar.volumeRatio}x TB5), NN ròng: ${radar.totalFnNetValue > 0 ? '+' : ''}${radar.totalFnNetValue} tỷ (${radar.fnBuyCount} mã mua / ${radar.fnSellCount} mã bán), Nhận định: ${radar.verdict}`
+        : 'Chưa có data';
+
       const prompt = `Bạn là Giám Đốc Quỹ Đầu Tư & Chuyên Gia Phân Tích Phái Sinh VN30F1M hàng đầu Việt Nam.
 Hãy phân tích dữ liệu thị trường thực tế ngay bây giờ và đưa ra dự báo độc lập cho hợp đồng Phái Sinh VN30F1M phiên ${sessionLabel}:
 
@@ -1230,6 +1396,7 @@ DỮ LIỆU THỊ TRƯỜNG THỰC TẾ (v3.0 — Anti-Trap):
 - ĐỒNG THANH: ${alignment.synchronizedMove || 'Không'}
 - Gap ATO VN30: ${gapTrend.gapPoints > 0 ? '+' : ''}${gapTrend.gapPoints} điểm | Volume: ${volume.volumeRatio}x TB5
 - Basis: ${basisGap} điểm
+- RADAR THANH KHOẢN VN30: ${radarSummary}
 - Điểm phán quyết v3.0: ${direction} (${score}/${maxScore} điểm)
 - Top mã VN30 mạnh nhất: ${alignment.topStrong.map(s => `${s.sym}(${s.changePct}%)`).join(', ')}
 - Top mã VN30 yếu nhất: ${alignment.topWeak.map(s => `${s.sym}(${s.changePct}%)`).join(', ')}
@@ -1237,7 +1404,7 @@ DỮ LIỆU THỊ TRƯỜNG THỰC TẾ (v3.0 — Anti-Trap):
 YÊU CẦU ĐỐI VỚI AI:
 1. Đưa ra phán quyết: LONG hay SHORT? Có phải bẫy đội lái không?
 2. Phân tích 6 trụ chỉ số: VIC, VHM, MWG, FPT, VCB, BID đang kéo thật hay kéo ảo?
-3. Đánh giá: Nếu 20+ mã xanh nhưng mỗi mã chỉ tăng <1.5% → có phải bẫy úp bô Long không?
+3. Đánh giá thanh khoản & dòng tiền: Dòng tiền có vào thật hay chỉ là bẫy bơm/đè lướt ăn chênh lệch ps?
 4. Trình bày 3 lý do bằng tiếng Việt dễ hiểu.
 5. Nêu Entry, TP (+10-15 điểm), SL (khi đảo chiều cấu trúc).
 6. Định dạng HTML cho Telegram (dùng <b>, <i>, <code>). Ngắn gọn.`;
@@ -1265,11 +1432,13 @@ YÊU CẦU ĐỐI VỚI AI:
       msg += `   3. Trụ: <b>${alignment.pillar.signal}</b>\n\n`;
     }
 
+    msg += formatRadarBlock(radar);
+
     msg += `━━━━━━━━━━━━━━━━━━━━━━\n`;
     msg += `💡 <i>Đối chiếu tín hiệu Code (${direction} ${score}/${maxScore}) với AI.</i>\n`;
     msg += `<i>🤖 VN Stock Bot v${config.version} | AI Derivatives Engine v3.0</i>`;
 
-    await sendTelegramMessage(msg);
+    await sendDerivativesMessage(msg);
     console.log(`   ✅ AI Derivatives Job [${session}] hoàn thành`);
   } catch (err) {
     console.error(`   ❌ AI Derivatives Job [${session}] lỗi:`, err.message);
@@ -1303,5 +1472,7 @@ module.exports = {
   startMomentumMonitor,
   stopMomentumMonitor,
   stopPositionMonitor,
+  fetchVN30LiquidityRadar,
+  formatRadarBlock,
   getDerivativesState: () => ({ ..._state }),
 };

@@ -26,7 +26,7 @@ const cron = require('node-cron');
 const http = require('http');
 const { config, validateConfig } = require('./config');
 const { fetchAllStocks, fetchVN30Index, fetchMarketScan, fetchTopBoughtStocks, fetchMarketLiquidity } = require('./stockService');
-const { sendTelegramMessage, formatStockMessage } = require('./telegramService');
+const { sendTelegramMessage, sendDerivativesMessage, formatStockMessage } = require('./telegramService');
 const { initAIEngines, runScheduledAnalysis, runDailyGlobalSummaryReport } = require('./aiTeam');
 const { runWeeklyAnalysis } = require('./weeklyAnalysis');
 const { startBotHandler, stopBotHandler } = require('./botHandler');
@@ -392,7 +392,7 @@ async function main() {
   const startupTime = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
   try {
     await sendTelegramMessage(
-      `🟢 <b>VN Stock Bot v${config.version} đã khởi động!</b>\n` +
+      `🟢 <b>VN Stock Bot v${config.version} đã khởi động! (Nhóm Cơ Sở)</b>\n` +
       `🕐 ${startupTime}\n` +
       `📊 Theo dõi: ${config.stockSymbols.length} mã\n` +
       `⏰ Báo giá: ${config.cronSchedule}\n` +
@@ -402,6 +402,19 @@ async function main() {
       `━━━━━━━━━━━━━━━━━━━━━━\n` +
       `<i>Nếu bạn thấy tin này nhiều lần → bot đang bị restart liên tục!</i>`
     );
+
+    if (config.telegram.chatIdDerivatives && config.telegram.chatIdDerivatives !== config.telegram.chatId) {
+      await sendDerivativesMessage(
+        `🔮 <b>VN Stock Bot v${config.version} đã kết nối! (Nhóm Phái Sinh VN30F)</b>\n` +
+        `🕐 ${startupTime}\n` +
+        `📊 Chế độ: <b>Tín hiệu Phái Sinh v3.0 + Radar Thanh Khoản VN30</b>\n` +
+        `⏰ Phiên sáng: 9h05 - 11h30 (5p/lần) | Phiên chiều: 13h14 & 13h55\n` +
+        `🤖 AI Phái sinh: 9h22 | 10h22 | 13h50\n` +
+        `📊 OI & Basis: 19h30\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `<i>Kênh chuyên biệt phân tích & tín hiệu phái sinh realtime 24/24</i>`
+      );
+    }
     console.log('📩 Đã gửi thông báo khởi động về Telegram');
   } catch (e) {
     console.error('⚠️ Không gửi được thông báo khởi động:', e.message);

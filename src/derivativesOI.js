@@ -18,7 +18,7 @@ const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 const { config } = require('./config');
-const { sendTelegramMessage } = require('./telegramService');
+const { sendDerivativesMessage } = require('./telegramService');
 
 // ─── PERSISTENT DATA FILE FOR OI ──────────────────────────────
 const OI_HISTORY_FILE = path.join(__dirname, '..', 'data', 'oi_history.json');
@@ -1025,7 +1025,7 @@ async function runDerivativesOIJob(session = 'test') {
 
     if (!allData.f1m || !allData.vn30) {
       console.error('   ❌ Không lấy được dữ liệu VN30F1M hoặc VN30 Index');
-      await sendTelegramMessage(
+      await sendDerivativesMessage(
         `⚠️ <b>Derivatives OI Tracker</b>\n` +
         `Không lấy được dữ liệu phái sinh. Có thể do ngoài giờ giao dịch hoặc lỗi kết nối.\n` +
         `<i>${vnNow()}</i>`
@@ -1058,7 +1058,7 @@ async function runDerivativesOIJob(session = 'test') {
     });
 
     // 6. Gửi báo cáo chính
-    await sendTelegramMessage(report);
+    await sendDerivativesMessage(report);
     console.log(`   ✅ Đã gửi báo cáo phái sinh [${session}]`);
 
     // 7. Evening session: AI dự báo
@@ -1078,7 +1078,7 @@ async function runDerivativesOIJob(session = 'test') {
         aiMsg += `━━━━━━━━━━━━━━━━━━━━━━\n`;
         aiMsg += `<i>🤖 AI Derivatives Forecast | VN Stock Bot v${config.version}</i>`;
 
-        await sendTelegramMessage(aiMsg);
+        await sendDerivativesMessage(aiMsg);
         console.log('   ✅ Đã gửi AI dự báo phái sinh');
       }
     }
@@ -1087,7 +1087,7 @@ async function runDerivativesOIJob(session = 'test') {
   } catch (e) {
     console.error(`   ❌ Derivatives OI Job [${session}] lỗi:`, e.message);
     try {
-      await sendTelegramMessage(
+      await sendDerivativesMessage(
         `💥 <b>Derivatives OI Tracker lỗi</b>\n` +
         `Session: ${session}\n` +
         `<code>${e.message}</code>\n` +

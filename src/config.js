@@ -27,6 +27,7 @@ const config = {
     botTokenAI3: process.env.TELEGRAM_BOT_TOKEN_AI3, // AI 3: Chuyên gia Flash
     botTokenAI4: process.env.TELEGRAM_BOT_TOKEN_AI4, // AI 4: AI Phản biện
     chatId: process.env.TELEGRAM_CHAT_ID,
+    chatIdDerivatives: process.env.TELEGRAM_CHAT_ID_PS || process.env.TELEGRAM_CHAT_ID, // Nhóm Ps (phái sinh)
   },
 
   // Google Gemini Keys - ALL FREE (fallback khi OpenRouter lỗi)
