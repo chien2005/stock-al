@@ -5,8 +5,47 @@ services:
     plan: free
     buildCommand: npm install
     startCommand: node src/index.js
+    healthCheckPath: /health
     envVars:
       - key: NODE_ENV
         value: production
       - key: TZ
         value: Asia/Ho_Chi_Minh
+      - key: ENABLE_INTERACTIVE_BOT
+        value: "true"
+      - key: CRON_SCHEDULE
+        value: "0 10 * * 1-5"
+      - key: CRON_AI_SCHEDULE
+        value: "30 20 * * 1-5"
+      - key: CRON_GLOBAL_SCHEDULE
+        value: "0 21 * * 1-5"
+      - key: CRON_TOP_BOUGHT_SCHEDULE
+        value: "30 21 * * 1-5"
+      - key: CRON_WEEKLY_SCHEDULE
+        value: "30 8 * * 1"
+      - key: STOCK_SYMBOLS
+        value: "VCB,BID,CTG,TCB,MBB,VPB,STB,ACB,VHM,VIC,VRE,GAS,PLX,HPG,SSI,VND,HCM,FPT,VNM,MWG,MSN,SAB,GVR,BCM,POW,CTR,HHV,E1VFVN30"
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: TELEGRAM_CHAT_ID_PS
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN_AI2
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN_AI3
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN_AI4
+        sync: false
+      - key: GEMINI_API_KEY_AI1
+        sync: false
+      - key: GEMINI_API_KEY_AI2
+        sync: false
+      - key: GEMINI_API_KEY_AI3
+        sync: false
+      - key: GEMINI_API_KEY_AI4
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: OPENROUTER_MODEL
+        value: "openrouter/free"
