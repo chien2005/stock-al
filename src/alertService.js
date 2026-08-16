@@ -97,9 +97,11 @@ function startAlertMonitor() {
   console.log(`   🧠 Wash trading filter | Adaptive threshold | Streak detection`);
   console.log(`   🔒 Cooldown: 30 phút | Max: ${THRESHOLDS.maxAlertsPerSymbol} alert/mã/ngày`);
 
-  // Lấy KLTB20 phiên trước, rồi poll lần đầu
+  // Lấy KLTB20 phiên trước, chỉ poll nếu đang trong giờ giao dịch (sau 9h15)
   loadAvgVolumes().then(() => {
-    pollAndCheck(true);
+    if (isTradingHours()) {
+      pollAndCheck(true);
+    }
   });
 
   _pollInterval = setInterval(() => {
@@ -134,9 +136,10 @@ function isTradingHours() {
   const now = new Date();
   const vnTime = new Date(now.toLocaleString('en-US', { timeZone: config.timezone }));
   const day = vnTime.getDay();
-  if (day < 1 || day > 5) return false;
+  if (day < 1 || day > 5) return false; // Chỉ T2-T6
   const t = vnTime.getHours() * 100 + vnTime.getMinutes();
-  return (t >= 845 && t <= 1130) || (t >= 1300 && t <= 1445);
+  // Khớp lệnh liên tục HOSE/HNX: bắt đầu từ 9h15 (sau ATO) đến 11h30 và 13h00 đến 14h45 (TUYỆT ĐỐI không quét trước 9h15)
+  return (t >= 915 && t <= 1130) || (t >= 1300 && t <= 1445);
 }
 
 // ─── LOAD KLTB 20 PHIÊN ────────────────────────────────────
@@ -283,6 +286,9 @@ function incrementAlertCount(symbol) {
 // ─── POLL & CHECK ───────────────────────────────────────────
 
 async function pollAndCheck(isFirstPoll) {
+  // Guard: Không quét ngoài giờ hoặc trước 9h15
+  if (!isTradingHours() && !isFirstPoll) return;
+
   try {
     const symbols = config.stockSymbols;
     const res = await axios.get(`${VPS_API.realtime}/${symbols.join(',')}`, {
@@ -298,7 +304,7 @@ async function pollAndCheck(isFirstPoll) {
       const symbol = raw.sym;
       if (!symbol) continue;
 
-      const price = parseFloat(raw.lastPrice || 0) * 1000;
+      let price = parseFloat(raw.lastPrice || 0) * 1000;
       const refPrice = parseFloat(raw.r || 0) * 1000;
       const ceilingPrice = parseFloat(raw.c || 0) * 1000;
       const floorPrice = parseFloat(raw.f || 0) * 1000;
@@ -306,7 +312,15 @@ async function pollAndCheck(isFirstPoll) {
       const foreignBuy = parseInt(raw.fBVol || 0);
       const foreignSell = parseInt(raw.fSVolume || 0);
       const foreignNet = foreignBuy - foreignSell;
-      const changePct = refPrice > 0 ? parseFloat(((price - refPrice) / refPrice * 100).toFixed(2)) : 0;
+
+      if (refPrice <= 0) continue;
+
+      // Nếu mã chưa có giao dịch khớp lệnh hoặc giá = 0, đặt giá = refPrice (changePct = 0)
+      const hasTraded = price > 0 && volume > 0;
+      if (!hasTraded) {
+        price = refPrice;
+      }
+      const changePct = parseFloat(((price - refPrice) / refPrice * 100).toFixed(2));
 
       // Parse bid/ask depth
       const bidVol1 = parseInt((raw.g1 || '').split('|')[1] || 0);
@@ -489,7 +503,7 @@ async function pollAndCheck(isFirstPoll) {
       }
 
       // ═══ CHECK 5: Biến động giá mạnh ═══
-      if (Math.abs(changePct) >= THRESHOLDS.priceChangePct && Math.abs(prev.changePct) < THRESHOLDS.priceChangePct) {
+      if (hasTraded && Math.abs(changePct) >= THRESHOLDS.priceChangePct && Math.abs(prev.changePct) < THRESHOLDS.priceChangePct) {
         const key = `${symbol}_px_${changePct > 0 ? 'u' : 'd'}`;
         if (!isCooldown(key, now) && canAlertSymbol(symbol, 'MEDIUM')) {
           const dir = changePct > 0 ? 'TĂNG MẠNH' : 'GIẢM MẠNH';
@@ -504,7 +518,7 @@ async function pollAndCheck(isFirstPoll) {
       }
 
       // ═══ CHECK 6: Chạm trần/sàn ═══
-      if (ceilingPrice > 0 && price >= ceilingPrice * (1 - THRESHOLDS.nearCeilingFloor / 100)) {
+      if (hasTraded && ceilingPrice > 0 && price >= ceilingPrice * (1 - THRESHOLDS.nearCeilingFloor / 100)) {
         const key = `${symbol}_ceil`;
         if (!isCooldown(key, now) && canAlertSymbol(symbol, 'HIGH')) {
           alerts.push({ symbol, icon: '🟣⬆️', title: 'CHẠM TRẦN',
@@ -514,7 +528,7 @@ async function pollAndCheck(isFirstPoll) {
           incrementAlertCount(symbol);
         }
       }
-      if (floorPrice > 0 && price <= floorPrice * (1 + THRESHOLDS.nearCeilingFloor / 100)) {
+      if (hasTraded && floorPrice > 0 && price <= floorPrice * (1 + THRESHOLDS.nearCeilingFloor / 100)) {
         const key = `${symbol}_floor`;
         if (!isCooldown(key, now) && canAlertSymbol(symbol, 'HIGH')) {
           alerts.push({ symbol, icon: '🔵⬇️', title: 'CHẠM SÀN',

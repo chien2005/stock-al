@@ -259,8 +259,8 @@ function isMarketHours() {
   if (day < 1 || day > 5) return false; // Chỉ T2-T6
 
   const t = vnTime.getHours() * 100 + vnTime.getMinutes();
-  // Giờ giao dịch phái sinh & cơ sở: 8h45 - 11h30 và 13h00 - 14h45
-  return (t >= 845 && t <= 1130) || (t >= 1300 && t <= 1445);
+  // Giờ giao dịch phái sinh & cơ sở: từ 9h00 (TUYỆT ĐỐI không bắn noti/quét trước 9h00 sáng) đến 11h30 và 13h00 đến 14h45
+  return (t >= 900 && t <= 1130) || (t >= 1300 && t <= 1445);
 }
 
 async function fetchRealtimeFuturesPrice() {
@@ -313,12 +313,18 @@ async function analyzeComponentAlignment() {
       const raw = rawList.find(r => r.sym === comp.sym);
       if (!raw) continue;
 
-      const price    = parseFloat(raw.lastPrice || 0) * 1000;
+      let price      = parseFloat(raw.lastPrice || 0) * 1000;
       const refPrice = parseFloat(raw.r || 0) * 1000;
-      if (refPrice === 0) continue;
+      if (refPrice <= 0) continue;
+
+      // Nếu mã chưa có khớp lệnh trong phiên (price == 0), dùng refPrice (changePct = 0)
+      if (price <= 0) {
+        price = refPrice;
+      }
 
       const changePct = (price - refPrice) / refPrice * 100;
-      const isGreen   = changePct >= 0;
+      const isGreen   = changePct > 0;
+      const isRed     = changePct < 0;
       const absPct    = Math.abs(changePct);
 
       const item = {
@@ -340,7 +346,7 @@ async function analyzeComponentAlignment() {
         if (absPct >= 4)         strongBullCount++;
         else if (isSignificant) bullCount++;
         else                     mildBullCount++;
-      } else {
+      } else if (isRed) {
         weightedRed += comp.weight;
         redCount++;
         if (absPct >= 4)         strongBearCount++;
