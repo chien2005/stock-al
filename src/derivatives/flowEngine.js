@@ -151,6 +151,7 @@ function detectAbsorption(intradayData) {
         level: parseFloat(absorptionLevel.toFixed(1)),
         confidence: Math.min(85, 50 + (totalVol / avgVol) * 10),
         description: `Lực bán mạnh tại ${absorptionLevel.toFixed(1)} nhưng giá không giảm → CẦU đang hấp thụ`,
+        actionTip: `Có lực đỡ gom hàng quanh ${absorptionLevel.toFixed(1)} → Không Short đuổi ở vùng này`,
       };
     }
 
@@ -163,6 +164,7 @@ function detectAbsorption(intradayData) {
         level: parseFloat(absorptionLevel.toFixed(1)),
         confidence: Math.min(85, 50 + (totalVol / avgVol) * 10),
         description: `Lực mua mạnh tại ${absorptionLevel.toFixed(1)} nhưng giá không tăng → CUNG đang đè`,
+        actionTip: `Có lực đè bán chặn quanh ${absorptionLevel.toFixed(1)} → Không Long đuổi ở vùng này`,
       };
     }
   }
@@ -203,7 +205,8 @@ function detectLiquiditySweep(intradayData, keyLevels) {
               sweepLow: parseFloat(lows[i].toFixed(1)),
               recoveryPts: parseFloat(recovery.toFixed(1)),
               description: `Quét thanh khoản dưới ${level.price.toFixed(1)} → bật ngược ${recovery.toFixed(1)} điểm`,
-              signal: 'BULLISH', // Sweep down = bullish signal
+              actionTip: `Đã có bẫy rũ bỏ đáy dưới ${level.price.toFixed(1)} → Ưu tiên canh Long khi giá test lại hỗ trợ`,
+              signal: 'BULLISH',
             };
           }
         }
@@ -222,6 +225,7 @@ function detectLiquiditySweep(intradayData, keyLevels) {
               sweepHigh: parseFloat(highs[i].toFixed(1)),
               declinePts: parseFloat(decline.toFixed(1)),
               description: `Quét thanh khoản trên ${level.price.toFixed(1)} → rơi ngược ${decline.toFixed(1)} điểm`,
+              actionTip: `Đã có bẫy kéo vượt đỉnh ${level.price.toFixed(1)} rồi xả → Ưu tiên canh Short khi giá hồi lên gần cản`,
               signal: 'BEARISH',
             };
           }
@@ -238,12 +242,11 @@ function detectLiquiditySweep(intradayData, keyLevels) {
  */
 function calculateVelocity(intradayData) {
   if (!intradayData || !intradayData.c || intradayData.c.length < 5) {
-    return { current: 0, avg: 0, isImpulse: false, label: 'BÌNH THƯỜNG' };
+    return { current: 0, avg: 0, isImpulse: false, label: 'Bình thường', actionAdvice: 'Biến động ổn định → Thích hợp đi lệnh theo kế hoạch' };
   }
 
   const { c, t } = intradayData;
 
-  // Velocity = |ΔPrice| / ΔTime (điểm/phút)
   const recentLen = Math.min(10, c.length);
   const velocities = [];
 
@@ -255,22 +258,33 @@ function calculateVelocity(intradayData) {
   const current = velocities.length > 0 ? velocities[velocities.length - 1] : 0;
   const avg = velocities.length > 0 ? velocities.reduce((s, v) => s + v, 0) / velocities.length : 0;
 
-  // Velocity đặc biệt: tính cho cú move gần nhất (5 bars)
   const move5 = Math.abs(c[c.length - 1] - c[Math.max(0, c.length - 6)]);
-  const velocity5 = move5 / 5; // điểm/phút
+  const velocity5 = move5 / 5;
 
-  const isImpulse = velocity5 >= 1.5; // ≥1.5 điểm/phút = impulse
-  let label = 'BÌNH THƯỜNG';
-  if (velocity5 >= 3) label = 'CỰC NHANH';
-  else if (velocity5 >= 1.5) label = 'RẤT NHANH';
-  else if (velocity5 >= 0.8) label = 'NHANH';
-  else if (velocity5 < 0.3) label = 'CHẬM';
+  const isImpulse = velocity5 >= 1.5;
+  let label = 'Bình thường';
+  let actionAdvice = 'Biến động ổn định → Thích hợp đi lệnh theo kế hoạch';
+
+  if (velocity5 >= 3) {
+    label = 'Cực nhanh (Giật mạnh)';
+    actionAdvice = '⚠️ Dễ bị quét Stoploss, tuyệt đối không mua/bán đuổi';
+  } else if (velocity5 >= 1.5) {
+    label = 'Rất nhanh';
+    actionAdvice = '⚠️ Đợi giá test lại vùng cân bằng, tránh fomo';
+  } else if (velocity5 >= 0.8) {
+    label = 'Nhanh';
+    actionAdvice = 'Đi lệnh dứt khoát khi chạm điểm vào';
+  } else if (velocity5 < 0.3) {
+    label = 'Chậm / Tích lũy';
+    actionAdvice = 'Thị trường đi ngang, kiên nhẫn chờ sóng';
+  }
 
   return {
     current: parseFloat(velocity5.toFixed(2)),
     avg: parseFloat(avg.toFixed(2)),
     isImpulse,
     label,
+    actionAdvice,
     move5Pts: parseFloat(move5.toFixed(1)),
     direction: c[c.length - 1] > c[Math.max(0, c.length - 6)] ? 'UP' : 'DOWN',
   };
@@ -279,11 +293,10 @@ function calculateVelocity(intradayData) {
 /**
  * Tính Directional Efficiency
  * Efficiency = Net Price Movement / Total Absolute Movement
- * Cao = trend sạch, Thấp = chop/noise
  */
 function calculateEfficiency(intradayData, lookback = 20) {
   if (!intradayData || !intradayData.c || intradayData.c.length < lookback) {
-    return { value: 0.5, label: 'CHƯA ĐỦ DỮ LIỆU' };
+    return { value: 0.5, label: 'Đang theo dõi', actionAdvice: 'Chưa đủ dữ liệu sóng' };
   }
 
   const c = intradayData.c;
@@ -297,16 +310,30 @@ function calculateEfficiency(intradayData, lookback = 20) {
 
   const efficiency = totalMove > 0 ? netMove / totalMove : 0;
 
-  let label = 'BÌNH THƯỜNG';
-  if (efficiency >= 0.7) label = 'TREND RẤT SẠCH';
-  else if (efficiency >= 0.5) label = 'TREND KHÁ SẠCH';
-  else if (efficiency >= 0.35) label = 'BÌNH THƯỜNG';
-  else if (efficiency >= 0.2) label = 'NHIỄU NHIỀU';
-  else label = 'CHOP / ĐẤU GIÁ 2 CHIỀU';
+  let label = 'Bình thường';
+  let actionAdvice = 'Giao dịch tỷ trọng vừa phải';
+
+  if (efficiency >= 0.7) {
+    label = 'Sóng rất sạch (Dứt khoát)';
+    actionAdvice = '✅ Tự tin bám theo xu hướng chính';
+  } else if (efficiency >= 0.5) {
+    label = 'Sóng khá dứt khoát';
+    actionAdvice = '✅ Bám theo sóng, giữ vị thế theo target';
+  } else if (efficiency >= 0.35) {
+    label = 'Bình thường';
+    actionAdvice = 'Giao dịch theo các mốc hỗ trợ / kháng cự';
+  } else if (efficiency >= 0.2) {
+    label = 'Nhiễu nhiều (Giằng co)';
+    actionAdvice = '⚠️ Đứng ngoài hoặc đánh ngắn, chốt lời nhanh';
+  } else {
+    label = 'Đấu giá 2 chiều (Chop)';
+    actionAdvice = '⚠️ Hạn chế giao dịch, chờ bứt phá khỏi vùng hộp';
+  }
 
   return {
     value: parseFloat(efficiency.toFixed(2)),
     label,
+    actionAdvice,
     netMove: parseFloat(netMove.toFixed(1)),
     totalMove: parseFloat(totalMove.toFixed(1)),
   };

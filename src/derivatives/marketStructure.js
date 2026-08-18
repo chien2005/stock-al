@@ -219,19 +219,19 @@ function buildPriceMap({ intradayF1M, dailyF1M, dailyVN30 }) {
   // ─── VWAP ─────────────────────────────────────────
   const vwap = calculateVWAP(intradayF1M);
   if (vwap) {
-    levels.push({ price: vwap, type: 'VWAP', label: 'VWAP', strength: 'MEDIUM' });
+    levels.push({ price: vwap, type: 'VWAP', label: 'Giá trung bình phiên (VWAP)', strength: 'MEDIUM' });
   }
 
   // ─── Volume Profile ───────────────────────────────
   const volumeProfile = calculateVolumeProfile(intradayF1M);
   if (volumeProfile.poc) {
-    levels.push({ price: volumeProfile.poc, type: 'POC', label: 'POC (Volume cao nhất)', strength: 'STRONG' });
+    levels.push({ price: volumeProfile.poc, type: 'POC', label: 'Vùng khớp nhiều nhất (POC)', strength: 'STRONG' });
   }
   if (volumeProfile.vah) {
-    levels.push({ price: volumeProfile.vah, type: 'VAH', label: 'VAH (Biên trên vùng giá trị)', strength: 'MEDIUM' });
+    levels.push({ price: volumeProfile.vah, type: 'VAH', label: 'Cản trên vùng giá trị (VAH)', strength: 'MEDIUM' });
   }
   if (volumeProfile.val) {
-    levels.push({ price: volumeProfile.val, type: 'VAL', label: 'VAL (Biên dưới vùng giá trị)', strength: 'MEDIUM' });
+    levels.push({ price: volumeProfile.val, type: 'VAL', label: 'Hỗ trợ dưới vùng giá trị (VAL)', strength: 'MEDIUM' });
   }
 
   // ─── Swing Points ─────────────────────────────────
@@ -239,12 +239,12 @@ function buildPriceMap({ intradayF1M, dailyF1M, dailyVN30 }) {
   for (const sh of swings.swingHighs.slice(-3)) {
     // Tránh trùng với levels đã có
     if (!levels.find(l => Math.abs(l.price - sh.price) < 1.5)) {
-      levels.push({ price: sh.price, type: 'RESISTANCE', label: 'Swing High', strength: 'WEAK' });
+      levels.push({ price: sh.price, type: 'RESISTANCE', label: 'Đỉnh ngắn hạn', strength: 'WEAK' });
     }
   }
   for (const sl of swings.swingLows.slice(-3)) {
     if (!levels.find(l => Math.abs(l.price - sl.price) < 1.5)) {
-      levels.push({ price: sl.price, type: 'SUPPORT', label: 'Swing Low', strength: 'WEAK' });
+      levels.push({ price: sl.price, type: 'SUPPORT', label: 'Đáy ngắn hạn', strength: 'WEAK' });
     }
   }
 

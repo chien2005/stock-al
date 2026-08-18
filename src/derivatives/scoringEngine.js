@@ -265,38 +265,89 @@ function calculateScore({
     }
   }
 
-  // ═══ FINAL DIRECTION & CONFIDENCE ═══
-  const totalScore = Math.max(longScore, shortScore);
-  const direction = longScore > shortScore ? 'LONG' : longScore < shortScore ? 'SHORT' : 'NEUTRAL';
-  const confidence = Math.min(95, Math.max(20, totalScore));
+  // ─── TỔNG KẾT TỪNG LỚP BẰNG TIẾNG VIỆT RÕ RÀNG ───
+  let structureSummary = 'Cân bằng / Đang kiểm định vùng giá';
+  if (breakdown.structure.short > breakdown.structure.long + 3) structureSummary = 'Nghiêng Bán (Áp lực cản trên đè)';
+  else if (breakdown.structure.long > breakdown.structure.short + 3) structureSummary = 'Nghiêng Mua (Giữ vững vùng hỗ trợ)';
 
-  // Setup Quality
-  let setupQuality = 'C';
-  if (confidence >= 80) setupQuality = 'A+';
-  else if (confidence >= 72) setupQuality = 'A';
-  else if (confidence >= 65) setupQuality = 'A-';
-  else if (confidence >= 58) setupQuality = 'B+';
-  else if (confidence >= 50) setupQuality = 'B';
-  else if (confidence >= 42) setupQuality = 'B-';
+  let flowSummary = 'Cân bằng (Chưa có phe áp đảo)';
+  if (flowResult && flowResult.aggression) {
+    if (flowResult.aggression.dominant === 'SELLERS' || flowResult.cvd.direction === 'FALLING') {
+      flowSummary = 'Phe Bán chủ động / CVD dốc xuống';
+    } else if (flowResult.aggression.dominant === 'BUYERS' && flowResult.cvd.direction === 'RISING') {
+      flowSummary = 'Phe Mua chiếm ưu thế / CVD tăng';
+    } else if (flowResult.aggression.dominant === 'BUYERS') {
+      flowSummary = 'Phe Mua nhiều hơn nhưng đà tăng chững lại';
+    }
+  }
+
+  let breadthSummary = 'Phân hóa giằng co';
+  if (breadthResult) {
+    if (breadthResult.greenCount >= 20) breadthSummary = `Đồng thuận Tăng (${breadthResult.greenCount} xanh / ${breadthResult.redCount} đỏ)`;
+    else if (breadthResult.redCount >= 20) breadthSummary = `Đồng thuận Giảm (${breadthResult.redCount} đỏ / ${breadthResult.greenCount} xanh)`;
+    else breadthSummary = `Phân hóa (${breadthResult.greenCount} xanh / ${breadthResult.redCount} đỏ)`;
+  }
+
+  let regimeSummary = regimeResult ? regimeResult.description : 'Bình thường';
+
+  // ═══ ĐIỀU KIỆN KÍCH HOẠT LỆNH DỨT KHOÁT (Tránh tín hiệu mông lung) ═══
+  const scoreDiff = Math.abs(longScore - shortScore);
+  const leadingScore = Math.max(longScore, shortScore);
+
+  let finalDirection = 'NO_TRADE';
+  let tradeConfidence = 0;
+  let setupQuality = 'N/A';
+
+  // Chỉ mở vị thế khi:
+  // 1. Không bị Veto
+  // 2. Điểm phe dẫn đầu >= 35
+  // 3. Cách biệt giữa 2 phe >= 6 điểm
+  const isTradeable = !vetoed && leadingScore >= 35 && scoreDiff >= 6;
+
+  if (isTradeable) {
+    finalDirection = longScore > shortScore ? 'LONG' : 'SHORT';
+    tradeConfidence = Math.min(92, Math.round(55 + leadingScore * 0.4 + scoreDiff * 1.5));
+    if (tradeConfidence >= 80) setupQuality = 'A+';
+    else if (tradeConfidence >= 72) setupQuality = 'A';
+    else if (tradeConfidence >= 65) setupQuality = 'A-';
+    else setupQuality = 'B+';
+  } else {
+    finalDirection = 'NO_TRADE';
+    tradeConfidence = 0;
+    setupQuality = 'N/A';
+    if (!vetoReason) {
+      if (leadingScore < 30) {
+        vetoReason = 'Tín hiệu chưa đủ mạnh → Đứng ngoài quan sát';
+      } else {
+        vetoReason = `Hai phe giằng co cân bằng (Long ${Math.round(longScore)}đ / Short ${Math.round(shortScore)}đ) → Chưa có ưu thế rõ ràng`;
+      }
+    }
+  }
 
   // Risk level
-  let risk = 'MEDIUM';
-  if (regimeResult && (regimeResult.regime === 'TWO_SIDED_CHOP' || regimeResult.regime === 'EXPIRY_DISTORTION')) risk = 'HIGH';
-  else if (liquidityResult && liquidityResult.regime === 'CẠN') risk = 'HIGH';
-  else if (confidence >= 75 && efficiencyResult && efficiencyResult.value >= 0.5) risk = 'LOW';
+  let risk = 'VỪA PHẢI';
+  if (regimeResult && (regimeResult.regime === 'TWO_SIDED_CHOP' || regimeResult.regime === 'EXPIRY_DISTORTION')) risk = 'CAO';
+  else if (liquidityResult && liquidityResult.regime === 'CẠN') risk = 'CAO';
+  else if (tradeConfidence >= 75 && efficiencyResult && efficiencyResult.value >= 0.5) risk = 'THẤP';
 
   return {
-    direction: vetoed ? 'NO_TRADE' : direction,
-    confidence: vetoed ? 0 : confidence,
-    setupQuality: vetoed ? 'N/A' : setupQuality,
+    direction: finalDirection,
+    confidence: tradeConfidence,
+    setupQuality,
     risk,
     longScore: Math.round(longScore),
     shortScore: Math.round(shortScore),
-    totalScore: Math.round(totalScore),
+    totalScore: Math.round(leadingScore),
     breakdown,
-    vetoed,
-    vetoReason,
-    biasDirection: direction, // Direction trước veto (để ref)
+    layerSummaries: {
+      structure: structureSummary,
+      flow: flowSummary,
+      breadth: breadthSummary,
+      regime: regimeSummary,
+    },
+    vetoed: !isTradeable,
+    vetoReason: isTradeable ? null : vetoReason,
+    biasDirection: longScore > shortScore ? 'LONG' : longScore < shortScore ? 'SHORT' : 'NEUTRAL',
   };
 }
 
