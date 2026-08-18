@@ -4,7 +4,7 @@
  * ╠═══════════════════════════════════════════════════════════════╣
  * ║  Xây dựng Price Map — trả lời "giá đang ở đâu?"             ║
  * ║  Key Levels, VWAP, Volume Profile (POC/VAH/VAL),             ║
- * ║  Swing H/L, Gap, Support/Resistance                          ║
+ * ║  EMA9/20/50, Cấu trúc Sóng LH/LL - HH/HL, Breakdown/Breakout║
  * ╚═══════════════════════════════════════════════════════════════╝
  */
 
@@ -35,8 +35,20 @@ function calculateVWAP(intradayData) {
 }
 
 /**
+ * Tính EMA
+ */
+function calculateEMA(prices, period) {
+  if (!prices || prices.length < period) return null;
+  const k = 2 / (period + 1);
+  let ema = prices.slice(0, period).reduce((s, p) => s + p, 0) / period;
+  for (let i = period; i < prices.length; i++) {
+    ema = prices[i] * k + ema * (1 - k);
+  }
+  return parseFloat(ema.toFixed(2));
+}
+
+/**
  * Tính Volume Profile → POC, VAH, VAL
- * Phân bổ volume theo mức giá (bins 1 điểm)
  */
 function calculateVolumeProfile(intradayData) {
   if (!intradayData || !intradayData.c || intradayData.c.length < 10) {
@@ -45,9 +57,8 @@ function calculateVolumeProfile(intradayData) {
 
   const { h, l, c, v, t } = intradayData;
   const todayStart = _getTodayStartTs(t);
-  const BIN_SIZE = 1; // 1 điểm mỗi bin
+  const BIN_SIZE = 1;
 
-  // Tạo histogram giá → volume
   const volumeMap = {};
 
   for (let i = 0; i < c.length; i++) {
@@ -56,7 +67,6 @@ function calculateVolumeProfile(intradayData) {
     const high = h ? h[i] : c[i];
     const low = l ? l[i] : c[i];
 
-    // Phân bổ volume đều cho range [low, high]
     const lowBin = Math.floor(low / BIN_SIZE) * BIN_SIZE;
     const highBin = Math.floor(high / BIN_SIZE) * BIN_SIZE;
     const numBins = Math.max(1, (highBin - lowBin) / BIN_SIZE + 1);
@@ -67,18 +77,15 @@ function calculateVolumeProfile(intradayData) {
     }
   }
 
-  // Tìm POC (mức giá volume cao nhất)
   const entries = Object.entries(volumeMap).map(([p, v]) => ({ price: parseFloat(p), volume: v }));
   if (entries.length === 0) return { poc: null, vah: null, val: null, nodes: [] };
 
   entries.sort((a, b) => b.volume - a.volume);
   const poc = entries[0].price;
 
-  // Tính Value Area (70% tổng volume)
   const totalVol = entries.reduce((s, e) => s + e.volume, 0);
   const targetVol = totalVol * 0.70;
 
-  // Mở rộng từ POC ra 2 bên cho đến khi đạt 70%
   entries.sort((a, b) => a.price - b.price);
   const pocIdx = entries.findIndex(e => e.price === poc);
 
@@ -104,7 +111,6 @@ function calculateVolumeProfile(intradayData) {
   const val = entries[lowIdx].price;
   const vah = entries[highIdx].price;
 
-  // Volume nodes (top 5 mức giá volume cao nhất, ngoài POC)
   const nodes = entries
     .sort((a, b) => b.volume - a.volume)
     .slice(0, 5)
@@ -119,9 +125,9 @@ function calculateVolumeProfile(intradayData) {
 }
 
 /**
- * Phát hiện Swing High/Low trên data (tìm local peaks/troughs)
+ * Phát hiện Swing High/Low
  */
-function findSwingPoints(intradayData, lookback = 5) {
+function findSwingPoints(intradayData, lookback = 4) {
   if (!intradayData || !intradayData.c || intradayData.c.length < lookback * 2 + 1) {
     return { swingHighs: [], swingLows: [] };
   }
@@ -137,7 +143,6 @@ function findSwingPoints(intradayData, lookback = 5) {
   for (let i = lookback; i < c.length - lookback; i++) {
     if (t && t[i] < todayStart) continue;
 
-    // Swing High: cao nhất trong window
     let isSwingHigh = true;
     let isSwingLow = true;
 
@@ -160,7 +165,6 @@ function findSwingPoints(intradayData, lookback = 5) {
 
 /**
  * Build complete Price Map
- * @param {Object} params - { intradayF1M, dailyF1M, dailyVN30 }
  */
 function buildPriceMap({ intradayF1M, dailyF1M, dailyVN30 }) {
   const levels = [];
@@ -216,11 +220,14 @@ function buildPriceMap({ intradayF1M, dailyF1M, dailyVN30 }) {
     else if (gap.points < -1) gap.type = 'GAP_DOWN';
   }
 
-  // ─── VWAP ─────────────────────────────────────────
+  // ─── VWAP & EMAs ──────────────────────────────────
   const vwap = calculateVWAP(intradayF1M);
   if (vwap) {
     levels.push({ price: vwap, type: 'VWAP', label: 'Giá trung bình phiên (VWAP)', strength: 'MEDIUM' });
   }
+
+  const ema9 = intradayF1M && intradayF1M.c ? calculateEMA(intradayF1M.c, 9) : null;
+  const ema20 = intradayF1M && intradayF1M.c ? calculateEMA(intradayF1M.c, 20) : null;
 
   // ─── Volume Profile ───────────────────────────────
   const volumeProfile = calculateVolumeProfile(intradayF1M);
@@ -235,9 +242,8 @@ function buildPriceMap({ intradayF1M, dailyF1M, dailyVN30 }) {
   }
 
   // ─── Swing Points ─────────────────────────────────
-  const swings = findSwingPoints(intradayF1M, 5);
+  const swings = findSwingPoints(intradayF1M, 4);
   for (const sh of swings.swingHighs.slice(-3)) {
-    // Tránh trùng với levels đã có
     if (!levels.find(l => Math.abs(l.price - sh.price) < 1.5)) {
       levels.push({ price: sh.price, type: 'RESISTANCE', label: 'Đỉnh ngắn hạn', strength: 'WEAK' });
     }
@@ -248,15 +254,12 @@ function buildPriceMap({ intradayF1M, dailyF1M, dailyVN30 }) {
     }
   }
 
-  // ─── Sort levels và xác định current zone ─────────
   levels.sort((a, b) => b.price - a.price);
 
-  // Deduplicate: merge levels gần nhau (< 1.5 điểm)
   const deduped = [];
   for (const level of levels) {
     const existing = deduped.find(l => Math.abs(l.price - level.price) < 1.5);
     if (existing) {
-      // Giữ level mạnh hơn
       if (_strengthRank(level.strength) > _strengthRank(existing.strength)) {
         Object.assign(existing, level);
       }
@@ -265,12 +268,65 @@ function buildPriceMap({ intradayF1M, dailyF1M, dailyVN30 }) {
     }
   }
 
-  // Current price position
   const currentPrice = intradayF1M && intradayF1M.c ? intradayF1M.c[intradayF1M.c.length - 1] : null;
+
+  // ─── CẤU TRÚC SÓNG & ĐỘ DỐC (LH/LL vs HH/HL) ─────
+  let waveStructure = 'NEUTRAL';
+  if (swings.swingHighs.length >= 2 && swings.swingLows.length >= 2) {
+    const last2Highs = swings.swingHighs.slice(-2);
+    const last2Lows = swings.swingLows.slice(-2);
+
+    const isLowerHighs = last2Highs[1].price < last2Highs[0].price;
+    const isLowerLows = last2Lows[1].price < last2Lows[0].price;
+
+    const isHigherHighs = last2Highs[1].price > last2Highs[0].price;
+    const isHigherLows = last2Lows[1].price > last2Lows[0].price;
+
+    if (isLowerHighs && isLowerLows) waveStructure = 'LOWER_HIGHS_LOWER_LOWS'; // Downtrend
+    else if (isHigherHighs && isHigherLows) waveStructure = 'HIGHER_HIGHS_HIGHER_LOWS'; // Uptrend
+  }
+
+  // ─── XÁC ĐỊNH TREND RÕ RÀNG ──────────────────────
+  let trendBias = 'NEUTRAL';
+  let trendStrength = 0;
+
+  if (currentPrice && vwap) {
+    const diffVWAP = currentPrice - vwap;
+
+    if (diffVWAP <= -2.0) {
+      trendBias = 'BEARISH';
+      trendStrength = Math.min(90, Math.round(50 + Math.abs(diffVWAP) * 6));
+    } else if (diffVWAP >= 2.0) {
+      trendBias = 'BULLISH';
+      trendStrength = Math.min(90, Math.round(50 + diffVWAP * 6));
+    } else if (diffVWAP < 0) {
+      trendBias = 'MILD_BEARISH';
+      trendStrength = 40;
+    } else {
+      trendBias = 'MILD_BULLISH';
+      trendStrength = 40;
+    }
+
+    // Kết hợp EMA20
+    if (ema20 && currentPrice < ema20 && trendBias.includes('BEARISH')) {
+      trendStrength += 15;
+    } else if (ema20 && currentPrice > ema20 && trendBias.includes('BULLISH')) {
+      trendStrength += 15;
+    }
+  }
+
+  // Breakdown detection (thủng VAH sau khi vượt đỉnh)
+  let structuralBreak = null;
+  if (todayRange.high && volumeProfile.vah && currentPrice) {
+    if (todayRange.high >= volumeProfile.vah + 3 && currentPrice <= volumeProfile.vah - 1) {
+      structuralBreak = 'FAILED_BREAKOUT_BEARISH';
+    }
+  }
+
   let currentZone = 'UNKNOWN';
   if (currentPrice) {
-    const supports = deduped.filter(l => l.type === 'SUPPORT' && l.price <= currentPrice);
-    const resistances = deduped.filter(l => l.type === 'RESISTANCE' && l.price >= currentPrice);
+    const supports = deduped.filter(l => (l.type === 'SUPPORT' || l.type === 'VAL') && l.price <= currentPrice);
+    const resistances = deduped.filter(l => (l.type === 'RESISTANCE' || l.type === 'VAH') && l.price >= currentPrice);
     const nearestSupport = supports.length > 0 ? supports[0] : null;
     const nearestResistance = resistances.length > 0 ? resistances[resistances.length - 1] : null;
 
@@ -288,6 +344,8 @@ function buildPriceMap({ intradayF1M, dailyF1M, dailyVN30 }) {
     currentZone,
     currentPrice: currentPrice ? parseFloat(currentPrice.toFixed(1)) : null,
     vwap,
+    ema9,
+    ema20,
     poc: volumeProfile.poc,
     vah: volumeProfile.vah,
     val: volumeProfile.val,
@@ -296,12 +354,13 @@ function buildPriceMap({ intradayF1M, dailyF1M, dailyVN30 }) {
     gap,
     swingHighs: swings.swingHighs.map(s => s.price),
     swingLows: swings.swingLows.map(s => s.price),
+    waveStructure,
+    trendBias,
+    trendStrength,
+    structuralBreak,
   };
 }
 
-/**
- * Tìm nearest support/resistance từ một mức giá
- */
 function findNearestLevels(priceMap, fromPrice) {
   if (!priceMap || !priceMap.levels || !fromPrice) return { support: null, resistance: null };
 
@@ -319,10 +378,8 @@ function findNearestLevels(priceMap, fromPrice) {
   };
 }
 
-// ─── INTERNAL HELPERS ────────────────────────────────────────
 function _getTodayStartTs(timestamps) {
   if (!timestamps || timestamps.length === 0) return 0;
-  // Tìm timestamp bắt đầu ngày hôm nay (0h00 VN)
   const now = new Date();
   const vnTime = new Date(now.toLocaleString('en-US', { timeZone: config.timezone }));
   vnTime.setHours(0, 0, 0, 0);
@@ -336,6 +393,7 @@ function _strengthRank(strength) {
 module.exports = {
   buildPriceMap,
   calculateVWAP,
+  calculateEMA,
   calculateVolumeProfile,
   findSwingPoints,
   findNearestLevels,
