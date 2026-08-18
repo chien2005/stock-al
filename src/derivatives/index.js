@@ -335,25 +335,40 @@ async function runDerivativesOIJob(session = 'evening') {
   }
 }
 
+// Rolling price buffer for 5-minute momentum detection
+const _momentumHistory = [];
+
 // ─── MOMENTUM MONITOR ───────────────────────────────────────
 async function checkMomentum() {
   if (!dataFetcher.isMarketHours()) return;
 
   try {
-    const vn30Price = await dataFetcher.fetchRealtimeVN30Price();
-    if (!vn30Price) return;
+    const vn30PriceObj = await dataFetcher.fetchRealtimeVN30Price();
+    if (!vn30PriceObj) return;
 
-    const currentPrice = vn30Price.price;
+    const currentPrice = vn30PriceObj.price;
     const nowTs = Date.now();
 
-    // Biến động ≥ 4 điểm trong 5 phút
-    if (_state.lastMomentumPrice !== null) {
-      const priceChange = currentPrice - _state.lastMomentumPrice;
-      const timeDiffMin = (nowTs - _state.lastMomentumTime) / 60000;
+    // 1. Lưu price vào rolling buffer
+    _momentumHistory.push({ price: currentPrice, ts: nowTs });
 
-      if (Math.abs(priceChange) >= 4.0 && timeDiffMin <= 6) {
+    // Xóa data cũ > 10 phút
+    while (_momentumHistory.length > 0 && (nowTs - _momentumHistory[0].ts > 10 * 60 * 1000)) {
+      _momentumHistory.shift();
+    }
+
+    // 2. Tìm giá cách đây khoảng 3 - 6 phút
+    const targetTs = nowTs - (5 * 60 * 1000);
+    const pastEntry = _momentumHistory.find(e => Math.abs(e.ts - targetTs) <= 90 * 1000) || _momentumHistory[0];
+
+    if (pastEntry && _momentumHistory.length >= 3) {
+      const priceChange = currentPrice - pastEntry.price;
+      const timeDiffMin = (nowTs - pastEntry.ts) / 60000;
+
+      // Biến động ≥ 4 điểm trong vòng 3 - 7 phút
+      if (Math.abs(priceChange) >= 4.0 && timeDiffMin >= 2 && timeDiffMin <= 7) {
         const alertType = priceChange > 0 ? 'SURGE_UP' : 'SURGE_DOWN';
-        const cooldownMs = 5 * 60 * 1000;
+        const cooldownMs = 15 * 60 * 1000; // 15 phút cooldown cho cùng 1 hướng
         const lastAlert = _state.lastAlertTime[alertType] || 0;
 
         if (nowTs - lastAlert > cooldownMs) {
@@ -366,7 +381,7 @@ async function checkMomentum() {
       }
     }
 
-    // Check leader exhaustion
+    // 3. Check leader exhaustion
     const realtimeVN30 = await dataFetcher.fetchRealtimeVN30();
     const breadthResult = analyzeBreadth(realtimeVN30);
     const leaderResult = analyzeLeaders(breadthResult, _state.prevLeaderSnapshot);
@@ -374,7 +389,7 @@ async function checkMomentum() {
 
     if (leaderResult.exhaustion.length > 0) {
       const alertType = 'LEADER_EXHAUSTION';
-      const cooldownMs = 10 * 60 * 1000;
+      const cooldownMs = 20 * 60 * 1000; // 20 phút cooldown
       const lastAlert = _state.lastAlertTime[alertType] || 0;
       if (nowTs - lastAlert > cooldownMs) {
         const msg = buildLeaderAlert(leaderResult.exhaustion);
@@ -383,10 +398,10 @@ async function checkMomentum() {
       }
     }
 
-    // Check trap
-    if (breadthResult.trap.detected && breadthResult.trap.confidence >= 70) {
+    // 4. Check trap
+    if (breadthResult.trap.detected && breadthResult.trap.confidence >= 75) {
       const alertType = `TRAP_${breadthResult.trap.detected}`;
-      const cooldownMs = 15 * 60 * 1000;
+      const cooldownMs = 30 * 60 * 1000; // 30 phút cooldown
       const lastAlert = _state.lastAlertTime[alertType] || 0;
       if (nowTs - lastAlert > cooldownMs) {
         const msg = buildTrapAlert(breadthResult);
@@ -394,9 +409,6 @@ async function checkMomentum() {
         _state.lastAlertTime[alertType] = nowTs;
       }
     }
-
-    _state.lastMomentumPrice = currentPrice;
-    _state.lastMomentumTime = nowTs;
   } catch (e) {
     console.error('   ⚠️ Momentum check error:', e.message);
   }
