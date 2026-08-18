@@ -33,8 +33,7 @@ const { startBotHandler, stopBotHandler } = require('./botHandler');
 const { startAlertMonitor, stopAlertMonitor, resetDailyData, flushBigTradeBuffer } = require('./alertService');
 const { runSmartMoneyReport } = require('./smartMoneyReport');
 const { runWhaleTrackerReport } = require('./whaleTracker');
-const { runMorningDerivativesJob, runMidMorningDerivativesJob, runAfternoonDerivativesJob, runAIDerivativesJob, resetDerivativesState, startMomentumMonitor } = require('./derivativesSignal');
-const { runDerivativesOIJob } = require('./derivativesOI');
+const { runMorningDerivativesJob, runMidMorningDerivativesJob, runAfternoonDerivativesJob, runAIDerivativesJob, runDerivativesOIJob, resetDerivativesState, startMomentumMonitor } = require('./derivatives');
 
 // ─── Thời điểm khởi động (cho health check) ─────────────
 const startedAt = new Date();
@@ -407,7 +406,7 @@ async function main() {
       await sendDerivativesMessage(
         `🔮 <b>VN Stock Bot v${config.version} đã kết nối! (Nhóm Phái Sinh VN30F)</b>\n` +
         `🕐 ${startupTime}\n` +
-        `📊 Chế độ: <b>Tín hiệu Phái Sinh v3.0 + Radar Thanh Khoản VN30</b>\n` +
+        `📊 Chế độ: <b>Tín hiệu Phái Sinh v4.0 (Bản Đồ Giá & 8 Lớp Phân Tích)</b>\n` +
         `⏰ Phiên sáng: 9h05 - 11h30 (5p/lần) | Phiên chiều: 13h14 & 13h55\n` +
         `🤖 AI Phái sinh: 9h22 | 10h22 | 13h50\n` +
         `📊 OI & Basis: 19h30\n` +
@@ -546,7 +545,7 @@ async function main() {
   // ─── SCHEDULE: DERIVATIVES SIGNAL — RESET & START MONITOR 9h00 ───
   cron.schedule('0 9 * * 1-5', async () => {
     if (!isWeekday()) return;
-    console.log('\n🔮 [Derivatives v3.0] Reset daily state & start momentum monitor');
+    console.log('\n🔮 [Derivatives v4.0] Reset daily state & start momentum monitor');
     try { 
       resetDerivativesState();
       startMomentumMonitor();
@@ -566,12 +565,12 @@ async function main() {
       const minKey = new Date().getMinutes();
       const hourKey = new Date().getHours();
       if (isDuplicate(`derivativesMorning_${hourKey}_${minKey}`)) return;
-      console.log(`\n🔮 [Derivatives Morning v3.0] Cron triggered: ${now}`);
+      console.log(`\n🔮 [Derivatives Morning v4.0] Cron triggered: ${now}`);
       try {
         await runMorningDerivativesJob();
         jobLastSuccess['derivativesMorning'] = Date.now();
       } catch (err) {
-        console.error('🔮 [Derivatives Morning v3.0] Lỗi:', err.message);
+        console.error('🔮 [Derivatives Morning v4.0] Lỗi:', err.message);
         jobLastError['derivativesMorning'] = { time: Date.now(), message: err.message };
       }
     }, { scheduled: true, timezone: config.timezone });
@@ -585,12 +584,12 @@ async function main() {
       if (!isWeekday()) return;
       if (isDuplicate('derivativesAfternoon')) return;
       const now = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
-      console.log(`\n🔮 [Derivatives Afternoon v3.0] Cron triggered: ${now}`);
+      console.log(`\n🔮 [Derivatives Afternoon v4.0] Cron triggered: ${now}`);
       try {
         await runAfternoonDerivativesJob();
         jobLastSuccess['derivativesAfternoon'] = Date.now();
       } catch (err) {
-        console.error('🔮 [Derivatives Afternoon v3.0] Lỗi:', err.message);
+        console.error('🔮 [Derivatives Afternoon v4.0] Lỗi:', err.message);
         jobLastError['derivativesAfternoon'] = { time: Date.now(), message: err.message };
       }
     }, { scheduled: true, timezone: config.timezone });
@@ -601,7 +600,7 @@ async function main() {
   cron.schedule('22 9 * * 1-5', async () => {
     if (!isWeekday()) return;
     if (isDuplicate('aiDerivativesMorning')) return;
-    console.log(`\n🤖 [AI Derivatives Morning v3.0] Cron triggered`);
+    console.log(`\n🤖 [AI Derivatives Morning v4.0] Cron triggered`);
     try {
       await runAIDerivativesJob('morning');
       jobLastSuccess['aiDerivativesMorning'] = Date.now();
@@ -613,7 +612,7 @@ async function main() {
   cron.schedule('22 10 * * 1-5', async () => {
     if (!isWeekday()) return;
     if (isDuplicate('aiDerivativesMidMorning')) return;
-    console.log(`\n🤖 [AI Derivatives Mid-Morning v3.0] Cron triggered`);
+    console.log(`\n🤖 [AI Derivatives Mid-Morning v4.0] Cron triggered`);
     try {
       await runAIDerivativesJob('midmorning');
       jobLastSuccess['aiDerivativesMidMorning'] = Date.now();
@@ -625,7 +624,7 @@ async function main() {
   cron.schedule('50 13 * * 1-5', async () => {
     if (!isWeekday()) return;
     if (isDuplicate('aiDerivativesAfternoon')) return;
-    console.log(`\n🤖 [AI Derivatives Afternoon v3.0] Cron triggered`);
+    console.log(`\n🤖 [AI Derivatives Afternoon v4.0] Cron triggered`);
     try {
       await runAIDerivativesJob('afternoon');
       jobLastSuccess['aiDerivativesAfternoon'] = Date.now();

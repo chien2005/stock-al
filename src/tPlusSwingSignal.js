@@ -8,7 +8,7 @@
 const { config } = require('./config');
 const { fetchAllStocks, fetchVN30Index, fetchProprietaryTrading } = require('./stockService');
 const { sendTelegramMessage } = require('./telegramService');
-const { fetchOHLCV } = require('./derivativesOI');
+const { fetchOHLCV } = require('./derivatives');
 
 /**
  * Danh sách cổ phiếu loại trừ (CP rủi ro, vướng vòng lao lý, không có trend/thanh khoản nát)
