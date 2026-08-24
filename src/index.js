@@ -33,7 +33,7 @@ const { startBotHandler, stopBotHandler } = require('./botHandler');
 const { startAlertMonitor, stopAlertMonitor, resetDailyData, flushBigTradeBuffer } = require('./alertService');
 const { runSmartMoneyReport } = require('./smartMoneyReport');
 const { runWhaleTrackerReport } = require('./whaleTracker');
-const { runMorningDerivativesJob, runMidMorningDerivativesJob, runAfternoonDerivativesJob, runAIDerivativesJob, runDerivativesOIJob, resetDerivativesState, startMomentumMonitor } = require('./derivatives');
+const { runDerivativesSignalJob, runMorningDerivativesJob, runMidMorningDerivativesJob, runAfternoonDerivativesJob, runAIDerivativesJob, runDerivativesOIJob, resetDerivativesState, startMomentumMonitor } = require('./derivatives');
 
 // ─── Thời điểm khởi động (cho health check) ─────────────
 const startedAt = new Date();
@@ -406,8 +406,8 @@ async function main() {
       await sendDerivativesMessage(
         `🔮 <b>VN Stock Bot v${config.version} đã kết nối! (Nhóm Phái Sinh VN30F)</b>\n` +
         `🕐 ${startupTime}\n` +
-        `📊 Chế độ: <b>Tín hiệu Phái Sinh v4.0 (Bản Đồ Giá & 8 Lớp Phân Tích)</b>\n` +
-        `⏰ Phiên sáng: 9h05 - 11h30 (5p/lần) | Phiên chiều: 13h14 & 13h55\n` +
+        `📊 Chế độ: <b>Tín hiệu Phái Sinh v4.1 (Bản Đồ Giá & 8 Lớp Phân Tích)</b>\n` +
+        `⏰ Tín hiệu: 9h05 - 14h30 (5p/lần, liên tục)\n` +
         `🤖 AI Phái sinh: 9h22 | 10h22 | 13h50\n` +
         `📊 OI & Basis: 19h30\n` +
         `━━━━━━━━━━━━━━━━━━━━━━\n` +
@@ -552,49 +552,34 @@ async function main() {
     } catch (err) { console.error('🔮 [Derivatives Reset] Lỗi:', err.message); }
   }, { scheduled: true, timezone: config.timezone });
 
-  // ─── SCHEDULE: DERIVATIVES SIGNAL SÁNG (9h05 - 11h30 5p/lần, BỎ 9h00) ───
-  const morningDerivativesCron = [
-    '5,10,15,20,25,30,35,40,45,50,55 9 * * 1-5',   // 9h05 -> 9h55 (bỏ 9h00)
-    '0,5,10,15,20,25,30,35,40,45,50,55 10 * * 1-5', // 10h00 -> 10h55
-    '0,5,10,15,20,25,30 11 * * 1-5',                // 11h00 -> 11h30
+  // ─── SCHEDULE: DERIVATIVES SIGNAL (9h05 - 14h30 mỗi 5p, T2-T6) ───
+  const derivativesCronExpressions = [
+    '5,10,15,20,25,30,35,40,45,50,55 9 * * 1-5',    // 9h05 -> 9h55
+    '0,5,10,15,20,25,30,35,40,45,50,55 10 * * 1-5',  // 10h00 -> 10h55
+    '0,5,10,15,20,25,30 11 * * 1-5',                  // 11h00 -> 11h30
+    // Nghỉ trưa 11h30 -> 13h00
+    '0,5,10,15,20,25,30,35,40,45,50,55 13 * * 1-5',  // 13h00 -> 13h55
+    '0,5,10,15,20,25,30 14 * * 1-5',                  // 14h00 -> 14h30
   ];
-  for (const expr of morningDerivativesCron) {
+  for (const expr of derivativesCronExpressions) {
     cron.schedule(expr, async () => {
       if (!isWeekday()) return;
       const now = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
-      const minKey = new Date().getMinutes();
-      const hourKey = new Date().getHours();
-      if (isDuplicate(`derivativesMorning_${hourKey}_${minKey}`)) return;
-      console.log(`\n🔮 [Derivatives Morning v4.0] Cron triggered: ${now}`);
+      const vnTime = new Date(new Date().toLocaleString('en-US', { timeZone: config.timezone }));
+      const minKey = vnTime.getMinutes();
+      const hourKey = vnTime.getHours();
+      if (isDuplicate(`derivativesSignal_${hourKey}_${minKey}`)) return;
+      console.log(`\n🔮 [Derivatives Signal v4.1] Cron triggered: ${now}`);
       try {
-        await runMorningDerivativesJob();
-        jobLastSuccess['derivativesMorning'] = Date.now();
+        await runDerivativesSignalJob();
+        jobLastSuccess['derivativesSignal'] = Date.now();
       } catch (err) {
-        console.error('🔮 [Derivatives Morning v4.0] Lỗi:', err.message);
-        jobLastError['derivativesMorning'] = { time: Date.now(), message: err.message };
+        console.error('🔮 [Derivatives Signal v4.1] Lỗi:', err.message);
+        jobLastError['derivativesSignal'] = { time: Date.now(), message: err.message };
       }
     }, { scheduled: true, timezone: config.timezone });
   }
-  console.log('   🔮 Derivatives Signal Sáng: 9:05 - 11:30 (5p/lần, BỎ 9h00) (T2-T6)');
-
-  // ─── SCHEDULE: DERIVATIVES SIGNAL CHIỀU (13h14 & 13h55, T2-T6) ─
-  const afternoonDerivativesCron = ['14 13 * * 1-5', '55 13 * * 1-5'];
-  for (const expr of afternoonDerivativesCron) {
-    cron.schedule(expr, async () => {
-      if (!isWeekday()) return;
-      if (isDuplicate('derivativesAfternoon')) return;
-      const now = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
-      console.log(`\n🔮 [Derivatives Afternoon v4.0] Cron triggered: ${now}`);
-      try {
-        await runAfternoonDerivativesJob();
-        jobLastSuccess['derivativesAfternoon'] = Date.now();
-      } catch (err) {
-        console.error('🔮 [Derivatives Afternoon v4.0] Lỗi:', err.message);
-        jobLastError['derivativesAfternoon'] = { time: Date.now(), message: err.message };
-      }
-    }, { scheduled: true, timezone: config.timezone });
-  }
-  console.log('   🔮 Derivatives Signal Chiều: 13:14 & 13:55 (T2-T6)');
+  console.log('   🔮 Derivatives Signal: 9:05 - 14:30 (5p/lần, liên tục) (T2-T6)');
 
   // ─── SCHEDULE: AI DERIVATIVES FORECAST (9h22, 10h22 & 13h50, T2-T6) ───
   cron.schedule('22 9 * * 1-5', async () => {

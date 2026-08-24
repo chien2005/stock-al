@@ -12,23 +12,25 @@ const { vnNow } = require('./dataFetcher');
 /**
  * Build notification chính (signal mở vị thế / kế hoạch giao dịch)
  */
-function buildSignalNotification(session, analysisResult) {
+function buildSignalNotification(session, analysisResult, deltaData = null) {
   const {
     scoreResult, priceMap, flowResult, absorptionResult, sweepResult,
     velocityResult, efficiencyResult, basisResult, breadthResult, leaderResult, liquidityResult, regimeResult, targetMap,
+    allData,
   } = analysisResult;
 
   const sessionLabels = {
     'morning': '🌅 PHIÊN SÁNG',
     'midmorning': '⛅ GIỮA SÁNG',
     'afternoon': '🌆 PHIÊN CHIỀU',
+    'update': '🔄 CẬP NHẬT REALTIME',
   };
   const sessionLabel = sessionLabels[session] || '🔮 BẢN TIN PHÂN TÍCH';
 
   const direction = scoreResult.direction;
   const isTradeable = direction === 'LONG' || direction === 'SHORT';
 
-  let msg = `🔮 <b>VN30F v4.0 — ${sessionLabel}</b>\n`;
+  let msg = `🔮 <b>VN30F v4.1 — ${sessionLabel}</b>\n`;
   msg += `🕐 <i>${vnNow()}</i>\n`;
   msg += `━━━━━━━━━━━━━━━━━━━━\n\n`;
 
@@ -56,6 +58,67 @@ function buildSignalNotification(session, analysisResult) {
       msg += `📅 <b>Đáo hạn:</b> ${regimeResult.expiryMode.mode} (Còn ${regimeResult.expiryMode.daysToExpiry} ngày — lưu ý biến động bất ngờ)\n`;
     }
     msg += `\n`;
+  }
+
+  // ─── THANH KHOẢN & VỊ THẾ PHÁI SINH (delta giữa 2 noti) ───
+  if (deltaData || liquidityResult) {
+    msg += `💰 <b>THANH KHOẢN REALTIME:</b>\n`;
+
+    // VN30 liquidity
+    if (liquidityResult) {
+      const liqPct = Math.round(liquidityResult.volumeRatio * 100);
+      msg += `   • VN30: <b>${liquidityResult.totalValue.toLocaleString('vi-VN')} tỷ</b> (${liqPct}% TB)`;
+      if (deltaData && deltaData.liqDelta && deltaData.liqDelta.vn30Delta != null) {
+        const sign = deltaData.liqDelta.vn30Delta >= 0 ? '+' : '';
+        msg += ` | Δ${deltaData.timeDiffMin}p: <b>${sign}${deltaData.liqDelta.vn30Delta.toLocaleString('vi-VN')} tỷ</b>`;
+      }
+      msg += `\n`;
+    }
+
+    // VNINDEX price
+    if (allData && allData.vnindexPrice) {
+      const vnidx = allData.vnindexPrice;
+      const vnidxChange = vnidx.prevPrice ? ((vnidx.price - vnidx.prevPrice) / vnidx.prevPrice * 100).toFixed(2) : '0';
+      const vnidxIcon = parseFloat(vnidxChange) >= 0 ? '🟢' : '🔴';
+      msg += `   • VNINDEX: ${vnidxIcon} <b>${vnidx.price.toFixed(2)}</b> (${parseFloat(vnidxChange) >= 0 ? '+' : ''}${vnidxChange}%)\n`;
+    }
+
+    msg += `\n`;
+
+    // VN30 buy/sell delta
+    if (deltaData && deltaData.vn30Deltas) {
+      const { buyers, sellers } = deltaData.vn30Deltas;
+      if (buyers.length > 0 || sellers.length > 0) {
+        msg += `🔄 <b>BIẾN ĐỘNG VN30 (${deltaData.timeDiffMin}p qua):</b>\n`;
+        if (buyers.length > 0) {
+          msg += `   📈 Mua vào: ${buyers.map(b => `<b>${b.sym}</b> (+${b.deltaVal.toFixed(1)}t)`).join(', ')}\n`;
+        }
+        if (sellers.length > 0) {
+          msg += `   📉 Bán ra: ${sellers.map(s => `<b>${s.sym}</b> (${s.deltaVal.toFixed(1)}t)`).join(', ')}\n`;
+        }
+        msg += `\n`;
+      }
+    }
+
+    // OI position delta (long/short contracts)
+    if (deltaData && deltaData.oiDelta) {
+      const oi = deltaData.oiDelta;
+      const posLabels = {
+        'LONG_BUILDUP': '🟢 LONG MỞ THÊM (Giá ↑ + OI ↑)',
+        'SHORT_BUILDUP': '🔴 SHORT MỞ THÊM (Giá ↓ + OI ↑)',
+        'LONG_LIQUIDATION': '🟠 LONG THANH LÝ (Giá ↓ + OI ↓)',
+        'SHORT_COVERING': '🟡 SHORT ĐÓNG VỊ THẾ (Giá ↑ + OI ↓)',
+        'NEUTRAL': '⚪ CÂN BẰNG',
+      };
+      msg += `📊 <b>VỊ THẾ PHÁI SINH (${deltaData.timeDiffMin}p qua):</b>\n`;
+      msg += `   • Δ OI: <b>${oi.deltaOI >= 0 ? '+' : ''}${oi.deltaOI.toLocaleString('vi-VN')} HĐ</b> (Tổng OI: ${oi.totalOI.toLocaleString('vi-VN')} HĐ)\n`;
+      if (oi.deltaVol > 0) {
+        msg += `   • KL giao dịch ${deltaData.timeDiffMin}p: <b>${oi.deltaVol.toLocaleString('vi-VN')} HĐ</b>\n`;
+      }
+      msg += `   • Giá F1M: ${oi.priceDelta >= 0 ? '+' : ''}${oi.priceDelta}đ\n`;
+      msg += `   • Trạng thái: <b>${posLabels[oi.positionState] || oi.positionState}</b>\n`;
+      msg += `\n`;
+    }
   }
 
   msg += `━━━━━━━━━━━━━━━━━━━━\n`;
@@ -217,7 +280,7 @@ function buildSignalNotification(session, analysisResult) {
     }
   }
 
-  msg += `\n<i>🔮 VN30F Signal Engine v4.0 | VN Stock Bot</i>`;
+  msg += `\n<i>🔮 VN30F Signal Engine v4.1 | VN Stock Bot</i>`;
 
   return msg;
 }

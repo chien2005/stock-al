@@ -30,7 +30,7 @@ const { buildTargetMap } = require('./targetEngine');
 const { buildSignalNotification, buildMomentumAlert, buildLeaderAlert, buildTrapAlert } = require('./notificationBuilder');
 const { saveSignalSnapshot } = require('./snapshotStore');
 
-// ─── STATE ───────────────────────────────────────────────────
+// ─── STATE ───────────────────────────────────────────────────────
 const _state = {
   morningSignal: null,
   afternoonSignal: null,
@@ -40,6 +40,11 @@ const _state = {
   lastMomentumTime: 0,
   lastAlertTime: {},         // { alertType: timestamp }
   momentumTimer: null,
+  // ─── PREV NOTI SNAPSHOT (cho delta giữa 2 noti) ───
+  prevNotiTimestamp: null,
+  prevLiquiditySnapshot: null,   // { vn30Value, vnindexValue, vn30Price, vnindexPrice }
+  prevOISnapshot: null,          // { totalOI, totalVolume, f1mPrice }
+  prevVN30BuySellSnapshot: null, // { [sym]: { totalVal, fnNet } }
 };
 
 // ─── CORE: Run full 8-layer analysis pipeline ────────────────
@@ -154,62 +159,150 @@ async function runFullAnalysis() {
   };
 }
 
-// ─── JOB SÁNG ────────────────────────────────────────────────
-async function runMorningDerivativesJob() {
-  console.log('\n' + '═'.repeat(55));
-  console.log('🔮 DERIVATIVES SIGNAL v4.0 — SÁNG');
-  console.log('═'.repeat(55));
+// ─── HELPER: Build VN30 buy/sell snapshot ─────────────────
+function _buildVN30BuySellSnapshot(realtimeVN30) {
+  const snapshot = {};
+  if (!realtimeVN30 || !realtimeVN30.raw) return snapshot;
+  for (const r of realtimeVN30.raw) {
+    if (!r.sym) continue;
+    const price = parseFloat(r.lastPrice || 0) * 1000;
+    const vol = parseInt(r.lot || 0) * 10;
+    const fBuy = parseInt(r.fBVol || 0) * 10;
+    const fSell = parseInt(r.fSVolume || 0) * 10;
+    const refPrice = parseFloat(r.r || 0) * 1000;
+    const changePct = refPrice > 0 ? ((price - refPrice) / refPrice) * 100 : 0;
+    if (price > 0) {
+      snapshot[r.sym] = {
+        totalVal: parseFloat(((vol * price) / 1e9).toFixed(2)),
+        fnNet: parseFloat((((fBuy - fSell) * price) / 1e9).toFixed(2)),
+        price,
+        changePct: parseFloat(changePct.toFixed(2)),
+      };
+    }
+  }
+  return snapshot;
+}
+
+// ─── HELPER: Compute deltas between 2 VN30 buy/sell snapshots ───
+function _computeVN30Deltas(current, prev) {
+  if (!prev || !current) return { buyers: [], sellers: [] };
+  const deltas = [];
+  for (const sym of Object.keys(current)) {
+    const cur = current[sym];
+    const prv = prev[sym];
+    if (!prv) continue;
+    const deltaVal = parseFloat((cur.totalVal - prv.totalVal).toFixed(2));
+    deltas.push({ sym, deltaVal, changePct: cur.changePct });
+  }
+  deltas.sort((a, b) => b.deltaVal - a.deltaVal);
+  const buyers = deltas.filter(d => d.deltaVal > 0).slice(0, 5);
+  const sellers = deltas.filter(d => d.deltaVal < 0).sort((a, b) => a.deltaVal - b.deltaVal).slice(0, 5);
+  return { buyers, sellers };
+}
+
+// ─── UNIFIED DERIVATIVES SIGNAL JOB (9h05 → 14h30 mỗi 5p) ────
+async function runDerivativesSignalJob() {
+  console.log('\n' + '='.repeat(55));
+  console.log('🔮 DERIVATIVES SIGNAL v4.1 — UPDATE');
+  console.log('='.repeat(55));
 
   try {
     const analysis = await runFullAnalysis();
-    _state.morningSignal = analysis;
+    const { allData, liquidityResult, oiState, basisResult } = analysis;
 
-    const msg = buildSignalNotification('morning', analysis);
+    // ─── Build current snapshots ───
+    const currentLiquidity = {
+      vn30Value: liquidityResult.totalValue,
+      vnindexPrice: allData.vnindexPrice ? allData.vnindexPrice.price : null,
+      vn30Price: allData.vn30Price ? allData.vn30Price.price : null,
+    };
+
+    const currentOI = {
+      totalOI: oiState.totalOI || null,
+      totalVolume: allData.oiData.totalVolume || null,
+      f1mPrice: basisResult.f1mPrice,
+    };
+
+    const currentVN30BuySell = _buildVN30BuySellSnapshot(allData.realtimeVN30);
+
+    // ─── Compute deltas vs prev noti ───
+    let deltaData = null;
+    if (_state.prevNotiTimestamp) {
+      const timeDiffMs = Date.now() - _state.prevNotiTimestamp;
+      const timeDiffMin = Math.round(timeDiffMs / 60000);
+
+      // Liquidity delta
+      let liqDelta = null;
+      if (_state.prevLiquiditySnapshot) {
+        liqDelta = {
+          vn30Delta: _state.prevLiquiditySnapshot.vn30Value != null
+            ? parseFloat((currentLiquidity.vn30Value - _state.prevLiquiditySnapshot.vn30Value).toFixed(1))
+            : null,
+          prevVN30Value: _state.prevLiquiditySnapshot.vn30Value,
+        };
+      }
+
+      // OI delta (long/short contracts)
+      let oiDelta = null;
+      if (_state.prevOISnapshot && _state.prevOISnapshot.totalOI != null && currentOI.totalOI != null) {
+        const deltaOI = currentOI.totalOI - _state.prevOISnapshot.totalOI;
+        const deltaVol = (currentOI.totalVolume || 0) - (_state.prevOISnapshot.totalVolume || 0);
+        const priceDelta = currentOI.f1mPrice - (_state.prevOISnapshot.f1mPrice || currentOI.f1mPrice);
+
+        // Classify position state
+        let positionState = 'NEUTRAL';
+        if (deltaOI > 0 && priceDelta > 0) positionState = 'LONG_BUILDUP';
+        else if (deltaOI > 0 && priceDelta < 0) positionState = 'SHORT_BUILDUP';
+        else if (deltaOI < 0 && priceDelta < 0) positionState = 'LONG_LIQUIDATION';
+        else if (deltaOI < 0 && priceDelta > 0) positionState = 'SHORT_COVERING';
+
+        oiDelta = {
+          deltaOI,
+          deltaVol: deltaVol > 0 ? deltaVol : 0,
+          totalOI: currentOI.totalOI,
+          positionState,
+          priceDelta: parseFloat(priceDelta.toFixed(1)),
+        };
+      }
+
+      // VN30 buy/sell delta
+      const vn30Deltas = _computeVN30Deltas(currentVN30BuySell, _state.prevVN30BuySellSnapshot);
+
+      deltaData = {
+        timeDiffMin,
+        liqDelta,
+        oiDelta,
+        vn30Deltas,
+      };
+    }
+
+    // ─── Build & send notification ───
+    const msg = buildSignalNotification('update', analysis, deltaData);
     await sendDerivativesMessage(msg);
 
     // Save snapshot cho backtest
     _saveSnapshot(analysis);
 
-    // Start momentum monitor
-    startMomentumMonitor();
+    // Start momentum monitor (nếu chưa chạy)
+    if (!_state.momentumTimer) {
+      startMomentumMonitor();
+    }
+
+    // ─── Update prev snapshots ───
+    _state.prevNotiTimestamp = Date.now();
+    _state.prevLiquiditySnapshot = currentLiquidity;
+    _state.prevOISnapshot = currentOI;
+    _state.prevVN30BuySellSnapshot = currentVN30BuySell;
+
   } catch (e) {
-    console.error('   ❌ Morning derivatives job error v4.0:', e.message);
+    console.error('   ❌ Derivatives signal job error v4.1:', e.message);
   }
 }
 
-// ─── JOB GIỮA SÁNG ──────────────────────────────────────────
-async function runMidMorningDerivativesJob() {
-  console.log('\n' + '═'.repeat(55));
-  console.log('🔮 DERIVATIVES SIGNAL v4.0 — GIỮA SÁNG');
-  console.log('═'.repeat(55));
-
-  try {
-    const analysis = await runFullAnalysis();
-    const msg = buildSignalNotification('midmorning', analysis);
-    await sendDerivativesMessage(msg);
-    _saveSnapshot(analysis);
-  } catch (e) {
-    console.error('   ❌ Mid-morning derivatives job error v4.0:', e.message);
-  }
-}
-
-// ─── JOB CHIỀU ───────────────────────────────────────────────
-async function runAfternoonDerivativesJob() {
-  console.log('\n' + '═'.repeat(55));
-  console.log('🔮 DERIVATIVES SIGNAL v4.0 — CHIỀU');
-  console.log('═'.repeat(55));
-
-  try {
-    const analysis = await runFullAnalysis();
-    _state.afternoonSignal = analysis;
-
-    const msg = buildSignalNotification('afternoon', analysis);
-    await sendDerivativesMessage(msg);
-    _saveSnapshot(analysis);
-  } catch (e) {
-    console.error('   ❌ Afternoon derivatives job error v4.0:', e.message);
-  }
-}
+// ─── LEGACY JOB ALIASES (backward compat) ────────────────────
+const runMorningDerivativesJob = runDerivativesSignalJob;
+const runMidMorningDerivativesJob = runDerivativesSignalJob;
+const runAfternoonDerivativesJob = runDerivativesSignalJob;
 
 // ─── AI DERIVATIVES JOB ─────────────────────────────────────
 async function runAIDerivativesJob(session) {
@@ -436,7 +529,7 @@ function stopPositionMonitor() {
   stopMomentumMonitor();
 }
 
-// ─── RESET DAILY ─────────────────────────────────────────────
+// ─── RESET DAILY ─────────────────────────────────────────
 function resetDerivativesState() {
   stopMomentumMonitor();
   _state.morningSignal = null;
@@ -446,8 +539,12 @@ function resetDerivativesState() {
   _state.lastMomentumPrice = null;
   _state.lastMomentumTime = 0;
   _state.lastAlertTime = {};
+  _state.prevNotiTimestamp = null;
+  _state.prevLiquiditySnapshot = null;
+  _state.prevOISnapshot = null;
+  _state.prevVN30BuySellSnapshot = null;
   dataFetcher.resetDailyCache();
-  console.log('   🔄 Derivatives state reset v4.0');
+  console.log('   🔄 Derivatives state reset v4.1');
 }
 
 // ─── SAVE SNAPSHOT ───────────────────────────────────────────
@@ -483,9 +580,10 @@ function _saveSnapshot(analysis) {
   }
 }
 
-// ─── COMPATIBILITY EXPORTS ───────────────────────────────────
+// ─── COMPATIBILITY EXPORTS ───────────────────────────────
 // Giữ tương thích với cách index.js gọi
 module.exports = {
+  runDerivativesSignalJob,
   runMorningDerivativesJob,
   runMidMorningDerivativesJob,
   runAfternoonDerivativesJob,

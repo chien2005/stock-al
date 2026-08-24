@@ -208,9 +208,33 @@ async function fetchRealtimeVN30Price() {
     );
     if (res.data && res.data.c && res.data.c.length > 0) {
       const c = res.data.c;
+      const v = res.data.v;
       return {
         price: c[c.length - 1],
         prevPrice: c.length > 1 ? c[c.length - 2] : c[c.length - 1],
+        totalVolume: v ? v.reduce((s, x) => s + x, 0) : 0,
+      };
+    }
+  } catch (e) { /* fail silently */ }
+  return null;
+}
+
+// ─── FETCH REALTIME VNINDEX PRICE ────────────────────────────
+async function fetchRealtimeVNINDEXPrice() {
+  try {
+    const now = Math.floor(Date.now() / 1000);
+    const from = now - 86400 * 2;
+    const res = await axios.get(
+      `${VPS_HISTORY_URL}?symbol=VNINDEX&resolution=1&from=${from}&to=${now}`,
+      { headers: HEADERS, timeout: 5000 }
+    );
+    if (res.data && res.data.c && res.data.c.length > 0) {
+      const c = res.data.c;
+      const v = res.data.v;
+      return {
+        price: c[c.length - 1],
+        prevPrice: c.length > 1 ? c[c.length - 2] : c[c.length - 1],
+        totalVolume: v ? v.reduce((s, x) => s + x, 0) : 0,
       };
     }
   } catch (e) { /* fail silently */ }
@@ -352,6 +376,7 @@ async function fetchAllData() {
     realtimeVN30,
     futuresPrice,
     vn30Price,
+    vnindexPrice,
     oiData,
   ] = await Promise.all([
     fetchDailyData(),
@@ -360,6 +385,7 @@ async function fetchAllData() {
     fetchRealtimeVN30(),
     fetchRealtimeFuturesPrice(),
     fetchRealtimeVN30Price(),
+    fetchRealtimeVNINDEXPrice(),
     fetchDerivativesOIData(),
   ]);
 
@@ -370,12 +396,13 @@ async function fetchAllData() {
     realtimeVN30,
     futuresPrice,
     vn30Price,
+    vnindexPrice,
     oiData,
     timestamp: Date.now(),
     timeLabel: vnNow(),
   };
 
-  console.log(`   ✅ Data: F1M=${futuresPrice?.price?.toFixed(1) || 'N/A'} | VN30=${vn30Price?.price?.toFixed(1) || 'N/A'} | Intraday=${intraday1m ? intraday1m.c.length + ' bars' : 'N/A'} | OI=${oiData.totalOI || 'N/A'}`);
+  console.log(`   ✅ Data: F1M=${futuresPrice?.price?.toFixed(1) || 'N/A'} | VN30=${vn30Price?.price?.toFixed(1) || 'N/A'} | VNINDEX=${vnindexPrice?.price?.toFixed(1) || 'N/A'} | Intraday=${intraday1m ? intraday1m.c.length + ' bars' : 'N/A'} | OI=${oiData.totalOI || 'N/A'}`);
 
   return result;
 }
@@ -387,6 +414,7 @@ module.exports = {
   fetchRealtimeVN30,
   fetchRealtimeFuturesPrice,
   fetchRealtimeVN30Price,
+  fetchRealtimeVNINDEXPrice,
   fetchDailyData,
   fetchDerivativesOIData,
   fetchAllData,
