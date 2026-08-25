@@ -24,7 +24,7 @@
 
 const cron = require('node-cron');
 const http = require('http');
-const { config, validateConfig } = require('./config');
+const { config, validateConfig, isCurrentInstanceActive } = require('./config');
 const { fetchAllStocks, fetchVN30Index, fetchMarketScan, fetchTopBoughtStocks, fetchMarketLiquidity } = require('./stockService');
 const { sendTelegramMessage, sendDerivativesMessage, formatStockMessage } = require('./telegramService');
 const { initAIEngines, runScheduledAnalysis, runDailyGlobalSummaryReport } = require('./aiTeam');
@@ -95,6 +95,9 @@ function isMonday() {
 // ─── JOB 1: BÁO GIÁ (10h, 13h, 16h T2-T6) ───────────────
 
 async function runStockJob() {
+  // Guard: check active days
+  if (!isCurrentInstanceActive()) return;
+
   // Guard: skip nếu không phải ngày giao dịch
   if (!isWeekday()) {
     console.log('⏭️  [GUARD] Hôm nay T7/CN - skip báo giá');
@@ -171,6 +174,9 @@ async function runStockJob() {
 // Gửi data chính xác cho AI phân tích, không dựa vào Google Search (bị sai data)
 
 async function runAfterCloseJob() {
+  // Guard: check active days
+  if (!isCurrentInstanceActive()) return;
+
   // Guard: skip T7/CN
   if (!isWeekday()) {
     console.log('⏭️  [GUARD] Hôm nay T7/CN - skip AI cuối phiên');
@@ -223,6 +229,9 @@ const { runTPlusSwingReport } = require('./tPlusSwingSignal');
 // Thay thế 3 noti trùng cũ bằng 1 Báo cáo AI T+ Swing Investment tập trung vào Kiệt bán & Tín hiệu kỹ thuật cao
 
 async function runAiJob() {
+  // Guard: check active days
+  if (!isCurrentInstanceActive()) return;
+
   // Guard: skip nếu T7/CN
   if (!isWeekday()) {
     console.log('⏭️  [GUARD] Hôm nay T7/CN - skip T+ Swing AI report');
@@ -251,6 +260,9 @@ async function runAiJob() {
 // ─── JOB 3: WEEKLY ANALYSIS (8h30 Thứ 2) ──────────────────
 
 async function runWeeklyJob() {
+  // Guard: check active days
+  if (!isCurrentInstanceActive()) return;
+
   // Guard: phải là thứ 2
   if (!isMonday()) {
     console.log('⏭️  [GUARD] Không phải thứ 2 - skip weekly report');
@@ -286,6 +298,9 @@ async function runWeeklyJob() {
 // + Giá vàng thế giới + Giá vàng Việt Nam (1 lượng, 1 chỉ)
 
 async function runDailyGlobalSummaryJob() {
+  // Guard: check active days
+  if (!isCurrentInstanceActive()) return;
+
   // KHÔNG check weekday - chạy mỗi ngày kể cả T7/CN
 
   // Guard: chống double
@@ -387,40 +402,47 @@ async function main() {
   // ═══════════════════════════════════════════════════════════
   console.log('☁️  Chờ đến giờ schedule (không chạy khi khởi động)...');
 
-  // ─── GỬI THÔNG BÁO KHỞI ĐỘNG VỀ TELEGRAM ─────────────
+  // ─── GỬI THÔNG BÁO KHỞI ĐỘNG VỀ TELEGRAM (CHỈ GỬI KHI ACTIVE) ─────────────
   const startupTime = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
-  try {
-    await sendTelegramMessage(
-      `🟢 <b>VN Stock Bot v${config.version} đã khởi động! (Nhóm Cơ Sở)</b>\n` +
-      `🕐 ${startupTime}\n` +
-      `📊 Theo dõi: ${config.stockSymbols.length} mã\n` +
-      `⏰ Báo giá: ${config.cronSchedule}\n` +
-      `🤖 AI Report: ${config.cronAiSchedule}\n` +
-      `🌍 TTCK+Vàng: ${config.cronGlobalSchedule} (mỗi ngày)\n` +
-      `💬 Interactive: ${config.enableInteractiveBot ? 'ON' : 'OFF'}\n` +
-      `━━━━━━━━━━━━━━━━━━━━━━\n` +
-      `<i>Nếu bạn thấy tin này nhiều lần → bot đang bị restart liên tục!</i>`
-    );
-
-    if (config.telegram.chatIdDerivatives && config.telegram.chatIdDerivatives !== config.telegram.chatId) {
-      await sendDerivativesMessage(
-        `🔮 <b>VN Stock Bot v${config.version} đã kết nối! (Nhóm Phái Sinh VN30F)</b>\n` +
+  if (isCurrentInstanceActive()) {
+    try {
+      await sendTelegramMessage(
+        `🟢 <b>VN Stock Bot v${config.version} đã khởi động! (Nhóm Cơ Sở)</b>\n` +
         `🕐 ${startupTime}\n` +
-        `📊 Chế độ: <b>Tín hiệu Phái Sinh v4.1 (Bản Đồ Giá & 8 Lớp Phân Tích)</b>\n` +
-        `⏰ Tín hiệu: 9h05 - 14h30 (5p/lần, liên tục)\n` +
-        `🤖 AI Phái sinh: 9h22 | 10h22 | 13h50\n` +
-        `📊 OI & Basis: 19h30\n` +
+        `📊 Theo dõi: ${config.stockSymbols.length} mã\n` +
+        `📅 Ngày hoạt động: <b>${config.activeDays}</b> (ACTIVE)\n` +
+        `⏰ Báo giá: ${config.cronSchedule}\n` +
+        `🤖 AI Report: ${config.cronAiSchedule}\n` +
+        `🌍 TTCK+Vàng: ${config.cronGlobalSchedule} (mỗi ngày)\n` +
+        `💬 Interactive: ${config.enableInteractiveBot ? 'ON' : 'OFF'}\n` +
         `━━━━━━━━━━━━━━━━━━━━━━\n` +
-        `<i>Kênh chuyên biệt phân tích & tín hiệu phái sinh realtime 24/24</i>`
+        `<i>Nếu bạn thấy tin này nhiều lần → bot đang bị restart liên tục!</i>`
       );
+
+      if (config.telegram.chatIdDerivatives && config.telegram.chatIdDerivatives !== config.telegram.chatId) {
+        await sendDerivativesMessage(
+          `🔮 <b>VN Stock Bot v${config.version} đã kết nối! (Nhóm Phái Sinh VN30F)</b>\n` +
+          `🕐 ${startupTime}\n` +
+          `📊 Chế độ: <b>Tín hiệu Phái Sinh v4.1 (Bản Đồ Giá & 8 Lớp Phân Tích)</b>\n` +
+          `📅 Ngày hoạt động: <b>${config.activeDays}</b> (ACTIVE)\n` +
+          `⏰ Tín hiệu: 9h05 - 14h30 (5p/lần, liên tục)\n` +
+          `🤖 AI Phái sinh: 9h22 | 10h22 | 13h50\n` +
+          `📊 OI & Basis: 19h30\n` +
+          `━━━━━━━━━━━━━━━━━━━━━━\n` +
+          `<i>Kênh chuyên biệt phân tích & tín hiệu phái sinh realtime 24/24</i>`
+        );
+      }
+      console.log('📩 Đã gửi thông báo khởi động về Telegram');
+    } catch (e) {
+      console.error('⚠️ Không gửi được thông báo khởi động:', e.message);
     }
-    console.log('📩 Đã gửi thông báo khởi động về Telegram');
-  } catch (e) {
-    console.error('⚠️ Không gửi được thông báo khởi động:', e.message);
+  } else {
+    console.log(`⏸️ [STANDBY] Instance ngoài ngày hoạt động (${config.activeDays}) — Chờ đến lượt xoay tua.`);
   }
 
   // ─── SCHEDULE JOB 1: BÁO GIÁ (T2-T6, 10h) ────
   cron.schedule(config.cronSchedule, () => {
+    if (!isCurrentInstanceActive()) return;
     const now = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
     console.log(`\n⏰ [Báo giá] Cron triggered: ${now}`);
     runStockJob();
@@ -437,6 +459,7 @@ async function main() {
   ];
   for (const schedule of intradaySchedules) {
     cron.schedule(schedule.cron, () => {
+      if (!isCurrentInstanceActive()) return;
       const now = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
       console.log(`\n⏰ [Báo giá ${schedule.label}] Cron triggered: ${now}`);
       runStockJob();
@@ -445,6 +468,7 @@ async function main() {
 
   // ─── SCHEDULE JOB 1b: BÁO GIÁ KẾT PHIÊN (T2-T6, 15h01) ────
   cron.schedule(config.cronCloseSchedule, () => {
+    if (!isCurrentInstanceActive()) return;
     const now = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
     console.log(`\n⏰ [Báo giá kết phiên] Cron triggered: ${now}`);
     runStockJob();
@@ -453,21 +477,9 @@ async function main() {
     timezone: config.timezone,
   });
 
-  // ─── SCHEDULE JOB 1.5: AI CUỐI PHIÊN (T2-T6, 16h05) ────
-  // DISABLED: Bỏ AI cuối phiên 16h05 theo yêu cầu của user (chỉ nhận báo giá 15h01, báo cáo AI 20h30 vẫn hoạt động bình thường)
-  /*
-  cron.schedule(config.cronAfterCloseSchedule, () => {
-    const now = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
-    console.log(`\n🧠 [AI Cuối phiên] Cron triggered: ${now}`);
-    runAfterCloseJob();
-  }, {
-    scheduled: true,
-    timezone: config.timezone,
-  });
-  */
-
   // ─── SCHEDULE JOB 2: AI REPORT (T2-T6, 20h30) ─────────
   cron.schedule(config.cronAiSchedule, () => {
+    if (!isCurrentInstanceActive()) return;
     const now = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
     console.log(`\n🤖 [AI Analysis] Cron triggered: ${now}`);
     runAiJob();
@@ -478,6 +490,7 @@ async function main() {
 
   // ─── SCHEDULE JOB 3: WEEKLY (Thứ 2, 8h30) ─────────────
   cron.schedule(config.cronWeeklySchedule, () => {
+    if (!isCurrentInstanceActive()) return;
     const now = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
     console.log(`\n📅 [Weekly Analysis] Cron triggered: ${now}`);
     runWeeklyJob();
@@ -488,6 +501,7 @@ async function main() {
 
   // ─── SCHEDULE JOB 4: TTCK QUỐC TẾ + VÀNG (MỖI NGÀY, 21h00) ────
   cron.schedule(config.cronGlobalSchedule, () => {
+    if (!isCurrentInstanceActive()) return;
     const now = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
     console.log(`\n🌍 [TTCK+Vàng] Cron triggered: ${now}`);
     runDailyGlobalSummaryJob();
@@ -496,16 +510,32 @@ async function main() {
     timezone: config.timezone,
   });
 
-  // ─── START INTERACTIVE BOT HANDLER ─────────────────────
-  if (config.enableInteractiveBot) {
-    startBotHandler();
+  // ─── DYNAMIC INTERACTIVE BOT & ACTIVE STATE SYNCHRONIZATION ──
+  function syncActiveState() {
+    const active = isCurrentInstanceActive();
+    if (config.enableInteractiveBot) {
+      if (active) {
+        startBotHandler();
+      } else {
+        stopBotHandler();
+      }
+    }
   }
+
+  // Khởi động đồng bộ ban đầu
+  syncActiveState();
+
+  // Kiểm tra mỗi 5 phút để tự động chuyển giao giữa các ngày xoay tua
+  setInterval(() => {
+    syncActiveState();
+  }, 5 * 60 * 1000);
 
   // ─── START ALERT MONITOR (cảnh báo giao dịch bất thường) ───
   startAlertMonitor();
 
   // Reset alert data mỗi ngày lúc 9:00 (trước phiên)
   cron.schedule('0 9 * * 1-5', () => {
+    if (!isCurrentInstanceActive()) return;
     resetDailyData();
   }, { scheduled: true, timezone: config.timezone });
 
@@ -520,6 +550,7 @@ async function main() {
 
   for (const schedule of bigTradeFlushSchedules) {
     cron.schedule(schedule.cron, async () => {
+      if (!isCurrentInstanceActive()) return;
       console.log(`\n📦 [BigTrade Flush ${schedule.label}] Cron triggered`);
       try {
         await flushBigTradeBuffer();
@@ -532,6 +563,7 @@ async function main() {
 
   // ─── SCHEDULE: WHALE TRACKER REPORT (T2-T6, 19h45) ───
   cron.schedule('45 19 * * 1-5', async () => {
+    if (!isCurrentInstanceActive()) return;
     const now = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
     console.log(`\n🐋 [Whale Tracker] Cron triggered: ${now}`);
     try {
@@ -544,6 +576,7 @@ async function main() {
 
   // ─── SCHEDULE: DERIVATIVES SIGNAL — RESET & START MONITOR 9h00 ───
   cron.schedule('0 9 * * 1-5', async () => {
+    if (!isCurrentInstanceActive()) return;
     if (!isWeekday()) return;
     console.log('\n🔮 [Derivatives v4.0] Reset daily state & start momentum monitor');
     try { 
@@ -563,6 +596,7 @@ async function main() {
   ];
   for (const expr of derivativesCronExpressions) {
     cron.schedule(expr, async () => {
+      if (!isCurrentInstanceActive()) return;
       if (!isWeekday()) return;
       const now = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
       const vnTime = new Date(new Date().toLocaleString('en-US', { timeZone: config.timezone }));
@@ -680,19 +714,25 @@ async function main() {
     const uptimeStr = `${Math.floor(uptime / 3600)}h ${Math.floor((uptime % 3600) / 60)}m ${uptime % 60}s`;
     const vnNow = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
 
+    const isActive = isCurrentInstanceActive();
+    const currentDay = new Date(new Date().toLocaleString('en-US', { timeZone: config.timezone })).getDate();
+
     if (req.url === '/health') {
       // Health check endpoint cho cron-job.org / UptimeRobot
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         status: 'ok',
         bot: `VN Stock Bot v${config.version}`,
+        instanceStatus: isActive ? 'active' : 'standby',
+        activeDays: config.activeDays,
+        currentDay: currentDay,
         uptime: uptimeStr,
         uptimeSeconds: uptime,
         serverTime: vnNow,
         startedAt: startedAt.toISOString(),
         stocks: config.stockSymbols.length,
         stockSymbols: config.stockSymbols,
-        interactive: config.enableInteractiveBot,
+        interactive: config.enableInteractiveBot && isActive,
         jobs: {
           lastSuccess: Object.fromEntries(
             Object.entries(jobLastSuccess).map(([k, v]) => [k, new Date(v).toISOString()])
@@ -719,22 +759,28 @@ async function main() {
           .card { background: #1a1a2e; border-radius: 16px; padding: 40px; max-width: 500px;
                   box-shadow: 0 8px 32px rgba(0,0,0,0.4); border: 1px solid #333; }
           h1 { color: #00d4ff; margin-top: 0; }
-          .status { color: #00ff88; font-size: 18px; }
+          .status { font-size: 18px; }
           .info { margin: 8px 0; color: #bbb; }
-          .badge { display: inline-block; background: #00ff88; color: #000; padding: 4px 12px;
+          .badge-active { display: inline-block; background: #00ff88; color: #000; padding: 4px 12px;
+                   border-radius: 12px; font-weight: bold; font-size: 14px; }
+          .badge-standby { display: inline-block; background: #ffaa00; color: #000; padding: 4px 12px;
                    border-radius: 12px; font-weight: bold; font-size: 14px; }
         </style>
       </head>
       <body>
         <div class="card">
           <h1>🇻🇳 VN Stock Bot</h1>
-          <p class="status"><span class="badge">● ONLINE</span> v${config.version}</p>
+          <p class="status">
+            <span class="${isActive ? 'badge-active' : 'badge-standby'}">● ${isActive ? 'ACTIVE (Đang chạy)' : 'STANDBY (Chờ xoay tua)'}</span>
+            v${config.version}
+          </p>
+          <p class="info">📅 Ngày hoạt động: <b>${config.activeDays}</b> (Hôm nay: Ngày ${currentDay})</p>
           <p class="info">⏱ Uptime: ${uptimeStr}</p>
           <p class="info">🕐 Server: ${vnNow}</p>
           <p class="info">📊 Theo dõi: ${config.stockSymbols.length} mã CP</p>
           <p class="info">📋 Schedule: ${config.cronSchedule}</p>
           <p class="info">🤖 AI Report: ${config.cronAiSchedule}</p>
-          <p class="info">💬 Interactive: ${config.enableInteractiveBot ? 'ON' : 'OFF'}</p>
+          <p class="info">💬 Interactive: ${config.enableInteractiveBot && isActive ? 'ON' : 'OFF'}</p>
           <p class="info">💰 Chi phí: $0 (100% FREE)</p>
           <hr style="border-color:#333">
           <p style="color:#666; font-size:12px">Health check: <a href="/health" style="color:#00d4ff">/health</a></p>

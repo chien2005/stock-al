@@ -365,8 +365,11 @@ function sleep(ms) {
 
 function stopBotHandler() {
   if (bot) {
-    bot.stopPolling();
-    console.log('💬 Bot Handler đã dừng');
+    try {
+      bot.stopPolling();
+    } catch (e) { /* ignore */ }
+    bot = null;
+    console.log('💬 Bot Handler đã dừng (standby mode)');
   }
 }
 

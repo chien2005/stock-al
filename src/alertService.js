@@ -16,7 +16,7 @@
  */
 
 const axios = require('axios');
-const { config } = require('./config');
+const { config, isCurrentInstanceActive } = require('./config');
 
 const VPS_API = {
   realtime: 'https://bgapidatafeed.vps.com.vn/getliststockdata',
@@ -286,6 +286,9 @@ function incrementAlertCount(symbol) {
 // ─── POLL & CHECK ───────────────────────────────────────────
 
 async function pollAndCheck(isFirstPoll) {
+  // Guard: Không chạy nếu instance đang ở chế độ standby (ngoài ngày hoạt động)
+  if (!isCurrentInstanceActive()) return;
+
   // Guard: Không quét ngoài giờ hoặc trước 9h15
   if (!isTradingHours() && !isFirstPoll) return;
 

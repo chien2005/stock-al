@@ -13,6 +13,8 @@ services:
         value: Asia/Ho_Chi_Minh
       - key: ENABLE_INTERACTIVE_BOT
         value: "true"
+      - key: ACTIVE_DAYS
+        value: "all"
       - key: CRON_SCHEDULE
         value: "0 10 * * 1-5"
       - key: CRON_AI_SCHEDULE

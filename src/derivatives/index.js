@@ -14,7 +14,7 @@
  * ╚═══════════════════════════════════════════════════════════════╝
  */
 
-const { config } = require('../config');
+const { config, isCurrentInstanceActive } = require('../config');
 const { sendDerivativesMessage } = require('../telegramService');
 
 // ─── 8 ENGINES ───────────────────────────────────────────────
@@ -202,6 +202,8 @@ function _computeVN30Deltas(current, prev) {
 
 // ─── UNIFIED DERIVATIVES SIGNAL JOB (9h05 → 14h30 mỗi 5p) ────
 async function runDerivativesSignalJob() {
+  if (!isCurrentInstanceActive()) return;
+
   console.log('\n' + '='.repeat(55));
   console.log('🔮 DERIVATIVES SIGNAL v4.1 — UPDATE');
   console.log('='.repeat(55));
@@ -306,7 +308,15 @@ const runAfternoonDerivativesJob = runDerivativesSignalJob;
 
 // ─── AI DERIVATIVES JOB ─────────────────────────────────────
 async function runAIDerivativesJob(session) {
-  const sessionLabel = session === 'morning' ? '🌅 SÁNG (9h22)' : session === 'midmorning' ? '⛅ GIỮA SÁNG (10h22)' : '🌆 CHIỀU (13h50)';
+  if (!isCurrentInstanceActive()) return;
+
+  const sessionLabels = {
+    'morning': 'SÁNG (9h22)',
+    'midmorning': 'GIỮA SÁNG (10h22)',
+    'afternoon': 'CHIỀU (13h50)',
+  };
+  const sessionLabel = sessionLabels[session] || session;
+
   console.log('\n' + '═'.repeat(55));
   console.log(`🤖 AI DERIVATIVES ANALYSIS v4.0 — ${sessionLabel}`);
   console.log('═'.repeat(55));
@@ -378,6 +388,8 @@ YÊU CẦU:
 
 // ─── DERIVATIVES OI JOB (tối 19h30) ─────────────────────────
 async function runDerivativesOIJob(session = 'evening') {
+  if (!isCurrentInstanceActive()) return;
+
   console.log('\n' + '═'.repeat(55));
   console.log(`📊 DERIVATIVES OI v4.0 — ${session}`);
   console.log('═'.repeat(55));
@@ -433,6 +445,7 @@ const _momentumHistory = [];
 
 // ─── MOMENTUM MONITOR ───────────────────────────────────────
 async function checkMomentum() {
+  if (!isCurrentInstanceActive()) return;
   if (!dataFetcher.isMarketHours()) return;
 
   try {

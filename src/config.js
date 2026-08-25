@@ -98,12 +98,35 @@ const config = {
   // Bật/tắt interactive bot (polling)
   enableInteractiveBot: (process.env.ENABLE_INTERACTIVE_BOT || 'true') === 'true',
 
+  // Rotation: Ngày hoạt động trong tháng (VD: "1-10", "11-20", "21-31", hoặc "all")
+  activeDays: process.env.ACTIVE_DAYS || 'all',
+
   // Timezone
   timezone: process.env.TZ || 'Asia/Ho_Chi_Minh',
 
   // Version
   version: '2.5.0',
 };
+
+// Kiểm tra xem instance hiện tại có đang trong ngày hoạt động không
+function isCurrentInstanceActive() {
+  const activeDays = process.env.ACTIVE_DAYS || config.activeDays;
+  if (!activeDays || activeDays === 'all') return true;
+
+  try {
+    const vnDateStr = new Date().toLocaleString('en-US', { timeZone: config.timezone });
+    const day = new Date(vnDateStr).getDate(); // Ngày 1 - 31
+
+    const parts = activeDays.split('-').map(s => parseInt(s.trim(), 10));
+    if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+      const [start, end] = parts;
+      return day >= start && day <= end;
+    }
+  } catch (e) {
+    console.error('⚠️ Lỗi kiểm tra isCurrentInstanceActive:', e.message);
+  }
+  return true;
+}
 
 // Validate required config
 function validateConfig() {
@@ -133,4 +156,5 @@ function validateConfig() {
   }
 }
 
-module.exports = { config, validateConfig };
+module.exports = { config, validateConfig, isCurrentInstanceActive };
+
