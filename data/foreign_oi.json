@@ -1,51 +1,40 @@
 {
-  "cumulativeForeignNet": -4280,
   "lastUpdated": "2026-09-04T15:00:00.000Z",
   "history": [
     {
       "date": "26/8/2026",
       "buy": 4850,
       "sell": 5420,
-      "net": -570,
-      "cumulative": -5100,
-      "tuDoanhNet": 620,
-      "tuDoanhCumulative": 3200
+      "overnightNet": -570,
+      "tuDoanhOvernight": 620
     },
     {
       "date": "27/8/2026",
       "buy": 4210,
       "sell": 4642,
-      "net": -432,
-      "cumulative": -5532,
-      "tuDoanhNet": 450,
-      "tuDoanhCumulative": 3650
+      "overnightNet": -432,
+      "tuDoanhOvernight": 450
     },
     {
       "date": "28/8/2026",
       "buy": 4312,
       "sell": 3790,
-      "net": 522,
-      "cumulative": -5010,
-      "tuDoanhNet": -180,
-      "tuDoanhCumulative": 3470
+      "overnightNet": 522,
+      "tuDoanhOvernight": -180
     },
     {
       "date": "3/9/2026",
       "buy": 3150,
       "sell": 4600,
-      "net": -1450,
-      "cumulative": -6460,
-      "tuDoanhNet": 1120,
-      "tuDoanhCumulative": 4590
+      "overnightNet": -1450,
+      "tuDoanhOvernight": 1120
     },
     {
       "date": "4/9/2026",
       "buy": 5620,
       "sell": 3440,
-      "net": 2180,
-      "cumulative": -4280,
-      "tuDoanhNet": -740,
-      "tuDoanhCumulative": 3850
+      "overnightNet": 2180,
+      "tuDoanhOvernight": -740
     }
   ]
 }

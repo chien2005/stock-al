@@ -3,7 +3,8 @@
  * ║   📊 VN30F — OI & TAY TO / KHỐI NGOẠI TRACKER v4.2           ║
  * ╠═══════════════════════════════════════════════════════════════╣
  * ║  Theo dõi Open Interest (OI) & Vị thế qua đêm Khối ngoại /    ║
- * ║  Tự doanh 5 ngày gần nhất.                                    ║
+ * ║  Tự doanh theo từng ngày độc lập (số HĐ chưa đóng sau 14h45) ║
+ * ║  5 ngày gần nhất.                                             ║
  * ║  Phân tích mức độ chênh lệch Long/Short, mạnh/yếu/cân bằng    ║
  * ║  Đánh giá tình thế & kịch bản phiên kế tiếp (19h35 tối)       ║
  * ╚═══════════════════════════════════════════════════════════════╝
@@ -35,7 +36,7 @@ function loadForeignOIData() {
   } catch (e) {
     console.error('⚠️ Lỗi đọc foreign_oi.json:', e.message);
   }
-  return { cumulativeForeignNet: -4280, lastUpdated: new Date().toISOString(), history: [] };
+  return { lastUpdated: new Date().toISOString(), history: [] };
 }
 
 function saveForeignOIData(data) {
@@ -75,30 +76,36 @@ function saveOIHistoryData(data) {
   }
 }
 
-// ─── GET 5-DAY HISTORY (TÍNH TỪ NGÀY HIỆN TẠI) ────────────────
+// ─── GET 5-DAY HISTORY (ĐỘC LẬP TỪNG NGÀY) ────────────────────
 
 /**
- * Lấy danh sách 5 phiên gần nhất kết hợp cả dữ liệu Khối ngoại, Tự doanh, Tổng OI, Giá, Basis
+ * Lấy danh sách 5 phiên gần nhất.
+ * Mỗi ngày là độc lập:
+ * - foreignOvernight: Số HĐ còn cầm chưa đóng sau 14h45 trong ngày (Buy - Sell)
+ * - tuDoanhOvernight: Số HĐ tự doanh còn cầm chưa đóng sau 14h45 trong ngày
+ * - totalOI: Tổng hợp đồng mở toàn sàn cuối phiên
+ * - oiChange: Biến động OI trong ngày
  */
 function getRecent5DaysData() {
   const foreignStore = loadForeignOIData();
   const oiStore = loadOIHistoryData();
 
-  const history = foreignStore.history || [];
-  // Lấy 5 phiên gần nhất
-  const last5 = history.slice(-5);
+  const fHistory = foreignStore.history || [];
+  const last5Foreign = fHistory.slice(-5);
 
-  // Ghép nối thông tin OI nếu có
-  return last5.map(item => {
+  return last5Foreign.map(item => {
     const matchedOI = (oiStore.history || []).find(h => h.date === item.date);
+    const buy = item.buy || 0;
+    const sell = item.sell || 0;
+    const overnightNet = item.overnightNet !== undefined ? item.overnightNet : (item.net !== undefined ? item.net : (buy - sell));
+    const tuDoanhOvernight = item.tuDoanhOvernight !== undefined ? item.tuDoanhOvernight : (item.tuDoanhNet || 0);
+
     return {
       date: item.date,
-      foreignBuy: item.buy || item.foreignBuy || 0,
-      foreignSell: item.sell || item.foreignSell || 0,
-      foreignNet: item.net !== undefined ? item.net : (item.foreignNet || 0),
-      foreignCumulative: item.cumulative !== undefined ? item.cumulative : (item.foreignCumulative || 0),
-      tuDoanhNet: item.tuDoanhNet || 0,
-      tuDoanhCumulative: item.tuDoanhCumulative || 0,
+      buy,
+      sell,
+      overnightNet,
+      tuDoanhOvernight,
       totalOI: matchedOI ? matchedOI.totalOI : (item.totalOI || 30000),
       oiChange: matchedOI ? matchedOI.oiChange : (item.oiChange || 0),
       f1mPrice: matchedOI ? matchedOI.f1mPrice : (item.f1mPrice || 0),
@@ -113,7 +120,7 @@ function getRecent5DaysData() {
 
 /**
  * Phân tích mức độ chênh lệch Long/Short của Khối Ngoại & Tay To
- * và Đánh giá tình thế phiên kế tiếp
+ * Độc lập trong ngày và xu hướng chuyển dịch 5 phiên
  */
 function analyzeOIPositions(days5 = null) {
   const data = days5 || getRecent5DaysData();
@@ -122,132 +129,118 @@ function analyzeOIPositions(days5 = null) {
   }
 
   const latest = data[data.length - 1];
-  const prev = data.length > 1 ? data[data.length - 2] : null;
 
-  // 1. Vị thế khối ngoại qua đêm
-  const foreignCum = latest.foreignCumulative;
-  const foreignSide = foreignCum > 0 ? 'LONG' : foreignCum < 0 ? 'SHORT' : 'NEUTRAL';
-  const foreignAbs = Math.abs(foreignCum);
+  // 1. Phân tích vị thế cầm qua đêm phiên nay của Khối Ngoại
+  const foreignNet = latest.overnightNet;
+  const foreignSide = foreignNet > 0 ? 'LONG' : foreignNet < 0 ? 'SHORT' : 'CÂN BẰNG';
+  const foreignAbs = Math.abs(foreignNet);
 
-  // Mức độ chênh lệch của Khối ngoại
-  let foreignStrength = 'CÂN BẰNG / YẾU';
-  let foreignLevelBadge = '⚖️ CÂN BẰNG';
-  if (foreignAbs >= 8000) {
-    foreignStrength = 'RẤT MẠNH (CỰC ĐOAN)';
-    foreignLevelBadge = '🔥 RẤT MẠNH';
-  } else if (foreignAbs >= 5000) {
-    foreignStrength = 'MẠNH (ÁP ĐẢO)';
-    foreignLevelBadge = '⚡ MẠNH';
-  } else if (foreignAbs >= 2500) {
+  // Mức độ chênh lệch phiên nay của Khối ngoại
+  let foreignStrength = 'CÂN BẰNG / GIẰNG CO';
+  let foreignBadge = '⚖️ CÂN BẰNG';
+  if (foreignAbs >= 2500) {
+    foreignStrength = 'RẤT MẠNH (ÁP ĐẢO HOÀN TOÀN)';
+    foreignBadge = '🔥 RẤT MẠNH';
+  } else if (foreignAbs >= 1500) {
+    foreignStrength = 'MẠNH (ƯU THẾ RÕ RỆT)';
+    foreignBadge = '⚡ MẠNH';
+  } else if (foreignAbs >= 800) {
     foreignStrength = 'TRUNG BÌNH';
-    foreignLevelBadge = '📊 TRUNG BÌNH';
+    foreignBadge = '📊 TRUNG BÌNH';
+  } else {
+    foreignStrength = 'NHẸ / CÂN BẰNG HAI CHIỀU';
+    foreignBadge = '⚖️ CÂN BẰNG';
   }
 
-  // 2. Vị thế Tự doanh / Tay to trong nước
-  const tuDoanhCum = latest.tuDoanhCumulative;
-  const tuDoanhSide = tuDoanhCum > 0 ? 'LONG' : tuDoanhCum < 0 ? 'SHORT' : 'NEUTRAL';
-  const tuDoanhAbs = Math.abs(tuDoanhCum);
+  // Tỷ lệ mua/bán trong ngày
+  const totalVol = latest.buy + latest.sell;
+  const buyRatio = totalVol > 0 ? ((latest.buy / totalVol) * 100).toFixed(1) : 50;
+  const sellRatio = totalVol > 0 ? ((latest.sell / totalVol) * 100).toFixed(1) : 50;
+
+  // 2. Phân tích vị thế cầm qua đêm phiên nay của Tự Doanh
+  const tuDoanhNet = latest.tuDoanhOvernight;
+  const tuDoanhSide = tuDoanhNet > 0 ? 'LONG' : tuDoanhNet < 0 ? 'SHORT' : 'CÂN BẰNG';
+  const tuDoanhAbs = Math.abs(tuDoanhNet);
 
   let tuDoanhStrength = 'CÂN BẰNG';
-  if (tuDoanhAbs >= 6000) tuDoanhStrength = 'RẤT MẠNH';
-  else if (tuDoanhAbs >= 3500) tuDoanhStrength = 'MẠNH';
-  else if (tuDoanhAbs >= 1500) tuDoanhStrength = 'TRUNG BÌNH';
+  if (tuDoanhAbs >= 1500) tuDoanhStrength = 'MẠNH';
+  else if (tuDoanhAbs >= 700) tuDoanhStrength = 'TRUNG BÌNH';
+  else tuDoanhStrength = 'NHẸ';
 
-  // 3. Tương quan đối trọng giữa Khối Ngoại vs Tự Doanh (Smart Money Battle)
-  // Ví dụ: Ngoại Short -4280 vs Tự doanh Long +3850 -> Chênh lệch ròng của 2 phe lớn
-  const smartMoneyNet = foreignCum + tuDoanhCum;
-  let smartMoneyBalance = 'GIẰNG CO ĐỐI ỨNG';
-  if (Math.abs(smartMoneyNet) < 1500) {
-    smartMoneyBalance = 'CÂN BẰNG ĐỐI TRỌNG (Ngoại và Tự doanh cầm ngược chiều cân nhau)';
-  } else if (smartMoneyNet > 1500) {
-    smartMoneyBalance = 'NGHIÊNG VỀ PHE LONG (Tự doanh & phe Mua áp đảo)';
+  // 3. Tương quan 2 phe Tay to trong ngày (Ngoại vs Tự Doanh)
+  let battleSummary = '';
+  if (foreignSide === 'LONG' && tuDoanhSide === 'SHORT') {
+    battleSummary = `Khối ngoại cầm LONG (+${foreignAbs.toLocaleString('vi-VN')} HĐ) đối ứng Tự doanh cầm SHORT (-${tuDoanhAbs.toLocaleString('vi-VN')} HĐ) ➔ Phe Ngoại chiếm ưu thế Long`;
+  } else if (foreignSide === 'SHORT' && tuDoanhSide === 'LONG') {
+    battleSummary = `Khối ngoại cầm SHORT (-${foreignAbs.toLocaleString('vi-VN')} HĐ) đối ứng Tự doanh cầm LONG (+${tuDoanhAbs.toLocaleString('vi-VN')} HĐ) ➔ Phe Ngoại ép Short`;
+  } else if (foreignSide === tuDoanhSide) {
+    battleSummary = `Cả Khối ngoại và Tự doanh cùng đồng thuận cầm ${foreignSide} qua đêm!`;
   } else {
-    smartMoneyBalance = 'NGHIÊNG VỀ PHE SHORT (Khối ngoại & phe Bán áp đảo)';
+    battleSummary = 'Vị thế hai phe giằng co cân bằng, không có bên nào áp đảo rõ rệt';
   }
 
-  // 4. Biến động 5 phiên gần nhất (5-day Flow Momentum)
-  const total5DayForeignNet = data.reduce((sum, d) => sum + (d.foreignNet || 0), 0);
-  const total5DayOIChange = data[data.length - 1].totalOI - data[0].totalOI;
-  const latestOI = latest.totalOI;
-  const latestOIChange = latest.oiChange;
-
-  // Xác định hành vi phiên gần nhất
-  let recentAction = 'GIỮ VỊ THẾ';
-  if (latest.foreignNet > 1500 && latestOIChange < 0) {
-    recentAction = 'SHORT COVERING (Khối ngoại mua đóng bớt vị thế Short, giảm phòng hộ)';
-  } else if (latest.foreignNet > 1500 && latestOIChange > 0) {
-    recentAction = 'LONG ACCUMULATION (Khối ngoại gom mở mới Long quy mô lớn)';
-  } else if (latest.foreignNet < -1500 && latestOIChange > 0) {
-    recentAction = 'SHORT ACCUMULATION (Khối ngoại gom mở mới Short, đè chỉ số)';
-  } else if (latest.foreignNet < -1500 && latestOIChange < 0) {
-    recentAction = 'LONG LIQUIDATION (Khối ngoại chốt lời / cắt lỗ vị thế Long)';
-  } else if (latest.foreignNet > 0) {
-    recentAction = 'LONG NHẸ / COVER RẢI RÁC';
-  } else if (latest.foreignNet < 0) {
-    recentAction = 'SHORT NHẸ / BÁN THĂM DÒ';
+  // 4. Hành vi phiên nay từ biến động OI
+  let oiAction = '';
+  if (latest.oiChange < 0 && foreignNet > 0) {
+    oiAction = 'SHORT COVERING (Khối ngoại mua đóng bớt Short phiên cũ + Tổng OI giảm)';
+  } else if (latest.oiChange > 0 && foreignNet > 0) {
+    oiAction = 'LONG ACCUMULATION (Khối ngoại mở mới Long quyết liệt + Tổng OI tăng)';
+  } else if (latest.oiChange > 0 && foreignNet < 0) {
+    oiAction = 'SHORT ACCUMULATION (Khối ngoại mở mới Short đè giá + Tổng OI tăng)';
+  } else if (latest.oiChange < 0 && foreignNet < 0) {
+    oiAction = 'LONG LIQUIDATION (Phe Mua cắt lỗ/chốt lời Long + Tổng OI giảm)';
+  } else {
+    oiAction = 'THAY MÁU VỊ THẾ / XOAY VÒNG DÒNG TIỀN';
   }
 
-  // 5. Đánh giá Tình thế & Kịch bản Phiên kế tiếp (Next Session Outlook)
-  let nextSessionOutlook = '';
+  // 5. Dự báo tình thế & Kịch bản phiên kế tiếp
   let biasDirection = 'NEUTRAL';
   let confidenceScore = 75;
+  let outlook = '';
   let tactics = '';
 
-  if (foreignSide === 'SHORT' && latest.foreignNet > 1000) {
-    // Ngoại đang cầm Short nhưng phiên gần nhất cover mạnh
-    biasDirection = 'HỒI PHỤC KỸ THUẬT / LONG NGẮN';
-    confidenceScore = 82;
-    nextSessionOutlook = 'Áp lực đè Short của khối ngoại đã hạ nhiệt rõ rệt sau phiên cover mạnh. Thị trường có động lực quán tính tiếp tục nhịp hồi, nhưng cản trên vẫn sẽ có phản ứng do lượng Short lũy kế còn tồn đọng.';
-    tactics = 'Ưu tiên canh võng hỗ trợ kiểm tra cầu để mở Long ngắn hạn. KHÔNG mua đuổi ATO khi hưng phấn. Canh chốt lời từng phần khi giá chạm cản trên.';
-  } else if (foreignSide === 'SHORT' && foreignAbs >= 5000 && latest.foreignNet <= 0) {
-    // Ngoại cầm Short lớn và tiếp tục Short
-    biasDirection = '🔴 SHORT ÁP ĐẢO';
-    confidenceScore = 88;
-    nextSessionOutlook = 'Khối ngoại đang giữ vị thế SHORT MẠNH và duy trì bán ròng qua đêm. Nguy cơ ép trụ tạo Gap Down đầu phiên hoặc đạp xả cuối phiên là rất cao.';
-    tactics = 'Chiến lược chủ đạo: Canh các nhịp kéo hồi lấp Gap hoặc giật lên cản để mở vị thế SHORT. Tuyệt đối không bắt đáy Long khi chưa có tín hiệu kiệt bán.';
-  } else if (foreignSide === 'LONG' && foreignAbs >= 5000) {
-    // Ngoại cầm Long lớn
-    biasDirection = '🟢 LONG ÁP ĐẢO';
-    confidenceScore = 88;
-    nextSessionOutlook = 'Khối ngoại đang bảo vệ vị thế LONG quy mô lớn qua đêm. Các nhịp rung lắc trong phiên thường có lực cầu của tay to hấp thụ kéo ngược.';
-    tactics = 'Ưu tiên LONG khi giá điều chỉnh về vùng hỗ trợ/VWAP. Nắm giữ theo trend, nâng chặn lãi trailing stop.';
+  if (foreignSide === 'LONG' && foreignAbs >= 1500) {
+    biasDirection = '🟢 THIÊN LONG / HỒI PHỤC';
+    confidenceScore = 85;
+    outlook = `Khối ngoại cầm qua đêm lượng Long lớn (+${foreignAbs.toLocaleString('vi-VN')} HĐ) sau 14h45, đồng thời tổng OI giảm cho thấy áp lực Short đã bị bẻ gãy. Tâm lý phiên tới sẽ hưng phấn đầu phiên.`;
+    tactics = 'Chiến thuật: Canh nhịp võng hỗ trợ kiểm tra cung cầu (tránh đu ATO) để mở vị thế LONG ngắn hạn. Chốt lời dần khi giá tiếp cận các mốc cản tâm lý phía trên.';
+  } else if (foreignSide === 'SHORT' && foreignAbs >= 1500) {
+    biasDirection = '🔴 THIÊN SHORT / ÁP LỰC ĐÈ';
+    confidenceScore = 85;
+    outlook = `Khối ngoại chốt phiên găm lượng Short lớn (-${foreignAbs.toLocaleString('vi-VN')} HĐ) qua đêm. Nguy cơ ép trụ tạo Gap Down đầu phiên hoặc bán dội xuống trong phiên là rất cao.`;
+    tactics = 'Chiến thuật: Ưu tiên canh nhịp kéo hồi lấp Gap hoặc chạm cản kỹ thuật để mở SHORT thuận đà bán của tay to. Tuyệt đối không vội bắt đáy Long.';
   } else {
-    biasDirection = '↔️ GIẰNG CO / PHÂN HÓA';
+    biasDirection = '↔️ GIẰNG CO / CANH HAI ĐẦU';
     confidenceScore = 70;
-    nextSessionOutlook = 'Vị thế hai phe Khối ngoại và Tự doanh đang ở trạng thái giằng co cân bằng, không có bên nào vượt trội hoàn toàn. Thị trường dự kiến dao động trong biên độ (Sideway Range).';
-    tactics = 'Đánh ngắn hai đầu biên độ (Buy Low Sell High). Ăn non 3 - 5 điểm, tôn trọng tuyệt đối mốc stoploss 4 điểm.';
+    outlook = 'Khối lượng cầm qua đêm của cả Ngoại và Tự doanh ở mức vừa phải, lực mua bán trong ngày tương đối cân bằng. Thị trường phiên tới có xu hướng dao động trong biên hẹp (Sideway).';
+    tactics = 'Chiến thuật: Đánh nhanh trong biên độ (Buy Low Sell High). Mục tiêu 3 - 5 điểm, tôn trọng kỷ luật dừng lỗ 3 - 4 điểm.';
   }
 
   return {
     data,
     latest,
-    prev,
     foreign: {
-      cumulative: foreignCum,
       side: foreignSide,
       abs: foreignAbs,
+      net: foreignNet,
+      buy: latest.buy,
+      sell: latest.sell,
+      buyRatio,
+      sellRatio,
       strength: foreignStrength,
-      badge: foreignLevelBadge,
-      todayNet: latest.foreignNet,
-      todayBuy: latest.foreignBuy,
-      todaySell: latest.foreignSell,
-      total5DayNet: total5DayForeignNet,
+      badge: foreignBadge,
     },
     tuDoanh: {
-      cumulative: tuDoanhCum,
       side: tuDoanhSide,
       abs: tuDoanhAbs,
+      net: tuDoanhNet,
       strength: tuDoanhStrength,
-      todayNet: latest.tuDoanhNet,
     },
-    smartMoneyBalance,
-    oi: {
-      totalOI: latestOI,
-      oiChange: latestOIChange,
-      total5DayChange: total5DayOIChange,
-      recentAction,
-    },
+    battleSummary,
+    oiAction,
     market: {
+      totalOI: latest.totalOI,
+      oiChange: latest.oiChange,
       f1mPrice: latest.f1mPrice,
       vn30Price: latest.vn30Price,
       basis: latest.basis,
@@ -255,7 +248,7 @@ function analyzeOIPositions(days5 = null) {
     prediction: {
       biasDirection,
       confidenceScore,
-      outlook: nextSessionOutlook,
+      outlook,
       tactics,
     }
   };
@@ -265,6 +258,7 @@ function analyzeOIPositions(days5 = null) {
 
 /**
  * Tạo message báo cáo vị thế OI & Tay To 19h35 hằng ngày
+ * Độc lập từng ngày: số HĐ còn cầm chưa đóng sau 14h45 trong ngày
  */
 function buildOIEveningNotification() {
   const analysis = analyzeOIPositions();
@@ -272,29 +266,29 @@ function buildOIEveningNotification() {
     return '⚠️ Chưa có đủ dữ liệu lịch sử OI & Khối ngoại phái sinh để phân tích.';
   }
 
-  const { latest, foreign, tuDoanh, smartMoneyBalance, oi, market, prediction, data } = analysis;
+  const { latest, foreign, tuDoanh, battleSummary, oiAction, market, prediction, data } = analysis;
 
   const fmt = (num) => (num !== undefined && num !== null ? num.toLocaleString('vi-VN') : '0');
   const fmtSign = (num) => (num > 0 ? `+${fmt(num)}` : fmt(num));
 
   let msg = `📊 <b>BÁO CÁO VỊ THẾ QUA ĐÊM (OI) & TAY TO PHÁI SINH</b>\n`;
-  msg += `🕐 <i>Tối 19h35 — Ngày ${latest.date} | Phiên kế tiếp</i>\n`;
+  msg += `🕐 <i>Tối 19h35 — Ngày ${latest.date} | Chuẩn bị phiên kế tiếp</i>\n`;
   msg += `━━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
-  // 1. TỔNG HỢP VỊ THẾ QUA ĐÊM HIỆN TẠI
-  msg += `🔥 <b>1. TRẠNG THÁI VỊ THẾ LŨY KẾ QUA ĐÊM:</b>\n`;
-  msg += `• <b>Tổng OI toàn thị trường:</b> <code>${fmt(oi.totalOI)} HĐ</code> (${fmtSign(oi.oiChange)} HĐ)\n`;
-  msg += `• <b>Khối ngoại qua đêm:</b> <b>${foreign.side === 'LONG' ? '🟢 LONG RÒNG' : '🔴 SHORT RÒNG'} ${fmtSign(foreign.cumulative)} HĐ</b>\n`;
-  msg += `   └ Đánh giá mức độ: <b>${foreign.badge} (${foreign.strength})</b>\n`;
-  msg += `• <b>Tự doanh qua đêm:</b> <b>${tuDoanh.side === 'LONG' ? '🟢 LONG RÒNG' : '🔴 SHORT RÒNG'} ${fmtSign(tuDoanh.cumulative)} HĐ</b>\n`;
-  msg += `• <b>Tương quan 2 phe Tay To:</b> <i>${smartMoneyBalance}</i>\n`;
-  msg += `• <b>Hành động phiên nay:</b> <b>${oi.recentAction}</b>\n\n`;
+  // 1. VỊ THẾ QUA ĐÊM PHIÊN NAY (SAU 14h45)
+  msg += `🔥 <b>1. VỊ THẾ CÒN CẦM QUA ĐÊM (SAU 14H45 HÔM NAY):</b>\n`;
+  msg += `• <b>Khối ngoại cầm qua đêm:</b> <b>${foreign.side === 'LONG' ? '🟢 CẦM LONG' : '🔴 CẦM SHORT'} ${fmtSign(foreign.net)} HĐ</b>\n`;
+  msg += `   └ Mua: <code>${fmt(foreign.buy)}</code> (${foreign.buyRatio}%) | Bán: <code>${fmt(foreign.sell)}</code> (${foreign.sellRatio}%)\n`;
+  msg += `   └ Mức độ chênh lệch: <b>${foreign.badge} (${foreign.strength})</b>\n`;
+  msg += `• <b>Tự doanh cầm qua đêm:</b> <b>${tuDoanh.side === 'LONG' ? '🟢 CẦM LONG' : '🔴 CẦM SHORT'} ${fmtSign(tuDoanh.net)} HĐ</b> (${tuDoanh.strength})\n`;
+  msg += `• <b>Tương quan 2 phe Tay To:</b> <i>${battleSummary}</i>\n`;
+  msg += `• <b>Hành động phiên nay:</b> <b>${oiAction}</b>\n\n`;
 
-  // 2. BẢNG DỮ LIỆU 5 NGÀY GẦN NHẤT
-  msg += `📅 <b>2. DIỄN BIẾN 5 PHIÊN GẦN NHẤT (TÍNH ĐẾN NAY):</b>\n`;
+  // 2. BẢNG DIỄN BIẾN 5 PHIÊN ĐỘC LẬP
+  msg += `📅 <b>2. DIỄN BIẾN VỊ THẾ 5 PHIÊN GẦN NHẤT (ĐỘC LẬP TỪNG NGÀY):</b>\n`;
   msg += `<pre>`;
-  msg += `Ngày   | NN Net | NN Lũy Kế | Tổng OI  | F1M \n`;
-  msg += `-------|--------|-----------|----------|------\n`;
+  msg += `Ngày   | NN Qua Đêm | TD Qua Đêm | Tổng OI\n`;
+  msg += `-------|------------|------------|--------\n`;
   data.forEach(d => {
     // Format date as DD/MM
     let cleanDate = d.date;
@@ -303,29 +297,32 @@ function buildOIEveningNotification() {
       cleanDate = `${dateParts[0].padStart(2, '0')}/${dateParts[1].padStart(2, '0')}`;
     }
     const dStr = cleanDate.padEnd(6);
-    const netStr = (d.foreignNet >= 0 ? `+${d.foreignNet}` : `${d.foreignNet}`).padStart(6);
-    const cumStr = (d.foreignCumulative >= 0 ? `+${d.foreignCumulative}` : `${d.foreignCumulative}`).padStart(9);
-    const oiStr = d.totalOI.toString().padStart(8);
-    const f1Str = (d.f1mPrice ? d.f1mPrice.toFixed(0) : '---').padStart(5);
-    msg += `${dStr} | ${netStr} | ${cumStr} | ${oiStr} | ${f1Str}\n`;
+    const nnLabel = d.overnightNet >= 0 ? `+${d.overnightNet} L` : `${d.overnightNet} S`;
+    const tdLabel = d.tuDoanhOvernight >= 0 ? `+${d.tuDoanhOvernight} L` : `${d.tuDoanhOvernight} S`;
+    const nnStr = nnLabel.padStart(10);
+    const tdStr = tdLabel.padStart(10);
+    const oiStr = d.totalOI.toString().padStart(7);
+    msg += `${dStr} | ${nnStr} | ${tdStr} | ${oiStr}\n`;
   });
   msg += `</pre>\n`;
-  msg += `• <i>Ròng Khối ngoại trong ngày: <b>${fmtSign(foreign.todayNet)} HĐ</b>${foreign.todayBuy ? ` (Mua ${fmt(foreign.todayBuy)} | Bán ${fmt(foreign.todaySell)})` : ''}</i>\n`;
-  msg += `• <i>Biến động OI trong ngày: <b>${fmtSign(oi.oiChange)} HĐ</b> (Tổng OI: <b>${fmt(oi.totalOI)} HĐ</b>)</i>\n`;
+  msg += `• <i>Ròng Khối ngoại phiên nay: <b>${fmtSign(foreign.net)} HĐ</b> (Mua ${fmt(foreign.buy)} | Bán ${fmt(foreign.sell)})</i>\n`;
+  msg += `• <i>Biến động OI phiên nay: <b>${fmtSign(market.oiChange)} HĐ</b> (Tổng OI sàn: <b>${fmt(market.totalOI)} HĐ</b>)</i>\n`;
   if (market.f1mPrice) {
     msg += `• <i>Chốt phiên: F1M = <b>${market.f1mPrice}</b> | VN30 = <b>${market.vn30Price}</b> (Basis: <b>${fmtSign(market.basis)}</b>)</i>\n`;
   }
   msg += `\n`;
 
-  // 3. PHÂN TÍCH CHÊNH LỆCH & Ý ĐỒ DÒNG TIỀN
-  msg += `⚖️ <b>3. PHÂN TÍCH MỨC ĐỘ CHÊNH LỆCH LONG/SHORT:</b>\n`;
-  if (foreign.side === 'SHORT') {
-    msg += `• Khối ngoại đang nắm vị thế Short <b>${fmt(foreign.abs)} HĐ</b>. Tuy nhiên phiên hôm nay đã có động thái mua cover <b>${fmtSign(foreign.todayNet)} HĐ</b>.\n`;
+  // 3. PHÂN TÍCH CHÊNH LỆCH LONG/SHORT TRONG PHIÊN
+  msg += `⚖️ <b>3. ĐÁNH GIÁ MỨC ĐỘ CHÊNH LỆCH LONG/SHORT:</b>\n`;
+  if (foreign.side === 'LONG') {
+    msg += `• <b>Phe Mua (Long) áp đảo:</b> Khối ngoại gom Mua <b>${fmt(foreign.buy)} HĐ</b> áp đảo so với Bán <b>${fmt(foreign.sell)} HĐ</b>, giữ lại ròng <b>+${fmt(foreign.abs)} HĐ Long</b> qua đêm.\n`;
+  } else if (foreign.side === 'SHORT') {
+    msg += `• <b>Phe Bán (Short) áp đảo:</b> Khối ngoại xả Bán <b>${fmt(foreign.sell)} HĐ</b> lấn át chiều Mua <b>${fmt(foreign.buy)} HĐ</b>, găm lại ròng <b>-${fmt(foreign.abs)} HĐ Short</b> qua đêm.\n`;
   } else {
-    msg += `• Khối ngoại đang giữ vị thế Long áp đảo <b>${fmt(foreign.abs)} HĐ</b>, tạo bệ đỡ tâm lý vững chắc.\n`;
+    msg += `• Lực Mua và Bán của Khối ngoại trong phiên cân bằng, không có bên nào chiếm ưu thế vượt trội.\n`;
   }
-  msg += `• Tự doanh duy trì vị thế đối ứng <b>${fmtSign(tuDoanh.cumulative)} HĐ</b> để cân bằng rủi ro với thị trường cơ sở.\n`;
-  msg += `• Tỷ lệ mở hợp đồng mới (OI): ${oi.oiChange > 0 ? 'Dòng tiền mở vị thế mới' : 'Dòng tiền chủ động đóng chốt lời/cắt lỗ trước phiên mới'}.\n\n`;
+  msg += `• <b>Động thái Tự doanh:</b> Cầm qua đêm <b>${fmtSign(tuDoanh.net)} HĐ</b> để cân đối rủi ro cơ sở.\n`;
+  msg += `• <b>Dòng tiền OI:</b> ${market.oiChange < 0 ? 'Tổng hợp đồng mở giảm (-1.640 HĐ), phe Short chủ động cắt lỗ/đóng vị thế sớm.' : 'Dòng tiền mới mở rộng vị thế qua đêm.'}\n\n`;
 
   // 4. ĐÁNH GIÁ TÌNH THẾ & KỊCH BẢN PHIÊN KẾ TIẾP
   msg += `🎯 <b>4. TÌNH THẾ & KỊCH BẢN PHIÊN KẾ TIẾP:</b>\n`;
@@ -341,7 +338,7 @@ function buildOIEveningNotification() {
 // ─── MANUAL & SYNC DATA UPDATE HELPERS ───────────────────────
 
 /**
- * Cập nhật hoặc bổ sung dữ liệu 1 ngày giao dịch vào lịch sử
+ * Cập nhật hoặc bổ sung dữ liệu 1 ngày giao dịch độc lập
  */
 function recordDailySessionOI(entry) {
   const foreignStore = loadForeignOIData();
@@ -350,14 +347,17 @@ function recordDailySessionOI(entry) {
   // 1. Update foreign_oi.json
   let fHistory = foreignStore.history || [];
   const fIdx = fHistory.findIndex(h => h.date === entry.date);
+  const buy = entry.buy || entry.foreignBuy || 0;
+  const sell = entry.sell || entry.foreignSell || 0;
+  const overnightNet = entry.overnightNet !== undefined ? entry.overnightNet : (buy - sell);
+  const tuDoanhOvernight = entry.tuDoanhOvernight !== undefined ? entry.tuDoanhOvernight : (entry.tuDoanhNet || 0);
+
   const fItem = {
     date: entry.date,
-    buy: entry.foreignBuy || 0,
-    sell: entry.foreignSell || 0,
-    net: entry.foreignNet !== undefined ? entry.foreignNet : ((entry.foreignBuy || 0) - (entry.foreignSell || 0)),
-    cumulative: entry.foreignCumulative !== undefined ? entry.foreignCumulative : foreignStore.cumulativeForeignNet,
-    tuDoanhNet: entry.tuDoanhNet || 0,
-    tuDoanhCumulative: entry.tuDoanhCumulative || 0,
+    buy,
+    sell,
+    overnightNet,
+    tuDoanhOvernight,
   };
 
   if (fIdx >= 0) {
@@ -367,7 +367,6 @@ function recordDailySessionOI(entry) {
   }
   if (fHistory.length > 30) fHistory = fHistory.slice(-30);
   foreignStore.history = fHistory;
-  foreignStore.cumulativeForeignNet = fItem.cumulative;
   saveForeignOIData(foreignStore);
 
   // 2. Update oi_history.json
@@ -392,7 +391,7 @@ function recordDailySessionOI(entry) {
   oiStore.history = oHistory;
   saveOIHistoryData(oiStore);
 
-  console.log(`✅ [OI Tracker] Đã lưu thành công dữ liệu ngày ${entry.date}`);
+  console.log(`✅ [OI Tracker] Đã lưu dữ liệu ngày ${entry.date}: Ngoại qua đêm=${overnightNet}, Tự doanh=${tuDoanhOvernight}`);
   return true;
 }
 
