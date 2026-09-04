@@ -29,6 +29,7 @@ const { calculateScore } = require('./scoringEngine');
 const { buildTargetMap } = require('./targetEngine');
 const { buildSignalNotification, buildMomentumAlert, buildLeaderAlert, buildTrapAlert } = require('./notificationBuilder');
 const { saveSignalSnapshot } = require('./snapshotStore');
+const oiTracker = require('./oiTracker');
 
 // ─── STATE ───────────────────────────────────────────────────────
 const _state = {
@@ -405,57 +406,22 @@ YÊU CẦU:
   }
 }
 
-// ─── DERIVATIVES OI JOB (tối 19h30) ─────────────────────────
+// ─── DERIVATIVES OI & TAY TO JOB (tối 19h35) ─────────────────
 async function runDerivativesOIJob(session = 'evening') {
   if (!isCurrentInstanceActive()) return;
 
   console.log('\n' + '═'.repeat(55));
-  console.log(`📊 DERIVATIVES OI v4.0 — ${session}`);
+  console.log(`📊 DERIVATIVES OI & TAY TO / KHỐI NGOẠI v4.2 — ${session}`);
   console.log('═'.repeat(55));
 
   try {
-    const analysis = await runFullAnalysis();
-    const { basisResult, oiState, flowResult, breadthResult, liquidityResult, scoreResult, regimeResult, targetMap } = analysis;
-
-    let msg = `📊 <b>BÁO CÁO OI & BASIS PHÁI SINH — TỔNG KẾT NGÀY</b>\n`;
-    msg += `🕐 <i>${dataFetcher.vnNow()}</i>\n`;
-    msg += `━━━━━━━━━━━━━━━━━━━━\n\n`;
-
-    // OI
-    if (oiState && oiState.totalOI) {
-      msg += `🔥 <b>OPEN INTEREST:</b>\n`;
-      msg += `   Tổng OI: <b>${oiState.totalOI.toLocaleString('vi-VN')} HĐ</b> (Δ${oiState.oiChange >= 0 ? '+' : ''}${oiState.oiChange})\n`;
-      msg += `   Trạng thái: <b>${oiState.description}</b>\n\n`;
-    }
-
-    // Basis
-    msg += `📐 <b>BASIS:</b>\n`;
-    msg += `   F1M: <b>${basisResult.f1mPrice}</b> | VN30: <b>${basisResult.vn30Price}</b>\n`;
-    msg += `   Basis: <b>${basisResult.current > 0 ? '+' : ''}${basisResult.current}</b> (${basisResult.basisTrend})\n\n`;
-
-    // Flow summary
-    msg += `📊 <b>TỔNG HỢP DÒNG TIỀN:</b>\n`;
-    msg += `   Mua: ${flowResult.aggression.buyVol.toLocaleString('vi-VN')} | Bán: ${flowResult.aggression.sellVol.toLocaleString('vi-VN')}\n`;
-    msg += `   Delta: ${flowResult.delta.cumulative > 0 ? '+' : ''}${flowResult.delta.cumulative.toLocaleString('vi-VN')}\n`;
-    msg += `   Thanh khoản: ${liquidityResult.volumeRatio}x (${liquidityResult.regime})\n`;
-    msg += `   NN ròng: ${liquidityResult.foreignNet > 0 ? '+' : ''}${liquidityResult.foreignNet.toFixed(1)} tỷ\n\n`;
-
-    // Breadth
-    msg += `🏛️ <b>BREADTH:</b> ${breadthResult.greenCount}🟢 / ${breadthResult.redCount}🔴\n\n`;
-
-    // Score & Direction
-    msg += `🔮 <b>DỰ BÁO PHIÊN TỚI:</b>\n`;
-    msg += `   ${scoreResult.direction === 'LONG' ? '🟢' : '🔴'} <b>${scoreResult.direction}</b> (${scoreResult.confidence}/100)\n`;
-    if (targetMap.targets.length > 0) {
-      msg += `   Target: ${targetMap.targets.map(t => t.price.toFixed(1)).join(' → ')}\n`;
-    }
-
-    msg += `\n<i>📊 OI Tracker v4.0 | VN Stock Bot</i>`;
-
+    const msg = oiTracker.buildOIEveningNotification();
     await sendDerivativesMessage(msg);
     console.log(`   ✅ Derivatives OI [${session}] hoàn thành`);
+    return true;
   } catch (e) {
     console.error(`   ❌ Derivatives OI [${session}] lỗi:`, e.message);
+    return false;
   }
 }
 
@@ -625,6 +591,8 @@ module.exports = {
   startMomentumMonitor,
   stopMomentumMonitor,
   stopPositionMonitor,
+  oiTracker,
+  buildOIEveningNotification: oiTracker.buildOIEveningNotification,
   // Legacy compatibility
   fetchOHLCV: dataFetcher.fetchOHLCV,
   fetchVN30LiquidityRadar: async () => null,

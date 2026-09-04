@@ -658,13 +658,13 @@ async function main() {
   }, { scheduled: true, timezone: config.timezone });
   console.log('   🤖 AI Derivatives Forecast: 9:22, 10:22 & 13:50 (T2-T6)');
 
-  // ─── SCHEDULE: DERIVATIVES OI & BASIS TRACKER (19h30 T2-T6) ───
-  // Note: Bỏ noti 8h45 (pre-market) & 9h18 (morning) theo yêu cầu của user
-  cron.schedule('30 19 * * 1-5', async () => {
+  // ─── SCHEDULE: DERIVATIVES OI & TAY TO TRACKER (19h35 T2-T6) ─
+  // Báo cáo vị thế qua đêm Khối ngoại, Tự doanh, Tổng OI 5 ngày gần nhất
+  cron.schedule('35 19 * * 1-5', async () => {
     if (!isWeekday()) return;
     if (isDuplicate('derivativesOI_evening')) return;
     const now = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
-    console.log(`\n📊 [Derivatives OI Evening] Cron triggered: ${now}`);
+    console.log(`\n📊 [Derivatives OI Evening 19h35] Cron triggered: ${now}`);
     try {
       await runDerivativesOIJob('evening');
       jobLastSuccess['derivativesOI_evening'] = Date.now();
@@ -673,7 +673,7 @@ async function main() {
       jobLastError['derivativesOI_evening'] = { time: Date.now(), message: err.message };
     }
   }, { scheduled: true, timezone: config.timezone });
-  console.log('   📊 Derivatives OI Tracker: 19:30 (T2-T6)');
+  console.log('   📊 Derivatives OI & Tay To Tracker: 19:35 (T2-T6)');
 
   // ─── HEARTBEAT: Gửi "đang sống" mỗi ngày 9:00 T2-T6 ───────
   // DISABLED: Bỏ tin nhắn heartbeat hàng ngày theo yêu cầu của user

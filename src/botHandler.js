@@ -69,6 +69,7 @@ function startBotHandler() {
     bot.onText(/^\/phantich\s+(.+)/i, handleAnalyzeCommand);
     bot.onText(/^\/tuanmoi/i, handleWeeklyCommand);
     bot.onText(/^\/team/i, handleTeamCommand);
+    bot.onText(/^\/(oi|vithe|ps)/i, handleOICommand);
 
     // Free text handler (non-command messages)
     bot.on('message', handleFreeTextMessage);
@@ -119,6 +120,7 @@ async function handleHelpCommand(msg) {
     `<code>/phantich MWG</code> - AI Team phân tích CP\n` +
     `<code>/tuanmoi</code> - Phân tích đầu tuần\n` +
     `<code>/team</code> - Xem đội ngũ AI\n` +
+    `<code>/oi</code> - Vị thế qua đêm OI & Khối ngoại 5 phiên\n` +
     `<code>/help</code> - Trợ giúp\n\n` +
     `<b>💬 Chat tự do:</b>\n` +
     `Bạn có thể hỏi bất cứ gì về chứng khoán:\n` +
@@ -247,6 +249,18 @@ async function handleTeamCommand(msg) {
     `<i>🤖 VN Stock Bot v${config.version}</i>`;
 
   await bot.sendMessage(chatId, team, { parse_mode: 'HTML' });
+}
+
+async function handleOICommand(msg) {
+  const chatId = msg.chat.id;
+  try {
+    const { buildOIEveningNotification } = require('./derivatives/oiTracker');
+    const reply = buildOIEveningNotification();
+    await bot.sendMessage(chatId, reply, { parse_mode: 'HTML', disable_web_page_preview: true });
+  } catch (error) {
+    console.error('❌ Lỗi handleOICommand:', error.message);
+    await bot.sendMessage(chatId, '❌ Không thể lấy báo cáo OI & Vị thế lúc này.');
+  }
 }
 
 // ─── FREE TEXT HANDLER ─────────────────────────────────────

@@ -1,55 +1,55 @@
 {
-  "lastUpdated": "2026-08-12T13:37:16.160Z",
+  "lastUpdated": "2026-09-04T15:00:00.000Z",
   "history": [
     {
-      "date": "6/8/2026",
-      "totalOI": 46840,
-      "oiChange": 950,
-      "f1mPrice": 1913.8,
-      "vn30Price": 1916.88,
-      "basis": -3.08,
-      "volume": 218000,
+      "date": "26/8/2026",
+      "totalOI": 33652,
+      "oiChange": 1120,
+      "f1mPrice": 1976.5,
+      "vn30Price": 1970.01,
+      "basis": 6.49,
+      "volume": 252857,
       "positionState": "SHORT_ACCUMULATION"
     },
     {
-      "date": "7/8/2026",
-      "totalOI": 47640,
-      "oiChange": 800,
-      "f1mPrice": 1890.1,
-      "vn30Price": 1911.09,
-      "basis": -20.99,
-      "volume": 229511,
+      "date": "27/8/2026",
+      "totalOI": 33652,
+      "oiChange": -4560,
+      "f1mPrice": 1980.8,
+      "vn30Price": 1979.23,
+      "basis": 1.57,
+      "volume": 197847,
       "positionState": "LONG_LIQUIDATION"
     },
     {
-      "date": "10/8/2026",
-      "totalOI": 47900,
-      "oiChange": 260,
-      "f1mPrice": 1920,
-      "vn30Price": 1918.5,
-      "basis": 1.5,
-      "volume": 210000,
-      "positionState": "LONG_ACCUMULATION"
+      "date": "28/8/2026",
+      "totalOI": 29092,
+      "oiChange": -4560,
+      "f1mPrice": 1981.5,
+      "vn30Price": 1982.96,
+      "basis": -1.46,
+      "volume": 204019,
+      "positionState": "RANGE_HOLDING"
     },
     {
-      "date": "11/8/2026",
-      "totalOI": 48100,
-      "oiChange": 200,
-      "f1mPrice": 1932,
-      "vn30Price": 1930,
-      "basis": 2,
-      "volume": 220000,
-      "positionState": "LONG_ACCUMULATION"
+      "date": "3/9/2026",
+      "totalOI": 31850,
+      "oiChange": 2758,
+      "f1mPrice": 1955.5,
+      "vn30Price": 1961.57,
+      "basis": -6.07,
+      "volume": 225935,
+      "positionState": "SHORT_ACCUMULATION"
     },
     {
-      "date": "12/8/2026",
-      "totalOI": 48440,
-      "oiChange": 800,
-      "f1mPrice": 1940,
-      "vn30Price": 1936.5,
-      "basis": 3.5,
-      "volume": 227139,
-      "positionState": "LONG_ACCUMULATION"
+      "date": "4/9/2026",
+      "totalOI": 30210,
+      "oiChange": -1640,
+      "f1mPrice": 1985.6,
+      "vn30Price": 1984.89,
+      "basis": 0.71,
+      "volume": 207137,
+      "positionState": "SHORT_COVERING"
     }
   ]
 }
