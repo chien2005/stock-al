@@ -310,8 +310,8 @@ function buildOIEveningNotification() {
     msg += `${dStr} | ${netStr} | ${cumStr} | ${oiStr} | ${f1Str}\n`;
   });
   msg += `</pre>\n`;
-  msg += `• <i>Tổng ròng 5 phiên Khối ngoại: <b>${fmtSign(foreign.total5DayNet)} HĐ</b></i>\n`;
-  msg += `• <i>Biến động OI sau 5 phiên: <b>${fmtSign(oi.total5DayChange)} HĐ</b></i>\n`;
+  msg += `• <i>Ròng Khối ngoại trong ngày: <b>${fmtSign(foreign.todayNet)} HĐ</b>${foreign.todayBuy ? ` (Mua ${fmt(foreign.todayBuy)} | Bán ${fmt(foreign.todaySell)})` : ''}</i>\n`;
+  msg += `• <i>Biến động OI trong ngày: <b>${fmtSign(oi.oiChange)} HĐ</b> (Tổng OI: <b>${fmt(oi.totalOI)} HĐ</b>)</i>\n`;
   if (market.f1mPrice) {
     msg += `• <i>Chốt phiên: F1M = <b>${market.f1mPrice}</b> | VN30 = <b>${market.vn30Price}</b> (Basis: <b>${fmtSign(market.basis)}</b>)</i>\n`;
   }
