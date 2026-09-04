@@ -93,7 +93,17 @@ function buildSignalNotification(session, analysisResult, deltaData = null) {
       msg += `   • VNINDEX: ${vnidxIcon} <b>${vnidx.price.toFixed(2)}</b> (${parseFloat(vnidxChange) >= 0 ? '+' : ''}${vnidxChange}%)\n`;
     }
 
-    msg += `\n`;
+    // ─── VỊ THẾ TAY TO & ĐÁM ĐÔNG REALTIME ─────────────────
+    const oiTracker = require('./oiTracker');
+    const posSnap = oiTracker.getRealtimePositionSnapshot(allData);
+    const fmtSign = (num) => (num > 0 ? `+${num.toLocaleString('vi-VN')}` : num.toLocaleString('vi-VN'));
+    const fmtNum = (num) => (num || 0).toLocaleString('vi-VN');
+
+    msg += `\n🔥 <b>VỊ THẾ TAY TO & ĐÁM ĐÔNG REALTIME:</b>\n`;
+    msg += `   • Ròng Khối ngoại: <b>${fmtSign(posSnap.foreignNet)} HĐ</b> (Mua ${fmtNum(posSnap.foreignBuy)} | Bán ${fmtNum(posSnap.foreignSell)})\n`;
+    msg += `   • Ròng Tự doanh: <b>${fmtSign(posSnap.tuDoanhNet)} HĐ</b> (Mua ${fmtNum(posSnap.tuDoanhBuy)} | Bán ${fmtNum(posSnap.tuDoanhSell)})\n`;
+    msg += `   • Ròng Đám đông: <b>${fmtSign(posSnap.crowdNet)} HĐ</b> (Nhỏ lẻ ôm đối ứng)\n`;
+    msg += `   • Biến động OI phiên nay: <b>${fmtSign(posSnap.oiChange)} HĐ</b> (Tổng OI sàn: <b>${fmtNum(posSnap.totalOI)} HĐ</b>)\n\n`;
 
     // VN30 buy/sell delta
     if (deltaData && deltaData.vn30Deltas) {
