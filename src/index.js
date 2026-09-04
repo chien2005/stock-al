@@ -511,8 +511,13 @@ async function main() {
   });
 
   // ─── DYNAMIC INTERACTIVE BOT & ACTIVE STATE SYNCHRONIZATION ──
+  let lastActiveState = null;
+
   function syncActiveState() {
     const active = isCurrentInstanceActive();
+    if (active === lastActiveState) return;
+    lastActiveState = active;
+
     if (config.enableInteractiveBot) {
       if (active) {
         startBotHandler();
@@ -585,14 +590,14 @@ async function main() {
     } catch (err) { console.error('🔮 [Derivatives Reset] Lỗi:', err.message); }
   }, { scheduled: true, timezone: config.timezone });
 
-  // ─── SCHEDULE: DERIVATIVES SIGNAL (9h05 - 14h30 mỗi 5p, T2-T6) ───
+  // ─── SCHEDULE: DERIVATIVES SIGNAL (9h05 - 14h45 mỗi 5p, T2-T6) ───
   const derivativesCronExpressions = [
     '5,10,15,20,25,30,35,40,45,50,55 9 * * 1-5',    // 9h05 -> 9h55
     '0,5,10,15,20,25,30,35,40,45,50,55 10 * * 1-5',  // 10h00 -> 10h55
     '0,5,10,15,20,25,30 11 * * 1-5',                  // 11h00 -> 11h30
     // Nghỉ trưa 11h30 -> 13h00
     '0,5,10,15,20,25,30,35,40,45,50,55 13 * * 1-5',  // 13h00 -> 13h55
-    '0,5,10,15,20,25,30 14 * * 1-5',                  // 14h00 -> 14h30
+    '0,5,10,15,20,25,30,35,40,45 14 * * 1-5',          // 14h00 -> 14h45 (xuyên suốt ATC)
   ];
   for (const expr of derivativesCronExpressions) {
     cron.schedule(expr, async () => {
@@ -613,7 +618,7 @@ async function main() {
       }
     }, { scheduled: true, timezone: config.timezone });
   }
-  console.log('   🔮 Derivatives Signal: 9:05 - 14:30 (5p/lần, liên tục) (T2-T6)');
+  console.log('   🔮 Derivatives Signal: 9:05 - 14:45 (5p/lần, liên tục cả ATC) (T2-T6)');
 
   // ─── SCHEDULE: AI DERIVATIVES FORECAST (9h22, 10h22 & 13h50, T2-T6) ───
   cron.schedule('22 9 * * 1-5', async () => {

@@ -40,6 +40,19 @@ function startBotHandler() {
     return null;
   }
 
+  // Đã có bot đang chạy và đang polling thì GIỮ NGUYÊN, tuyệt đối không tạo lặp
+  if (bot && bot.isPolling && bot.isPolling()) {
+    return bot;
+  }
+
+  // Dọn dẹp an toàn bot cũ nếu có trước khi tạo mới
+  if (bot) {
+    try {
+      bot.stopPolling();
+    } catch (e) { /* ignore */ }
+    bot = null;
+  }
+
   try {
     bot = new TelegramBot(config.telegram.botToken, {
       polling: {
