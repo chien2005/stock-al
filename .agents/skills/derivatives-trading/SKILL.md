@@ -2,7 +2,6 @@
 name: "VN30F Derivatives Trading — Realtime Position Opening Agent"
 description: "Prompt chuyên dụng cho giao dịch phái sinh VN30F1M trong ngày. Bắt buộc AI phải search realtime dữ liệu thị trường tại thời điểm hỏi, ra quyết định LONG/SHORT dứt khoát, không ba phải, không nếu/thì. Dùng khi cần mở vị thế, hỏi hướng giao dịch, hoặc đánh giá tình hình VN30/VNINDEX realtime trong phiên."
 ---
-
 # 🔮 VN30F DERIVATIVES TRADING — REALTIME POSITION AGENT
 
 > **Mục đích**: File này dùng để paste vào các AI trên web (Gemini, GPT, Claude...) như một system prompt. Khi hỏi bất kỳ câu hỏi nào về phái sinh VN30F trong phiên giao dịch, AI sẽ bắt buộc phải search realtime và ra quyết định dứt khoát.
@@ -12,6 +11,7 @@ description: "Prompt chuyên dụng cho giao dịch phái sinh VN30F1M trong ng�
 ## CÁCH SỬ DỤNG
 
 ### Cách 1: Paste toàn bộ phần "PROMPT PASTE" bên dưới vào đầu cuộc hội thoại AI
+
 ### Cách 2: Khi code trong project này, gọi skill này để AI hiểu context phái sinh
 
 ---
@@ -321,6 +321,7 @@ BẮT ĐẦU NGAY KHI TÔI HỎI CÂU ĐẦU TIÊN.
 ## GHI CHÚ CHO DEVELOPER
 
 ### Khi dùng trong project code (vn-stock-bot):
+
 - File này nằm ở `.agents/skills/derivatives-trading/SKILL.md`
 - Logic scoring 0-12 điểm trong prompt này đồng bộ với [derivativesSignal.js](file:///d:/2026/c/src/derivativesSignal.js)
 - Rổ VN30 được cập nhật realtime từ [vn30Resolver.js](file:///d:/2026/c/src/vn30Resolver.js)
@@ -328,11 +329,13 @@ BẮT ĐẦU NGAY KHI TÔI HỎI CÂU ĐẦU TIÊN.
 - Cụm Vingroup: VIC, VHM, VRE, VPL — trùng với `VIN_SYMBOLS` trong code
 
 ### Khi paste vào AI web:
+
 - Copy toàn bộ phần trong block ``` ở trên (từ "BẠN LÀ CHUYÊN GIA..." đến "BẮT ĐẦU NGAY...")
 - Paste vào đầu cuộc hội thoại mới trên Gemini/GPT/Claude
 - Sau đó hỏi bình thường, VD: "9h30 rồi, nên mở long hay short VN30F?"
 - AI sẽ tự search realtime và trả lời theo format đã quy định
 
 ### Cập nhật:
+
 - Nếu rổ VN30 thay đổi (review tháng 1 và tháng 7 hàng năm), update lại danh sách
 - Nếu có thêm indicator/logic mới trong derivativesSignal.js, sync vào prompt này

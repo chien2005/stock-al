@@ -97,7 +97,20 @@ function classifyRegime({ priceMap, flowResult, breadthResult, efficiencyResult,
     };
   }
 
-  // ─── 6. RANGE (DAO ĐỘNG TRONG BIÊN) ───────────────────────
+  // ─── 6. RANGE DAY (v4.2 — Ngày sideway, chop nhiều) ──────
+  const isLowEfficiency = efficiencyResult && efficiencyResult.value < 0.25;
+  const isLowLiquidity = liquidityResult && liquidityResult.volumeRatio < 0.70;
+  if (isLowEfficiency && isLowLiquidity) {
+    return {
+      regime: 'RANGE_DAY',
+      confidence: 70,
+      description: 'Ngày SIDEWAY — Thanh khoản thấp + sóng giằng co → Hạn chế giao dịch trend',
+      expiryMode,
+      isRangeDay: true,
+    };
+  }
+
+  // ─── 7. RANGE (DAO ĐỘNG TRONG BIÊN) ───────────────────────
   return {
     regime: 'RANGE',
     confidence: 60,

@@ -6,6 +6,7 @@ COPY package*.json ./
 RUN npm ci --only=production
 
 COPY src/ ./src/
+COPY data/ ./data/
 
 ENV TZ=Asia/Ho_Chi_Minh
 

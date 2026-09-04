@@ -30,7 +30,7 @@ function buildSignalNotification(session, analysisResult, deltaData = null) {
   const direction = scoreResult.direction;
   const isTradeable = direction === 'LONG' || direction === 'SHORT';
 
-  let msg = `🔮 <b>VN30F v4.1 — ${sessionLabel}</b>\n`;
+  let msg = `🔮 <b>VN30F v4.2 — ${sessionLabel}</b>\n`;
   msg += `🕐 <i>${vnNow()}</i>\n`;
   msg += `━━━━━━━━━━━━━━━━━━━━\n\n`;
 
@@ -42,13 +42,23 @@ function buildSignalNotification(session, analysisResult, deltaData = null) {
     msg += `📊 Độ tin cậy: <b>${scoreResult.confidence}/100</b> | Chất lượng Setup: <b>${scoreResult.setupQuality}</b> | Rủi ro: <b>${scoreResult.risk}</b>\n\n`;
   } else {
     msg += `⚪ <b>TRẠNG THÁI: ĐỨNG NGOÀI QUAN SÁT</b>\n`;
+    // v4.2: Veto type-specific display
+    const vetoTypeLabels = {
+      'RR_VETO': '🛡️ R:R KHÔNG ĐỦ',
+      'ANTI_WHIPSAW': '⚠️ CHỐNG ĐẢO CHIỀU LIÊN TỤC',
+      'RANGE_DAY': '⇔ NGÀY SIDEWAY',
+    };
+    const vetoLabel = scoreResult.vetoType ? (vetoTypeLabels[scoreResult.vetoType] || '') : '';
+    if (vetoLabel) {
+      msg += `🛡️ <b>${vetoLabel}</b>\n`;
+    }
     msg += `⚠️ <b>Lý do:</b> ${scoreResult.vetoReason || 'Thị trường đang giằng co, chưa có phe nào chiếm ưu thế rõ ràng.'}\n\n`;
   }
 
   // ─── 2. CHẾ ĐỘ THỊ TRƯỜNG ────────────────────────────────
   if (regimeResult) {
     const regimeIcons = {
-      'TREND_UP': '📈', 'TREND_DOWN': '📉', 'RANGE': '↔️',
+      'TREND_UP': '📈', 'TREND_DOWN': '📉', 'RANGE': '↔️', 'RANGE_DAY': '⇔',
       'TRAP_THEN_TREND': '🪤', 'TWO_SIDED_CHOP': '🔀',
       'LIQUIDITY_VACUUM': '🏜️', 'EXPIRY_DISTORTION': '⚠️',
     };
@@ -271,7 +281,22 @@ function buildSignalNotification(session, analysisResult, deltaData = null) {
     msg += `   • 🟥 Cấu trúc đồ thị: <b>${scoreResult.layerSummaries.structure}</b>\n`;
     msg += `   • 🟦 Dòng tiền chủ động: <b>${scoreResult.layerSummaries.flow}</b>\n`;
     msg += `   • 🟨 Độ rộng thị trường: <b>${scoreResult.layerSummaries.breadth}</b>\n`;
-    msg += `   • 🟩 Chế độ thị trường: <b>${scoreResult.layerSummaries.regime}</b>\n\n`;
+    msg += `   • 🟩 Chế độ thị trường: <b>${scoreResult.layerSummaries.regime}</b>\n`;
+    // v4.2: OI summary
+    if (scoreResult.layerSummaries.oi) {
+      msg += `   • 📊 Vị thế OI: <b>${scoreResult.layerSummaries.oi}</b>\n`;
+    }
+    // v4.2: Macro Bias
+    if (scoreResult.layerSummaries.macroBias && scoreResult.layerSummaries.macroBias !== 'NEUTRAL') {
+      const biasIcon = scoreResult.layerSummaries.macroBias === 'BULLISH' ? '🟢' : '🔴';
+      const biasText = scoreResult.layerSummaries.macroBias === 'BULLISH' ? 'TĂNG (EMA50)' : 'GIẢM (EMA50)';
+      msg += `   • 🌍 Xu hướng lớn: ${biasIcon} <b>${biasText}</b>\n`;
+    }
+    // v4.2: Sweep Hunter badge
+    if (scoreResult.sweepHunterActive) {
+      msg += `   ⚡ <b>SETUP CAO CẤP:</b> Vào lệnh sau bẫy quét thanh khoản (Sweep Hunter)\n`;
+    }
+    msg += `\n`;
 
     if (isTradeable) {
       msg += `   → <b>KẾT LUẬN:</b> Ưu tiên vị thế <b>${direction}</b> theo đúng kế hoạch trên, tuân thủ kỷ luật cắt lỗ.\n`;
@@ -280,7 +305,7 @@ function buildSignalNotification(session, analysisResult, deltaData = null) {
     }
   }
 
-  msg += `\n<i>🔮 VN30F Signal Engine v4.1 | VN Stock Bot</i>`;
+  msg += `\n<i>🔮 VN30F Signal Engine v4.2 — Thiên Hạ Ngũ Tuyệt | VN Stock Bot</i>`;
 
   return msg;
 }

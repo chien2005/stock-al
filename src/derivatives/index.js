@@ -45,11 +45,14 @@ const _state = {
   prevLiquiditySnapshot: null,   // { vn30Value, vnindexValue, vn30Price, vnindexPrice }
   prevOISnapshot: null,          // { totalOI, totalVolume, f1mPrice }
   prevVN30BuySellSnapshot: null, // { [sym]: { totalVal, fnNet } }
+  // ─── v4.2: Anti-Whipsaw state ───
+  lastSignalDirection: null,     // 'LONG' | 'SHORT' | null
+  lastSignalTime: null,          // timestamp (ms)
 };
 
 // ─── CORE: Run full 8-layer analysis pipeline ────────────────
 async function runFullAnalysis() {
-  console.log('   🔮 [v4.0] Chạy pipeline phân tích 8 lớp...');
+  console.log('   🔮 [v4.2] Chạy pipeline phân tích 8 lớp (Thiên Hạ Ngũ Tuyệt)...');
 
   // ─── FETCH ALL DATA ────────────────────────────────
   const allData = await dataFetcher.fetchAllData();
@@ -124,7 +127,17 @@ async function runFullAnalysis() {
     leaderResult,
     liquidityResult,
     regimeResult,
+    // ─── v4.2 NEW PARAMS ───
+    lastSignalDirection: _state.lastSignalDirection,
+    lastSignalTime: _state.lastSignalTime,
+    dailyVN30: allData.daily.vn30,
   });
+
+  // v4.2: Track signal direction for anti-whipsaw
+  if (scoreResult.direction === 'LONG' || scoreResult.direction === 'SHORT') {
+    _state.lastSignalDirection = scoreResult.direction;
+    _state.lastSignalTime = Date.now();
+  }
 
   // ─── LỚP 8: TARGET ENGINE ────────────────────────
   console.log('   🎯 [8/8] Target Engine...');
@@ -133,9 +146,15 @@ async function runFullAnalysis() {
     priceMap,
     basisResult,
     absorptionResult,
+    dailyF1M: allData.daily.f1m,
   });
 
-  console.log(`   ✅ Pipeline hoàn thành: ${scoreResult.direction} (${scoreResult.confidence}/100, ${scoreResult.setupQuality})`);
+  // v4.2: Log veto info
+  if (scoreResult.vetoed && scoreResult.vetoType) {
+    console.log(`   🛡️ VETO [${scoreResult.vetoType}]: ${scoreResult.vetoReason}`);
+  }
+
+  console.log(`   ✅ Pipeline v4.2 hoàn thành: ${scoreResult.direction} (${scoreResult.confidence}/100, ${scoreResult.setupQuality})`);
 
   return {
     scoreResult,
@@ -205,7 +224,7 @@ async function runDerivativesSignalJob() {
   if (!isCurrentInstanceActive()) return;
 
   console.log('\n' + '='.repeat(55));
-  console.log('🔮 DERIVATIVES SIGNAL v4.1 — UPDATE');
+  console.log('🔮 DERIVATIVES SIGNAL v4.2 — UPDATE');
   console.log('='.repeat(55));
 
   try {
@@ -297,7 +316,7 @@ async function runDerivativesSignalJob() {
     _state.prevVN30BuySellSnapshot = currentVN30BuySell;
 
   } catch (e) {
-    console.error('   ❌ Derivatives signal job error v4.1:', e.message);
+    console.error('   ❌ Derivatives signal job error v4.2:', e.message);
   }
 }
 
@@ -557,7 +576,7 @@ function resetDerivativesState() {
   _state.prevOISnapshot = null;
   _state.prevVN30BuySellSnapshot = null;
   dataFetcher.resetDailyCache();
-  console.log('   🔄 Derivatives state reset v4.1');
+  console.log('   🔄 Derivatives state reset v4.2');
 }
 
 // ─── SAVE SNAPSHOT ───────────────────────────────────────────

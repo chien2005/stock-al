@@ -104,6 +104,16 @@ const config = {
   // Timezone
   timezone: process.env.TZ || 'Asia/Ho_Chi_Minh',
 
+  // Derivatives engine settings
+  derivatives: {
+    // Macro Bias: 'BULLISH' | 'BEARISH' | 'NEUTRAL' | 'AUTO' (auto-detect from EMA50)
+    macroBias: (process.env.DERIVATIVES_MACRO_BIAS || 'AUTO').toUpperCase(),
+    // R:R Veto threshold (points) — veto signal if price too close to S/R
+    rrVetoThreshold: parseFloat(process.env.DERIVATIVES_RR_VETO || '4'),
+    // Anti-whipsaw cooldown (minutes)
+    whipsawCooldownMin: parseInt(process.env.DERIVATIVES_WHIPSAW_COOLDOWN || '30', 10),
+  },
+
   // Version
   version: '2.5.0',
 };

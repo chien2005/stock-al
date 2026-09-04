@@ -11,7 +11,7 @@
  * Tạo Target Map dựa trên cấu trúc thị trường
  * Entry, TP1-TP4, Invalidation, No-Trade Zone — tất cả từ structure
  */
-function buildTargetMap({ direction, priceMap, basisResult, absorptionResult }) {
+function buildTargetMap({ direction, priceMap, basisResult, absorptionResult, dailyF1M }) {
   if (!direction || direction === 'NO_TRADE' || direction === 'NEUTRAL' || !priceMap) {
     return _emptyTargetMap(direction);
   }
@@ -21,14 +21,18 @@ function buildTargetMap({ direction, priceMap, basisResult, absorptionResult }) 
 
   const levels = priceMap.levels || [];
 
+  // v4.2: Dynamic hardStop dựa trên ATR20
+  const atr20 = _calculateATR(dailyF1M, 20);
+  const hardStop = atr20 > 0 ? Math.max(5, Math.min(10, Math.round(atr20 * 0.8))) : 8;
+
   if (direction === 'SHORT') {
-    return _buildShortTargets(currentPrice, levels, priceMap, absorptionResult);
+    return _buildShortTargets(currentPrice, levels, priceMap, absorptionResult, hardStop);
   } else {
-    return _buildLongTargets(currentPrice, levels, priceMap, absorptionResult);
+    return _buildLongTargets(currentPrice, levels, priceMap, absorptionResult, hardStop);
   }
 }
 
-function _buildShortTargets(currentPrice, levels, priceMap, absorptionResult) {
+function _buildShortTargets(currentPrice, levels, priceMap, absorptionResult, hardStop) {
   // Entry: tại hoặc gần resistance
   const resistances = levels.filter(l =>
     (l.type === 'RESISTANCE' || l.type === 'VAH') && l.price >= currentPrice - 2
@@ -104,12 +108,12 @@ function _buildShortTargets(currentPrice, levels, priceMap, absorptionResult) {
     entry: { zone: entryZone.map(p => parseFloat(p.toFixed(1))), reason: entryReason },
     targets: targets.slice(0, 4),
     invalidation,
-    hardStop: 8,
+    hardStop,
     noTradeZone,
   };
 }
 
-function _buildLongTargets(currentPrice, levels, priceMap, absorptionResult) {
+function _buildLongTargets(currentPrice, levels, priceMap, absorptionResult, hardStop) {
   // Entry: tại hoặc gần support
   const supports = levels.filter(l =>
     (l.type === 'SUPPORT' || l.type === 'VAL') && l.price <= currentPrice + 2
@@ -175,9 +179,32 @@ function _buildLongTargets(currentPrice, levels, priceMap, absorptionResult) {
     entry: { zone: entryZone.map(p => parseFloat(p.toFixed(1))), reason: entryReason },
     targets: targets.slice(0, 4),
     invalidation,
-    hardStop: 8,
+    hardStop,
     noTradeZone,
   };
+}
+
+/**
+ * Tính Average True Range (ATR)
+ */
+function _calculateATR(dailyData, period) {
+  if (!dailyData || !dailyData.c || dailyData.c.length < period + 1) return 0;
+
+  const { h, l, c } = dailyData;
+  const highs = h || c;
+  const lows = l || c;
+  const trValues = [];
+
+  for (let i = c.length - period; i < c.length; i++) {
+    const tr = Math.max(
+      highs[i] - lows[i],
+      Math.abs(highs[i] - c[i - 1]),
+      Math.abs(lows[i] - c[i - 1])
+    );
+    trValues.push(tr);
+  }
+
+  return trValues.length > 0 ? trValues.reduce((s, v) => s + v, 0) / trValues.length : 0;
 }
 
 function _emptyTargetMap(direction) {
