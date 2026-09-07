@@ -15,6 +15,8 @@ const { getLiveVN30Components } = require('../vn30Resolver');
 // ─── DATA SOURCES ────────────────────────────────────────────
 const VPS_HISTORY_URL  = 'https://histdatafeed.vps.com.vn/tradingview/history';
 const VPS_REALTIME_URL = 'https://bgapidatafeed.vps.com.vn/getliststockdata';
+const VPS_PS_LIST_MAP  = 'https://bgapidatafeed.vps.com.vn/pslistmap';
+const VPS_PS_SNAPSHOT  = 'https://bgapidatafeed.vps.com.vn/getpsalldatalsnapshot';
 const VNDIRECT_CHART_URL = 'https://dchart-api.vndirect.com.vn/dchart/history';
 const ENTRADE_CHART_URL  = 'https://services.entrade.com.vn/chart-api/v2/ohlcs/derivative';
 
@@ -289,17 +291,33 @@ function getCurrentDerivativeSymbols() {
 }
 
 async function fetchDerivativesOIData() {
-  const derivSymbols = getCurrentDerivativeSymbols();
-  const allSyms = ['VN30F1M', 'VN30F2M', ...derivSymbols].join(',');
-
   try {
-    const res = await axios.get(`${VPS_REALTIME_URL}/${allSyms}`, {
+    let derivSymbols = ['41I1G9000', '41I1GA000', '41I1GC000', '41I1H3000'];
+    let mapData = null;
+    try {
+      const mapRes = await axios.get(VPS_PS_LIST_MAP, { headers: HEADERS, timeout: 5000 });
+      if (Array.isArray(mapRes.data) && mapRes.data.length > 0) {
+        mapData = mapRes.data;
+        const vn30fSyms = mapRes.data
+          .filter(d => (d.CHART_CODE || '').startsWith('VN30F'))
+          .map(d => d.SYMBOL);
+        if (vn30fSyms.length > 0) derivSymbols = vn30fSyms;
+      }
+    } catch (e) { /* fallback default symbols */ }
+
+    const res = await axios.get(`${VPS_PS_SNAPSHOT}/${derivSymbols.join(',')}`, {
       headers: HEADERS, timeout: 8000,
     });
 
-    const rawList = res.data || [];
-    const f1mData = rawList.find(d => d.sym === 'VN30F1M');
-    const derivContractData = rawList.filter(d => derivSymbols.includes(d.sym));
+    const rawList = Array.isArray(res.data) ? res.data : [];
+
+    // Tìm contract F1M (tháng hiện tại)
+    let f1mCode = derivSymbols[0];
+    if (mapData) {
+      const f1mItem = mapData.find(d => d.CHART_CODE === 'VN30F1M');
+      if (f1mItem) f1mCode = f1mItem.SYMBOL;
+    }
+    const f1mData = rawList.find(d => d.sym === f1mCode) || rawList[0];
 
     let totalOI = 0;
     let totalOIChange = 0;
@@ -308,7 +326,7 @@ async function fetchDerivativesOIData() {
     let totalForeignBuy = 0;
     let totalForeignSell = 0;
 
-    for (const raw of derivContractData) {
+    for (const raw of rawList) {
       const oi = parseInt(raw.oi || '0');
       const oiChange = parseInt(raw.oichange || '0');
       const volume = parseInt(raw.lot || '0');
@@ -323,13 +341,28 @@ async function fetchDerivativesOIData() {
       totalForeignSell += foreignSell;
     }
 
+    const f1mForeignBuy = f1mData ? parseInt(f1mData.fBVol || '0') : 0;
+    const f1mForeignSell = f1mData ? parseInt(f1mData.fSVolume || '0') : 0;
+    const f1mOI = f1mData ? parseInt(f1mData.oi || '0') : 0;
+    const f1mPrice = f1mData && f1mData.lastPrice ? parseFloat(f1mData.lastPrice) : null;
+
     return {
       totalOI: hasOI ? totalOI : null,
-      totalOIChange: hasOI ? totalOIChange : null,
+      totalOIChange: totalOIChange,
       totalVolume: totalVolume > 0 ? totalVolume : null,
-      foreignBuy: totalForeignBuy,
-      foreignSell: totalForeignSell,
-      foreignNet: totalForeignBuy - totalForeignSell,
+      // Dữ liệu hợp đồng chính VN30F1M (chuẩn phái sinh nhất)
+      foreignBuy: f1mForeignBuy,
+      foreignSell: f1mForeignSell,
+      foreignNet: f1mForeignBuy - f1mForeignSell,
+      // Tổng toàn bộ các kỳ hạn
+      allForeignBuy: totalForeignBuy,
+      allForeignSell: totalForeignSell,
+      allForeignNet: totalForeignBuy - totalForeignSell,
+      f1mOI,
+      f1mForeignBuy,
+      f1mForeignSell,
+      f1mForeignNet: f1mForeignBuy - f1mForeignSell,
+      f1mPrice,
       f1mRealtime: f1mData,
       derivSymbols,
     };
