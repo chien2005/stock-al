@@ -33,7 +33,7 @@ const { startBotHandler, stopBotHandler } = require('./botHandler');
 const { startAlertMonitor, stopAlertMonitor, resetDailyData, flushBigTradeBuffer } = require('./alertService');
 const { runSmartMoneyReport } = require('./smartMoneyReport');
 const { runWhaleTrackerReport } = require('./whaleTracker');
-const { runDerivativesSignalJob, runMorningDerivativesJob, runMidMorningDerivativesJob, runAfternoonDerivativesJob, runAIDerivativesJob, runDerivativesOIJob, resetDerivativesState, startMomentumMonitor } = require('./derivatives');
+const { runDerivativesSignalJob, runMorningDerivativesJob, runMidMorningDerivativesJob, runAfternoonDerivativesJob, runAIDerivativesJob, runDerivativesOIJob, resetDerivativesState, startMomentumMonitor, startPriceChangeMonitor } = require('./derivatives');
 
 // ─── Thời điểm khởi động (cho health check) ─────────────
 const startedAt = new Date();
@@ -423,11 +423,11 @@ async function main() {
         await sendDerivativesMessage(
           `🔮 <b>VN Stock Bot v${config.version} đã kết nối! (Nhóm Phái Sinh VN30F)</b>\n` +
           `🕐 ${startupTime}\n` +
-          `📊 Chế độ: <b>Tín hiệu Phái Sinh v4.1 (Bản Đồ Giá & 8 Lớp Phân Tích)</b>\n` +
+          `📊 Chế độ: <b>Tín hiệu Phái Sinh v4.3 (Bản Đồ Giá & 8 Lớp Phân Tích)</b>\n` +
           `📅 Ngày hoạt động: <b>${config.activeDays}</b> (ACTIVE)\n` +
-          `⏰ Tín hiệu: 9h05 - 14h30 (5p/lần, liên tục)\n` +
+          `⏰ Tín hiệu: 9h05 - 14h45 (bắn khi biến động ≥4đ, realtime)\n` +
           `🤖 AI Phái sinh: 9h22 | 10h22 | 13h50\n` +
-          `📊 OI & Basis: 19h30\n` +
+          `📊 OI & Basis: 19h35 (realtime data)\n` +
           `━━━━━━━━━━━━━━━━━━━━━━\n` +
           `<i>Kênh chuyên biệt phân tích & tín hiệu phái sinh realtime 24/24</i>`
         );
@@ -579,46 +579,23 @@ async function main() {
   }, { scheduled: true, timezone: config.timezone });
   console.log('   🐋 Whale Tracker: 19:45 (T2-T6)');
 
-  // ─── SCHEDULE: DERIVATIVES SIGNAL — RESET & START MONITOR 9h00 ───
+  // ─── SCHEDULE: DERIVATIVES SIGNAL — RESET & START MONITORS 9h00 ───
   cron.schedule('0 9 * * 1-5', async () => {
     if (!isCurrentInstanceActive()) return;
     if (!isWeekday()) return;
-    console.log('\n🔮 [Derivatives v4.0] Reset daily state & start momentum monitor');
+    console.log('\n🔮 [Derivatives v4.3] Reset daily state & start monitors');
     try { 
       resetDerivativesState();
       startMomentumMonitor();
+      startPriceChangeMonitor();
     } catch (err) { console.error('🔮 [Derivatives Reset] Lỗi:', err.message); }
   }, { scheduled: true, timezone: config.timezone });
 
-  // ─── SCHEDULE: DERIVATIVES SIGNAL (9h05 - 14h45 mỗi 5p, T2-T6) ───
-  const derivativesCronExpressions = [
-    '5,10,15,20,25,30,35,40,45,50,55 9 * * 1-5',    // 9h05 -> 9h55
-    '0,5,10,15,20,25,30,35,40,45,50,55 10 * * 1-5',  // 10h00 -> 10h55
-    '0,5,10,15,20,25,30 11 * * 1-5',                  // 11h00 -> 11h30
-    // Nghỉ trưa 11h30 -> 13h00
-    '0,5,10,15,20,25,30,35,40,45,50,55 13 * * 1-5',  // 13h00 -> 13h55
-    '0,5,10,15,20,25,30,35,40,45 14 * * 1-5',          // 14h00 -> 14h45 (xuyên suốt ATC)
-  ];
-  for (const expr of derivativesCronExpressions) {
-    cron.schedule(expr, async () => {
-      if (!isCurrentInstanceActive()) return;
-      if (!isWeekday()) return;
-      const now = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
-      const vnTime = new Date(new Date().toLocaleString('en-US', { timeZone: config.timezone }));
-      const minKey = vnTime.getMinutes();
-      const hourKey = vnTime.getHours();
-      if (isDuplicate(`derivativesSignal_${hourKey}_${minKey}`)) return;
-      console.log(`\n🔮 [Derivatives Signal v4.1] Cron triggered: ${now}`);
-      try {
-        await runDerivativesSignalJob();
-        jobLastSuccess['derivativesSignal'] = Date.now();
-      } catch (err) {
-        console.error('🔮 [Derivatives Signal v4.1] Lỗi:', err.message);
-        jobLastError['derivativesSignal'] = { time: Date.now(), message: err.message };
-      }
-    }, { scheduled: true, timezone: config.timezone });
-  }
-  console.log('   🔮 Derivatives Signal: 9:05 - 14:45 (5p/lần, liên tục cả ATC) (T2-T6)');
+  // ─── DERIVATIVES SIGNAL: PRICE-CHANGE BASED (thay thế cron 5p cố định) ───
+  // Monitor được start lúc 9h00 ở trên, poll giá mỗi 30s
+  // Bắn noti khi VN30F1M biến động >= 4 điểm so với lần noti trước
+  // Noti đầu phiên tự động bắn lúc ~9h05 (baseline)
+  console.log('   🔮 Derivatives Signal v4.3: Price-Change Monitor (≥4đ trigger, poll 30s)');
 
   // ─── SCHEDULE: AI DERIVATIVES FORECAST (9h22, 10h22 & 13h50, T2-T6) ───
   cron.schedule('22 9 * * 1-5', async () => {
@@ -834,6 +811,7 @@ async function main() {
   console.log('   🌐 Health:      http://localhost:' + PORT + '/health');
   console.log('   📅 Báo giá/AI: Thứ 2 → Thứ 6 | TTCK+Vàng: Mỗi ngày');
   console.log('   🔒 Dedup lock:  4 phút (chống double message)');
+  console.log('   🔮 Derivatives: Price-Change Monitor (≥4đ, poll 30s)');
   console.log('   💡 Nhấn Ctrl+C để dừng');
   console.log('─'.repeat(55) + '\n');
 }

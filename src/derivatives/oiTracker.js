@@ -15,6 +15,7 @@
 const fs = require('fs');
 const path = require('path');
 const { config } = require('../config');
+const dataFetcher = require('./dataFetcher');
 
 const DATA_DIR = path.join(__dirname, '..', '..', 'data');
 const FOREIGN_OI_FILE = path.join(DATA_DIR, 'foreign_oi.json');
@@ -268,8 +269,80 @@ function analyzeOIPositions(days5 = null) {
 
 /**
  * Tạo message báo cáo vị thế OI & 3 PHE (Ngoại - Tự Doanh - Đám Đông)
+ * v4.3: Async — fetch realtime data từ sàn trước khi build, auto-sync vào file
  */
-function buildOIEveningNotification() {
+async function buildOIEveningNotificationAsync() {
+  // ─── STEP 1: Fetch realtime data từ sàn ─────────────────
+  console.log('   📡 [OI Evening] Fetching realtime OI data from exchange...');
+  try {
+    const realtimeOI = await dataFetcher.fetchDerivativesOIData();
+    const futuresPrice = await dataFetcher.fetchRealtimeFuturesPrice();
+    const vn30Price = await dataFetcher.fetchRealtimeVN30Price();
+
+    if (realtimeOI && (realtimeOI.foreignBuy > 0 || realtimeOI.foreignSell > 0 || realtimeOI.totalOI > 0)) {
+      // ─── STEP 2: Auto-sync today's data vào file ────────
+      const vnTime = dataFetcher.getVnTime();
+      const todayStr = `${vnTime.getDate()}/${vnTime.getMonth() + 1}/${vnTime.getFullYear()}`;
+
+      const foreignBuy = realtimeOI.foreignBuy || 0;
+      const foreignSell = realtimeOI.foreignSell || 0;
+      const foreignNet = realtimeOI.foreignNet || (foreignBuy - foreignSell);
+      const totalOI = realtimeOI.totalOI || 30000;
+      const totalOIChange = realtimeOI.totalOIChange || 0;
+      const f1mPrice = futuresPrice ? futuresPrice.price : 0;
+      const vn30PriceVal = vn30Price ? vn30Price.price : 0;
+      const basis = f1mPrice && vn30PriceVal ? parseFloat((f1mPrice - vn30PriceVal).toFixed(2)) : 0;
+
+      // Tính tự doanh: dùng data file nếu có, nếu không ước lượng
+      const foreignStore = loadForeignOIData();
+      const existingToday = (foreignStore.history || []).find(h => h.date === todayStr);
+      const tuDoanhOvernight = existingToday ? (existingToday.tuDoanhOvernight || 0) : 0;
+
+      const entry = {
+        date: todayStr,
+        buy: foreignBuy,
+        sell: foreignSell,
+        overnightNet: foreignNet,
+        tuDoanhOvernight: tuDoanhOvernight,
+        totalOI: totalOI,
+        oiChange: totalOIChange,
+        f1mPrice: f1mPrice ? parseFloat(f1mPrice.toFixed(1)) : 0,
+        vn30Price: vn30PriceVal ? parseFloat(vn30PriceVal.toFixed(2)) : 0,
+        basis: basis,
+        positionState: _classifyPositionState(totalOIChange, f1mPrice, existingToday),
+      };
+
+      recordDailySessionOI(entry);
+      console.log(`   ✅ [OI Evening] Auto-synced realtime data for ${todayStr}: Foreign=${foreignNet}, OI=${totalOI}`);
+    } else {
+      console.log('   ⚠️ [OI Evening] No realtime data available, using cached file data');
+    }
+  } catch (e) {
+    console.error('   ⚠️ [OI Evening] Realtime fetch failed, using cached data:', e.message);
+  }
+
+  // ─── STEP 3: Build noti từ data đã sync (luôn mới nhất) ──
+  return buildOIEveningNotificationSync();
+}
+
+/**
+ * Helper: Classify position state dựa trên OI change và giá
+ */
+function _classifyPositionState(oiChange, f1mPrice, existingEntry) {
+  if (!existingEntry || !existingEntry.f1mPrice) return 'NEUTRAL';
+  const priceDelta = f1mPrice - existingEntry.f1mPrice;
+  if (oiChange > 0 && priceDelta > 0) return 'LONG_BUILDUP';
+  if (oiChange > 0 && priceDelta < 0) return 'SHORT_ACCUMULATION';
+  if (oiChange < 0 && priceDelta < 0) return 'LONG_LIQUIDATION';
+  if (oiChange < 0 && priceDelta > 0) return 'SHORT_COVERING';
+  return 'NEUTRAL';
+}
+
+/**
+ * Synchronous version — build từ file data (đã được sync ở trên)
+ * Giữ lại cho backward compat và /oi command
+ */
+function buildOIEveningNotificationSync() {
   const analysis = analyzeOIPositions();
   if (!analysis) {
     return '⚠️ Chưa có đủ dữ liệu lịch sử OI & Khối ngoại phái sinh để phân tích.';
@@ -319,7 +392,7 @@ function buildOIEveningNotification() {
   });
   msg += `</pre>\n`;
   msg += `• <i>Ròng Khối ngoại phiên nay: <b>${fmtSign(foreign.net)} HĐ</b> (Mua ${fmt(foreign.buy)} | Bán ${fmt(foreign.sell)})</i>\n`;
-  msg += `• <i>Ròng Đám đông phiên nay: <b>${fmtSign(crowd.net)} HĐ</b> (Nhỏ lẻ ôm Short đối ứng)</i>\n`;
+  msg += `• <i>Ròng Đám đông phiên nay: <b>${fmtSign(crowd.net)} HĐ</b> (Nhỏ lẻ ôm ${crowd.side} đối ứng)</i>\n`;
   msg += `• <i>Biến động OI phiên nay: <b>${fmtSign(market.oiChange)} HĐ</b> (Tổng OI sàn: <b>${fmt(market.totalOI)} HĐ</b>)</i>\n`;
   if (market.f1mPrice) {
     msg += `• <i>Chốt phiên: F1M = <b>${market.f1mPrice}</b> | VN30 = <b>${market.vn30Price}</b> (Basis: <b>${fmtSign(market.basis)}</b>)</i>\n`;
@@ -329,8 +402,20 @@ function buildOIEveningNotification() {
   // 3. GIẢI MÃ TÂM LÝ ĐÁM ĐÔNG & Ý ĐỒ CÁ MẬP
   msg += `🧠 <b>3. GIẢI MÃ TÂM LÝ ĐÁM ĐÔNG & Ý ĐỒ CÁ MẬP:</b>\n`;
   msg += `• <b>Tâm lý Đám đông:</b> ${crowd.sentiment}\n`;
-  msg += `• <b>Ý đồ Khối ngoại:</b> Gom Mua <b>${fmt(foreign.buy)} HĐ</b> áp đảo Bán <b>${fmt(foreign.sell)} HĐ</b>, găm <b>+${fmt(foreign.abs)} HĐ Long</b> qua đêm nhằm nắm quyền chủ động tạo sóng.\n`;
-  msg += `• <b>Ý đồ Tự doanh:</b> Cầm <b>${fmtSign(tuDoanh.net)} HĐ Short</b> mang tính chất thuần phòng hộ cơ sở cuối tuần và ăn chênh lệch Basis.\n\n`;
+
+  // Dynamic foreign intent based on side
+  if (foreign.side === 'LONG') {
+    msg += `• <b>Ý đồ Khối ngoại:</b> Gom Mua <b>${fmt(foreign.buy)} HĐ</b> áp đảo Bán <b>${fmt(foreign.sell)} HĐ</b>, găm <b>${fmtSign(foreign.net)} HĐ Long</b> qua đêm nhằm nắm quyền chủ động tạo sóng.\n`;
+  } else {
+    msg += `• <b>Ý đồ Khối ngoại:</b> Xả Bán <b>${fmt(foreign.sell)} HĐ</b> áp đảo Mua <b>${fmt(foreign.buy)} HĐ</b>, găm <b>${fmtSign(foreign.net)} HĐ Short</b> qua đêm nhằm ép giá phiên kế tiếp.\n`;
+  }
+
+  // Dynamic tuDoanh intent
+  if (tuDoanh.side === 'SHORT') {
+    msg += `• <b>Ý đồ Tự doanh:</b> Cầm <b>${fmtSign(tuDoanh.net)} HĐ Short</b> mang tính chất thuần phòng hộ cơ sở và ăn chênh lệch Basis.\n\n`;
+  } else {
+    msg += `• <b>Ý đồ Tự doanh:</b> Cầm <b>${fmtSign(tuDoanh.net)} HĐ Long</b> cho thấy tự doanh đang kỳ vọng xu hướng tăng hoặc phòng hộ ngược.\n\n`;
+  }
 
   // 4. ĐÁNH GIÁ TÌNH THẾ & KỊCH BẢN PHIÊN KẾ TIẾP
   msg += `🎯 <b>4. TÌNH THẾ & KỊCH BẢN PHIÊN KẾ TIẾP:</b>\n`;
@@ -338,9 +423,14 @@ function buildOIEveningNotification() {
   msg += `• <b>Tình thế thị trường:</b> ${prediction.outlook}\n`;
   msg += `• <b>Chiến thuật hành động:</b> ${prediction.tactics}\n`;
   msg += `━━━━━━━━━━━━━━━━━━━━━━\n`;
-  msg += `💡 <i>Báo cáo vị thế OI 3 phe tự động lúc 19h35 hàng ngày | VN Stock Bot v4.2</i>`;
+  msg += `💡 <i>Báo cáo vị thế OI 3 phe tự động lúc 19h35 hàng ngày | VN Stock Bot v4.3</i>`;
 
   return msg;
+}
+
+// Legacy sync wrapper cho backward compat
+function buildOIEveningNotification() {
+  return buildOIEveningNotificationSync();
 }
 
 // ─── MANUAL & SYNC DATA UPDATE HELPERS ───────────────────────
@@ -404,22 +494,21 @@ function recordDailySessionOI(entry) {
 }
 
 /**
- * Lấy snapshot vị thế 3 phe (Ngoại, Tự doanh, Đám đông) realtime cho noti 5 phút
+ * Lấy snapshot vị thế 3 phe (Ngoại, Tự doanh, Đám đông) REALTIME cho noti phái sinh
+ * v4.3: Ưu tiên tuyệt đối data realtime từ allData.oiData, chỉ fallback file khi ngoài giờ
  */
 function getRealtimePositionSnapshot(allData) {
-  const latestData = getRecent5DaysData();
-  const latest = latestData && latestData.length > 0 ? latestData[latestData.length - 1] : null;
+  // Mặc định = 0 (không hardcode data cũ)
+  let foreignBuy = 0;
+  let foreignSell = 0;
+  let foreignNet = 0;
+  let tuDoanhNet = 0;
+  let tuDoanhBuy = 0;
+  let tuDoanhSell = 0;
+  let totalOI = 0;
+  let oiChange = 0;
 
-  let foreignBuy = latest?.buy || 5620;
-  let foreignSell = latest?.sell || 3440;
-  let foreignNet = latest?.overnightNet !== undefined ? latest.overnightNet : 2180;
-  let tuDoanhNet = latest?.tuDoanhOvernight !== undefined ? latest.tuDoanhOvernight : -740;
-  let tuDoanhBuy = 1260;
-  let tuDoanhSell = 2000;
-  let totalOI = latest?.totalOI || 30210;
-  let oiChange = latest?.oiChange !== undefined ? latest.oiChange : -1640;
-
-  // Nếu allData.oiData có data realtime từ sàn trong phiên
+  // ─── 1. Ưu tiên data REALTIME từ sàn (allData.oiData) ────
   if (allData && allData.oiData) {
     if (allData.oiData.foreignBuy > 0 || allData.oiData.foreignSell > 0) {
       foreignBuy = allData.oiData.foreignBuy;
@@ -434,6 +523,25 @@ function getRealtimePositionSnapshot(allData) {
     }
   }
 
+  // ─── 2. Tự doanh: lấy từ file data phiên gần nhất ────
+  // (API VPS không trả tự doanh riêng, dùng data đã record)
+  const latestData = getRecent5DaysData();
+  const latest = latestData && latestData.length > 0 ? latestData[latestData.length - 1] : null;
+
+  if (latest) {
+    tuDoanhNet = latest.tuDoanhOvernight !== undefined ? latest.tuDoanhOvernight : 0;
+
+    // Nếu không có data realtime từ API, fallback về file
+    if (foreignBuy === 0 && foreignSell === 0) {
+      foreignBuy = latest.buy || 0;
+      foreignSell = latest.sell || 0;
+      foreignNet = latest.overnightNet !== undefined ? latest.overnightNet : 0;
+      totalOI = latest.totalOI || 0;
+      oiChange = latest.oiChange !== undefined ? latest.oiChange : 0;
+    }
+  }
+
+  // ─── 3. Đám đông = Zero-Sum rule ────
   const crowdNet = -(foreignNet + tuDoanhNet);
 
   return {
@@ -457,6 +565,8 @@ module.exports = {
   getRecent5DaysData,
   analyzeOIPositions,
   buildOIEveningNotification,
+  buildOIEveningNotificationAsync,
+  buildOIEveningNotificationSync,
   recordDailySessionOI,
   getRealtimePositionSnapshot,
 };

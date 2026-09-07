@@ -49,6 +49,11 @@ const _state = {
   // ─── v4.2: Anti-Whipsaw state ───
   lastSignalDirection: null,     // 'LONG' | 'SHORT' | null
   lastSignalTime: null,          // timestamp (ms)
+  // ─── v4.3: Price-Change Monitor state ───
+  priceChangeTimer: null,
+  lastNotiPrice: null,           // Giá lúc bắn noti gần nhất
+  lastNotiTime: 0,               // Timestamp lúc bắn noti gần nhất
+  initialNotiSent: false,        // Đã bắn noti đầu tiên chưa (9h05)
 };
 
 // ─── CORE: Run full 8-layer analysis pipeline ────────────────
@@ -411,13 +416,14 @@ async function runDerivativesOIJob(session = 'evening') {
   if (!isCurrentInstanceActive()) return;
 
   console.log('\n' + '═'.repeat(55));
-  console.log(`📊 DERIVATIVES OI & TAY TO / KHỐI NGOẠI v4.2 — ${session}`);
+  console.log(`📊 DERIVATIVES OI & TAY TO / KHỐI NGOẠI v4.3 — ${session}`);
   console.log('═'.repeat(55));
 
   try {
-    const msg = oiTracker.buildOIEveningNotification();
+    // v4.3: Dùng async version để fetch realtime trước khi build
+    const msg = await oiTracker.buildOIEveningNotificationAsync();
     await sendDerivativesMessage(msg);
-    console.log(`   ✅ Derivatives OI [${session}] hoàn thành`);
+    console.log(`   ✅ Derivatives OI [${session}] hoàn thành (realtime data)`);
     return true;
   } catch (e) {
     console.error(`   ❌ Derivatives OI [${session}] lỗi:`, e.message);
@@ -527,9 +533,100 @@ function stopPositionMonitor() {
   stopMomentumMonitor();
 }
 
+// ─── v4.3: PRICE-CHANGE MONITOR ─────────────────────────────────
+// Thay thế cron 5p cố định. Poll giá mỗi 30s, bắn noti khi biến động >= 4 điểm
+
+const PRICE_CHANGE_THRESHOLD = 4.0;    // Biến động tối thiểu để bắn noti (điểm)
+const PRICE_CHANGE_COOLDOWN = 2 * 60 * 1000; // Cooldown tối thiểu 2p giữa 2 noti
+const PRICE_POLL_INTERVAL = 30 * 1000; // Poll giá mỗi 30 giây
+const INITIAL_NOTI_DELAY = 5 * 60 * 1000; // Bắn noti đầu tiên sau 5p (9h05)
+
+async function checkPriceChange() {
+  if (!isCurrentInstanceActive()) return;
+  if (!dataFetcher.isMarketHours()) return;
+
+  try {
+    const futuresPrice = await dataFetcher.fetchRealtimeFuturesPrice();
+    if (!futuresPrice || !futuresPrice.price) return;
+
+    const currentPrice = futuresPrice.price;
+    const nowTs = Date.now();
+
+    // ─── Noti đầu phiên (baseline) ───
+    if (!_state.initialNotiSent) {
+      // Chờ 5 phút sau khi monitor start (9h00 + 5p = 9h05)
+      if (nowTs - _state.lastNotiTime < INITIAL_NOTI_DELAY) return;
+
+      console.log(`   📡 [PriceChange] Bắn noti đầu phiên (baseline): F1M=${currentPrice}`);
+      try {
+        await runDerivativesSignalJob();
+        _state.lastNotiPrice = currentPrice;
+        _state.lastNotiTime = nowTs;
+        _state.initialNotiSent = true;
+      } catch (e) {
+        console.error('   ⚠️ [PriceChange] Noti đầu phiên lỗi:', e.message);
+      }
+      return;
+    }
+
+    // ─── Check biến động >= 4 điểm ───
+    if (_state.lastNotiPrice === null) {
+      _state.lastNotiPrice = currentPrice;
+      return;
+    }
+
+    const priceChange = currentPrice - _state.lastNotiPrice;
+    const absPriceChange = Math.abs(priceChange);
+
+    if (absPriceChange >= PRICE_CHANGE_THRESHOLD) {
+      // Check cooldown
+      const timeSinceLastNoti = nowTs - _state.lastNotiTime;
+      if (timeSinceLastNoti < PRICE_CHANGE_COOLDOWN) {
+        console.log(`   ⏳ [PriceChange] ${absPriceChange.toFixed(1)}đ nhưng còn cooldown (${Math.round((PRICE_CHANGE_COOLDOWN - timeSinceLastNoti) / 1000)}s)`);
+        return;
+      }
+
+      const direction = priceChange > 0 ? '📈 TĂNG' : '📉 GIẢM';
+      console.log(`\n   🔔 [PriceChange] ${direction} ${absPriceChange.toFixed(1)}đ (${_state.lastNotiPrice.toFixed(1)} → ${currentPrice.toFixed(1)}) — BẮN NOTI!`);
+
+      try {
+        await runDerivativesSignalJob();
+        _state.lastNotiPrice = currentPrice;
+        _state.lastNotiTime = nowTs;
+      } catch (e) {
+        console.error('   ⚠️ [PriceChange] Signal job lỗi:', e.message);
+      }
+    }
+  } catch (e) {
+    console.error('   ⚠️ [PriceChange] Check lỗi:', e.message);
+  }
+}
+
+function startPriceChangeMonitor() {
+  stopPriceChangeMonitor();
+  _state.lastNotiTime = Date.now(); // Set để chờ INITIAL_NOTI_DELAY
+  _state.initialNotiSent = false;
+  _state.lastNotiPrice = null;
+
+  _state.priceChangeTimer = setInterval(() => {
+    if (!dataFetcher.isMarketHours()) return;
+    checkPriceChange().catch(e => console.error('   ⚠️ [PriceChange] error:', e.message));
+  }, PRICE_POLL_INTERVAL);
+
+  console.log(`   📡 Price-Change Monitor v4.3: Started (poll ${PRICE_POLL_INTERVAL / 1000}s, threshold ≥${PRICE_CHANGE_THRESHOLD}đ)`);
+}
+
+function stopPriceChangeMonitor() {
+  if (_state.priceChangeTimer) {
+    clearInterval(_state.priceChangeTimer);
+    _state.priceChangeTimer = null;
+  }
+}
+
 // ─── RESET DAILY ─────────────────────────────────────────
 function resetDerivativesState() {
   stopMomentumMonitor();
+  stopPriceChangeMonitor();
   _state.morningSignal = null;
   _state.afternoonSignal = null;
   _state.prevBasis = null;
@@ -541,8 +638,11 @@ function resetDerivativesState() {
   _state.prevLiquiditySnapshot = null;
   _state.prevOISnapshot = null;
   _state.prevVN30BuySellSnapshot = null;
+  _state.lastNotiPrice = null;
+  _state.lastNotiTime = 0;
+  _state.initialNotiSent = false;
   dataFetcher.resetDailyCache();
-  console.log('   🔄 Derivatives state reset v4.2');
+  console.log('   🔄 Derivatives state reset v4.3');
 }
 
 // ─── SAVE SNAPSHOT ───────────────────────────────────────────
@@ -590,9 +690,12 @@ module.exports = {
   resetDerivativesState,
   startMomentumMonitor,
   stopMomentumMonitor,
+  startPriceChangeMonitor,
+  stopPriceChangeMonitor,
   stopPositionMonitor,
   oiTracker,
   buildOIEveningNotification: oiTracker.buildOIEveningNotification,
+  buildOIEveningNotificationAsync: oiTracker.buildOIEveningNotificationAsync,
   // Legacy compatibility
   fetchOHLCV: dataFetcher.fetchOHLCV,
   fetchVN30LiquidityRadar: async () => null,
