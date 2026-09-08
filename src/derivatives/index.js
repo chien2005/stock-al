@@ -27,7 +27,7 @@ const { analyzeBreadth, analyzeLeaders, analyzeLiquidity } = require('./breadthE
 const { classifyRegime } = require('./regimeEngine');
 const { calculateScore } = require('./scoringEngine');
 const { buildTargetMap } = require('./targetEngine');
-const { buildSignalNotification, buildMomentumAlert, buildLeaderAlert, buildTrapAlert } = require('./notificationBuilder');
+const { buildSignalNotification, buildLeaderAlert, buildTrapAlert } = require('./notificationBuilder');
 const { saveSignalSnapshot } = require('./snapshotStore');
 const oiTracker = require('./oiTracker');
 
@@ -320,6 +320,9 @@ async function runDerivativesSignalJob() {
     _state.prevLiquiditySnapshot = currentLiquidity;
     _state.prevOISnapshot = currentOI;
     _state.prevVN30BuySellSnapshot = currentVN30BuySell;
+    _state.lastNotiPrice = basisResult.f1mPrice || _state.lastNotiPrice;
+    _state.lastNotiTime = Date.now();
+    _state.initialNotiSent = true;
 
   } catch (e) {
     console.error('   ❌ Derivatives signal job error v4.2:', e.message);
@@ -431,54 +434,15 @@ async function runDerivativesOIJob(session = 'evening') {
   }
 }
 
-// Rolling price buffer for 5-minute momentum detection
-const _momentumHistory = [];
-
-// ─── MOMENTUM MONITOR ───────────────────────────────────────
+// ─── LEADER & TRAP MONITOR ──────────────────────────────────
 async function checkMomentum() {
   if (!isCurrentInstanceActive()) return;
   if (!dataFetcher.isMarketHours()) return;
 
   try {
-    const vn30PriceObj = await dataFetcher.fetchRealtimeVN30Price();
-    if (!vn30PriceObj) return;
-
-    const currentPrice = vn30PriceObj.price;
     const nowTs = Date.now();
 
-    // 1. Lưu price vào rolling buffer
-    _momentumHistory.push({ price: currentPrice, ts: nowTs });
-
-    // Xóa data cũ > 10 phút
-    while (_momentumHistory.length > 0 && (nowTs - _momentumHistory[0].ts > 10 * 60 * 1000)) {
-      _momentumHistory.shift();
-    }
-
-    // 2. Tìm giá cách đây khoảng 3 - 6 phút
-    const targetTs = nowTs - (5 * 60 * 1000);
-    const pastEntry = _momentumHistory.find(e => Math.abs(e.ts - targetTs) <= 90 * 1000) || _momentumHistory[0];
-
-    if (pastEntry && _momentumHistory.length >= 3) {
-      const priceChange = currentPrice - pastEntry.price;
-      const timeDiffMin = (nowTs - pastEntry.ts) / 60000;
-
-      // Biến động ≥ 4 điểm trong vòng 3 - 7 phút
-      if (Math.abs(priceChange) >= 4.0 && timeDiffMin >= 2 && timeDiffMin <= 7) {
-        const alertType = priceChange > 0 ? 'SURGE_UP' : 'SURGE_DOWN';
-        const cooldownMs = 15 * 60 * 1000; // 15 phút cooldown cho cùng 1 hướng
-        const lastAlert = _state.lastAlertTime[alertType] || 0;
-
-        if (nowTs - lastAlert > cooldownMs) {
-          const realtimeVN30 = await dataFetcher.fetchRealtimeVN30();
-          const breadthResult = analyzeBreadth(realtimeVN30);
-          const msg = buildMomentumAlert(alertType, priceChange, currentPrice, breadthResult);
-          await sendDerivativesMessage(msg);
-          _state.lastAlertTime[alertType] = nowTs;
-        }
-      }
-    }
-
-    // 3. Check leader exhaustion
+    // 1. Check leader exhaustion
     const realtimeVN30 = await dataFetcher.fetchRealtimeVN30();
     const breadthResult = analyzeBreadth(realtimeVN30);
     const leaderResult = analyzeLeaders(breadthResult, _state.prevLeaderSnapshot);
@@ -495,7 +459,7 @@ async function checkMomentum() {
       }
     }
 
-    // 4. Check trap
+    // 2. Check trap
     if (breadthResult.trap.detected && breadthResult.trap.confidence >= 75) {
       const alertType = `TRAP_${breadthResult.trap.detected}`;
       const cooldownMs = 30 * 60 * 1000; // 30 phút cooldown
@@ -507,7 +471,7 @@ async function checkMomentum() {
       }
     }
   } catch (e) {
-    console.error('   ⚠️ Momentum check error:', e.message);
+    console.error('   ⚠️ Leader/Trap check error:', e.message);
   }
 }
 
@@ -518,7 +482,7 @@ function startMomentumMonitor() {
     if (!dataFetcher.isMarketHours()) return;
     checkMomentum().catch(e => console.error('   ⚠️ Momentum error:', e.message));
   }, INTERVAL_MS);
-  console.log('   📡 Momentum Monitor v4.0: Started (90s)');
+  console.log('   📡 Leader & Trap Monitor: Started (90s)');
 }
 
 function stopMomentumMonitor() {
@@ -529,17 +493,17 @@ function stopMomentumMonitor() {
 }
 
 function stopPositionMonitor() {
-  // v4.0: Position monitoring is simplified into momentum monitor
   stopMomentumMonitor();
 }
 
 // ─── v4.3: PRICE-CHANGE MONITOR ─────────────────────────────────
-// Thay thế cron 5p cố định. Poll giá mỗi 30s, bắn noti khi biến động >= 4 điểm
+// Bắn full bản tin phân tích v4.2 khi giá phái sinh biến động >= 4 điểm (bất kể 5p, 10p, 30p)
 
-const PRICE_CHANGE_THRESHOLD = 4.0;    // Biến động tối thiểu để bắn noti (điểm)
+const _priceHistory = []; // [{ price, ts }] buffer 30p theo dõi biến động rolling
+const PRICE_CHANGE_THRESHOLD = 4.0;          // Biến động tối thiểu để bắn noti (điểm)
 const PRICE_CHANGE_COOLDOWN = 2 * 60 * 1000; // Cooldown tối thiểu 2p giữa 2 noti
-const PRICE_POLL_INTERVAL = 30 * 1000; // Poll giá mỗi 30 giây
-const INITIAL_NOTI_DELAY = 5 * 60 * 1000; // Bắn noti đầu tiên sau 5p (9h05)
+const PRICE_POLL_INTERVAL = 20 * 1000;       // Poll giá mỗi 20 giây
+const ROLLING_WINDOW_MS = 30 * 60 * 1000;    // Buffer 30 phút cho rolling swings
 
 async function checkPriceChange() {
   if (!isCurrentInstanceActive()) return;
@@ -552,10 +516,23 @@ async function checkPriceChange() {
     const currentPrice = futuresPrice.price;
     const nowTs = Date.now();
 
+    // 1. Ghi nhận giá vào rolling buffer
+    _priceHistory.push({ price: currentPrice, ts: nowTs });
+
+    // Xóa data cũ hơn ROLLING_WINDOW_MS (30 phút)
+    while (_priceHistory.length > 0 && (nowTs - _priceHistory[0].ts > ROLLING_WINDOW_MS)) {
+      _priceHistory.shift();
+    }
+
     // ─── Noti đầu phiên (baseline) ───
     if (!_state.initialNotiSent) {
-      // Chờ 5 phút sau khi monitor start (9h00 + 5p = 9h05)
-      if (nowTs - _state.lastNotiTime < INITIAL_NOTI_DELAY) return;
+      const vnHour = dataFetcher.getVnHour ? dataFetcher.getVnHour() : (new Date().getHours() + new Date().getMinutes() / 60);
+      const isEarlyMorning = vnHour < 9.083; // Trước ~9h05
+
+      // Nếu trước 9h05: chờ tối thiểu 5p từ lúc mở phiên
+      if (isEarlyMorning && (nowTs - _state.lastNotiTime < 5 * 60 * 1000)) {
+        return;
+      }
 
       console.log(`   📡 [PriceChange] Bắn noti đầu phiên (baseline): F1M=${currentPrice}`);
       try {
@@ -563,6 +540,8 @@ async function checkPriceChange() {
         _state.lastNotiPrice = currentPrice;
         _state.lastNotiTime = nowTs;
         _state.initialNotiSent = true;
+        _priceHistory.length = 0;
+        _priceHistory.push({ price: currentPrice, ts: nowTs });
       } catch (e) {
         console.error('   ⚠️ [PriceChange] Noti đầu phiên lỗi:', e.message);
       }
@@ -575,24 +554,52 @@ async function checkPriceChange() {
       return;
     }
 
-    const priceChange = currentPrice - _state.lastNotiPrice;
-    const absPriceChange = Math.abs(priceChange);
+    const timeSinceLastNoti = nowTs - _state.lastNotiTime;
 
-    if (absPriceChange >= PRICE_CHANGE_THRESHOLD) {
-      // Check cooldown
-      const timeSinceLastNoti = nowTs - _state.lastNotiTime;
+    // Điều kiện 1: Biến động tích lũy so với lần bắn noti trước >= 4 điểm (bất kể 10p, 30p, 1h)
+    const diffFromLastNoti = currentPrice - _state.lastNotiPrice;
+    const absDiffLastNoti = Math.abs(diffFromLastNoti);
+    let shouldTrigger = false;
+    let triggerReason = '';
+
+    if (absDiffLastNoti >= PRICE_CHANGE_THRESHOLD) {
+      shouldTrigger = true;
+      const dir = diffFromLastNoti > 0 ? '📈 TĂNG' : '📉 GIẢM';
+      triggerReason = `${dir} ${absDiffLastNoti.toFixed(1)}đ so với noti trước (${_state.lastNotiPrice.toFixed(1)} → ${currentPrice.toFixed(1)})`;
+    }
+
+    // Điều kiện 2: Biến động nhanh trong rolling window >= 4 điểm (bất kể khoảng 2p - 30p)
+    // Kích hoạt khi giá hiện tại lệch ít nhất 2.0đ so với noti trước (tránh lặp cùng mức giá)
+    if (!shouldTrigger && absDiffLastNoti >= 2.0 && _priceHistory.length >= 2) {
+      for (const past of _priceHistory) {
+        if (nowTs - past.ts < 60 * 1000) continue; // Cách ít nhất 1 phút
+        const swing = currentPrice - past.price;
+        const absSwing = Math.abs(swing);
+        if (absSwing >= PRICE_CHANGE_THRESHOLD) {
+          shouldTrigger = true;
+          const minsAgo = Math.round((nowTs - past.ts) / 60000);
+          const dir = swing > 0 ? '📈 TĂNG' : '📉 GIẢM';
+          triggerReason = `Swing ${minsAgo}p qua: ${dir} ${absSwing.toFixed(1)}đ (${past.price.toFixed(1)} → ${currentPrice.toFixed(1)})`;
+          break;
+        }
+      }
+    }
+
+    if (shouldTrigger) {
       if (timeSinceLastNoti < PRICE_CHANGE_COOLDOWN) {
-        console.log(`   ⏳ [PriceChange] ${absPriceChange.toFixed(1)}đ nhưng còn cooldown (${Math.round((PRICE_CHANGE_COOLDOWN - timeSinceLastNoti) / 1000)}s)`);
+        console.log(`   ⏳ [PriceChange] ${triggerReason} nhưng còn cooldown (${Math.round((PRICE_CHANGE_COOLDOWN - timeSinceLastNoti) / 1000)}s)`);
         return;
       }
 
-      const direction = priceChange > 0 ? '📈 TĂNG' : '📉 GIẢM';
-      console.log(`\n   🔔 [PriceChange] ${direction} ${absPriceChange.toFixed(1)}đ (${_state.lastNotiPrice.toFixed(1)} → ${currentPrice.toFixed(1)}) — BẮN NOTI!`);
+      console.log(`\n   🔔 [PriceChange] BIẾN ĐỘNG ≥4đ: ${triggerReason} — BẮN BẢN TIN PHÂN TÍCH v4.2!`);
 
       try {
         await runDerivativesSignalJob();
         _state.lastNotiPrice = currentPrice;
         _state.lastNotiTime = nowTs;
+        // Reset buffer sau khi bắn để tránh trigger lặp
+        _priceHistory.length = 0;
+        _priceHistory.push({ price: currentPrice, ts: nowTs });
       } catch (e) {
         console.error('   ⚠️ [PriceChange] Signal job lỗi:', e.message);
       }
@@ -604,9 +611,10 @@ async function checkPriceChange() {
 
 function startPriceChangeMonitor() {
   stopPriceChangeMonitor();
-  _state.lastNotiTime = Date.now(); // Set để chờ INITIAL_NOTI_DELAY
+  _state.lastNotiTime = Date.now();
   _state.initialNotiSent = false;
   _state.lastNotiPrice = null;
+  _priceHistory.length = 0;
 
   _state.priceChangeTimer = setInterval(() => {
     if (!dataFetcher.isMarketHours()) return;
@@ -627,6 +635,7 @@ function stopPriceChangeMonitor() {
 function resetDerivativesState() {
   stopMomentumMonitor();
   stopPriceChangeMonitor();
+  _priceHistory.length = 0;
   _state.morningSignal = null;
   _state.afternoonSignal = null;
   _state.prevBasis = null;

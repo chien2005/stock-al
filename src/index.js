@@ -33,7 +33,7 @@ const { startBotHandler, stopBotHandler } = require('./botHandler');
 const { startAlertMonitor, stopAlertMonitor, resetDailyData, flushBigTradeBuffer } = require('./alertService');
 const { runSmartMoneyReport } = require('./smartMoneyReport');
 const { runWhaleTrackerReport } = require('./whaleTracker');
-const { runDerivativesSignalJob, runMorningDerivativesJob, runMidMorningDerivativesJob, runAfternoonDerivativesJob, runAIDerivativesJob, runDerivativesOIJob, resetDerivativesState, startMomentumMonitor, startPriceChangeMonitor } = require('./derivatives');
+const { runDerivativesSignalJob, runMorningDerivativesJob, runMidMorningDerivativesJob, runAfternoonDerivativesJob, runAIDerivativesJob, runDerivativesOIJob, resetDerivativesState, startMomentumMonitor, startPriceChangeMonitor, stopMomentumMonitor, stopPriceChangeMonitor } = require('./derivatives');
 
 // ─── Thời điểm khởi động (cho health check) ─────────────
 const startedAt = new Date();
@@ -538,6 +538,10 @@ async function main() {
   // ─── START ALERT MONITOR (cảnh báo giao dịch bất thường) ───
   startAlertMonitor();
 
+  // ─── START DERIVATIVES MONITORS (chạy cả khi khởi động lại trong phiên) ───
+  startMomentumMonitor();
+  startPriceChangeMonitor();
+
   // Reset alert data mỗi ngày lúc 9:00 (trước phiên)
   cron.schedule('0 9 * * 1-5', () => {
     if (!isCurrentInstanceActive()) return;
@@ -822,6 +826,8 @@ process.on('SIGINT', () => {
   console.log('\n👋 Bot đang dừng...');
   stopBotHandler();
   stopAlertMonitor();
+  stopMomentumMonitor();
+  stopPriceChangeMonitor();
   console.log('👋 Bot đã dừng. Hẹn gặp lại!');
   process.exit(0);
 });
@@ -830,6 +836,8 @@ process.on('SIGTERM', () => {
   console.log('\n👋 Bot đang dừng (SIGTERM)...');
   stopBotHandler();
   stopAlertMonitor();
+  stopMomentumMonitor();
+  stopPriceChangeMonitor();
   process.exit(0);
 });
 

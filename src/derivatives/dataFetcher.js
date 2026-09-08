@@ -179,6 +179,23 @@ async function fetchRealtimeVN30() {
 
 // ─── FETCH REALTIME FUTURES PRICE ────────────────────────────
 async function fetchRealtimeFuturesPrice() {
+  // Ưu tiên 1: Snapshot phái sinh realtime từ VPS (nhanh, chính xác từng giây)
+  try {
+    const res = await axios.get(`${VPS_PS_SNAPSHOT}/41I1G9000`, { headers: HEADERS, timeout: 3000 });
+    if (res.data && Array.isArray(res.data) && res.data.length > 0 && res.data[0].lastPrice) {
+      const d = res.data[0];
+      const p = parseFloat(d.lastPrice);
+      const r = d.r ? parseFloat(d.r) : p;
+      return {
+        price: p,
+        prevPrice: r,
+        high: d.highPrice ? parseFloat(d.highPrice) : p,
+        low: d.lowPrice ? parseFloat(d.lowPrice) : p,
+      };
+    }
+  } catch (e) { /* fail silently, fallback to history */ }
+
+  // Ưu tiên 2: TradingView history feed
   try {
     const now = Math.floor(Date.now() / 1000);
     const from = now - 86400 * 2;
