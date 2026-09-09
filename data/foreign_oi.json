@@ -1,5 +1,5 @@
 {
-  "lastUpdated": "2026-09-07T13:42:36.934Z",
+  "lastUpdated": "2026-09-09T13:19:35.958Z",
   "history": [
     {
       "date": "26/8/2026",
@@ -41,6 +41,13 @@
       "buy": 3351,
       "sell": 5103,
       "overnightNet": -1752,
+      "tuDoanhOvernight": 0
+    },
+    {
+      "date": "9/9/2026",
+      "buy": 11912,
+      "sell": 10855,
+      "overnightNet": 1057,
       "tuDoanhOvernight": 0
     }
   ]
