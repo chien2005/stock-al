@@ -44,10 +44,24 @@
       "tuDoanhOvernight": 0
     },
     {
+      "date": "8/9/2026",
+      "buy": 4120,
+      "sell": 4850,
+      "overnightNet": -730,
+      "tuDoanhOvernight": 0
+    },
+    {
       "date": "9/9/2026",
       "buy": 11912,
       "sell": 10855,
       "overnightNet": 1057,
+      "tuDoanhOvernight": 0
+    },
+    {
+      "date": "10/9/2026",
+      "buy": 5480,
+      "sell": 6790,
+      "overnightNet": -1310,
       "tuDoanhOvernight": 0
     },
     {
