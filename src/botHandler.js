@@ -70,6 +70,8 @@ function startBotHandler() {
     bot.onText(/^\/tuanmoi/i, handleWeeklyCommand);
     bot.onText(/^\/team/i, handleTeamCommand);
     bot.onText(/^\/(oi|vithe|ps)/i, handleOICommand);
+    bot.onText(/^\/(atc|preatc|pre_atc)/i, handlePreATCCommand);
+    bot.onText(/^\/(overnight|ato|postatc|post_atc|quadem)/i, handlePostATCCommand);
 
     // Free text handler (non-command messages)
     bot.on('message', handleFreeTextMessage);
@@ -121,6 +123,8 @@ async function handleHelpCommand(msg) {
     `<code>/tuanmoi</code> - Phân tích đầu tuần\n` +
     `<code>/team</code> - Xem đội ngũ AI\n` +
     `<code>/oi</code> - Vị thế qua đêm OI & Khối ngoại 5 phiên\n` +
+    `<code>/atc</code> - Tình trạng realtime 14h29 (Nên vào ATC không?)\n` +
+    `<code>/overnight</code> - Tình trạng realtime 14h44 (Cầm qua đêm hay Đóng?)\n` +
     `<code>/help</code> - Trợ giúp\n\n` +
     `<b>💬 Chat tự do:</b>\n` +
     `Bạn có thể hỏi bất cứ gì về chứng khoán:\n` +
@@ -260,6 +264,32 @@ async function handleOICommand(msg) {
   } catch (error) {
     console.error('❌ Lỗi handleOICommand:', error.message);
     await bot.sendMessage(chatId, '❌ Không thể lấy báo cáo OI & Vị thế lúc này.');
+  }
+}
+
+async function handlePreATCCommand(msg) {
+  const chatId = msg.chat.id;
+  try {
+    await bot.sendMessage(chatId, '⏳ Đang phân tích Realtime trước ATC (NN, Tay to, Đám đông)...');
+    const { buildPreATCNotificationAsync } = require('./derivatives/oiTracker');
+    const reply = await buildPreATCNotificationAsync();
+    await bot.sendMessage(chatId, reply, { parse_mode: 'HTML', disable_web_page_preview: true });
+  } catch (error) {
+    console.error('❌ Lỗi handlePreATCCommand:', error.message);
+    await bot.sendMessage(chatId, '❌ Không thể lấy báo cáo Pre-ATC lúc này.');
+  }
+}
+
+async function handlePostATCCommand(msg) {
+  const chatId = msg.chat.id;
+  try {
+    await bot.sendMessage(chatId, '⏳ Đang phân tích Realtime chốt ATC & Vị thế qua đêm...');
+    const { buildPostATCNotificationAsync } = require('./derivatives/oiTracker');
+    const reply = await buildPostATCNotificationAsync();
+    await bot.sendMessage(chatId, reply, { parse_mode: 'HTML', disable_web_page_preview: true });
+  } catch (error) {
+    console.error('❌ Lỗi handlePostATCCommand:', error.message);
+    await bot.sendMessage(chatId, '❌ Không thể lấy báo cáo Post-ATC lúc này.');
   }
 }
 

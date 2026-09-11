@@ -424,12 +424,54 @@ async function runDerivativesOIJob(session = 'evening') {
 
   try {
     // v4.3: Dùng async version để fetch realtime trước khi build
-    const msg = await oiTracker.buildOIEveningNotificationAsync();
+    const msg = await oiTracker.buildOIEveningNotificationAsync(session);
     await sendDerivativesMessage(msg);
     console.log(`   ✅ Derivatives OI [${session}] hoàn thành (realtime data)`);
     return true;
   } catch (e) {
     console.error(`   ❌ Derivatives OI [${session}] lỗi:`, e.message);
+    return false;
+  }
+}
+
+// ─── DERIVATIVES PRE-ATC JOB (14h29 T2-T6) ───────────────────
+// Đánh giá realtime: Có nên mở vị thế để vào ATC hay không?
+// Cảnh báo chốt trước 14h29 nếu cạn kiệt thanh khoản, tay to đóng bớt HĐ
+async function runPreATCJob() {
+  if (!isCurrentInstanceActive()) return;
+
+  console.log('\n' + '═'.repeat(55));
+  console.log('⚡ DERIVATIVES PRE-ATC REALTIME v4.3 — 14h29');
+  console.log('═'.repeat(55));
+
+  try {
+    const msg = await oiTracker.buildPreATCNotificationAsync();
+    await sendDerivativesMessage(msg);
+    console.log('   ✅ Derivatives Pre-ATC [14h29] hoàn thành');
+    return true;
+  } catch (e) {
+    console.error('   ❌ Derivatives Pre-ATC [14h29] lỗi:', e.message);
+    return false;
+  }
+}
+
+// ─── DERIVATIVES POST-ATC / OVERNIGHT JOB (14h44 T2-T6) ──────
+// Đánh giá realtime chốt ATC: Có nên giữ vị thế qua đêm vào ATO hay đóng chốt luôn?
+// Cảnh báo đóng hết vị thế (Flat) nếu thị trường ảm đạm, tay to không găm vị thế
+async function runPostATCJob() {
+  if (!isCurrentInstanceActive()) return;
+
+  console.log('\n' + '═'.repeat(55));
+  console.log('🌙 DERIVATIVES POST-ATC / OVERNIGHT v4.3 — 14h44');
+  console.log('═'.repeat(55));
+
+  try {
+    const msg = await oiTracker.buildPostATCNotificationAsync();
+    await sendDerivativesMessage(msg);
+    console.log('   ✅ Derivatives Post-ATC [14h44] hoàn thành');
+    return true;
+  } catch (e) {
+    console.error('   ❌ Derivatives Post-ATC [14h44] lỗi:', e.message);
     return false;
   }
 }
@@ -696,6 +738,8 @@ module.exports = {
   runAfternoonDerivativesJob,
   runAIDerivativesJob,
   runDerivativesOIJob,
+  runPreATCJob,
+  runPostATCJob,
   resetDerivativesState,
   startMomentumMonitor,
   stopMomentumMonitor,
@@ -705,6 +749,8 @@ module.exports = {
   oiTracker,
   buildOIEveningNotification: oiTracker.buildOIEveningNotification,
   buildOIEveningNotificationAsync: oiTracker.buildOIEveningNotificationAsync,
+  buildPreATCNotificationAsync: oiTracker.buildPreATCNotificationAsync,
+  buildPostATCNotificationAsync: oiTracker.buildPostATCNotificationAsync,
   // Legacy compatibility
   fetchOHLCV: dataFetcher.fetchOHLCV,
   fetchVN30LiquidityRadar: async () => null,

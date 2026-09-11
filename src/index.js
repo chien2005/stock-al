@@ -33,7 +33,7 @@ const { startBotHandler, stopBotHandler } = require('./botHandler');
 const { startAlertMonitor, stopAlertMonitor, resetDailyData, flushBigTradeBuffer } = require('./alertService');
 const { runSmartMoneyReport } = require('./smartMoneyReport');
 const { runWhaleTrackerReport } = require('./whaleTracker');
-const { runDerivativesSignalJob, runMorningDerivativesJob, runMidMorningDerivativesJob, runAfternoonDerivativesJob, runAIDerivativesJob, runDerivativesOIJob, resetDerivativesState, startMomentumMonitor, startPriceChangeMonitor, stopMomentumMonitor, stopPriceChangeMonitor } = require('./derivatives');
+const { runDerivativesSignalJob, runMorningDerivativesJob, runMidMorningDerivativesJob, runAfternoonDerivativesJob, runAIDerivativesJob, runDerivativesOIJob, runPreATCJob, runPostATCJob, resetDerivativesState, startMomentumMonitor, startPriceChangeMonitor, stopMomentumMonitor, stopPriceChangeMonitor } = require('./derivatives');
 
 // ─── Thời điểm khởi động (cho health check) ─────────────
 const startedAt = new Date();
@@ -427,7 +427,10 @@ async function main() {
           `📅 Ngày hoạt động: <b>${config.activeDays}</b> (ACTIVE)\n` +
           `⏰ Tín hiệu: 9h05 - 14h45 (bắn khi biến động ≥4đ, realtime)\n` +
           `🤖 AI Phái sinh: 9h22 | 10h22 | 13h50\n` +
-          `📊 OI & Basis: 19h35 (realtime data)\n` +
+          `⚡ Pre-ATC (Vào ATC hay không?): 14h29\n` +
+          `🌙 Post-ATC (Cầm qua đêm hay Đóng?): 14h44\n` +
+          `📊 OI Sơ bộ sau ATC: 14h47\n` +
+          `📊 OI & Basis (Chính thức HNX/VSDC): 19h35\n` +
           `━━━━━━━━━━━━━━━━━━━━━━\n` +
           `<i>Kênh chuyên biệt phân tích & tín hiệu phái sinh realtime 24/24</i>`
         );
@@ -638,6 +641,59 @@ async function main() {
     }
   }, { scheduled: true, timezone: config.timezone });
   console.log('   🤖 AI Derivatives Forecast: 9:22, 10:22 & 13:50 (T2-T6)');
+
+  // ─── SCHEDULE: DERIVATIVES PRE-ATC REALTIME (14h29 T2-T6) ────
+  // Quyết định realtime: Có nên mở vị thế để vào ATC hay không?
+  // Cảnh báo chốt lệnh trước 14h29 nếu thanh khoản cạn kiệt, tay to đóng bớt HĐ, ảm đạm
+  cron.schedule('29 14 * * 1-5', async () => {
+    if (!isWeekday()) return;
+    if (isDuplicate('derivativesPreATC_1429')) return;
+    const now = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
+    console.log(`\n⚡ [Derivatives Pre-ATC 14h29] Cron triggered: ${now}`);
+    try {
+      await runPreATCJob();
+      jobLastSuccess['derivativesPreATC_1429'] = Date.now();
+    } catch (err) {
+      console.error('⚡ [Derivatives Pre-ATC 14h29] Lỗi:', err.message);
+      jobLastError['derivativesPreATC_1429'] = { time: Date.now(), message: err.message };
+    }
+  }, { scheduled: true, timezone: config.timezone });
+  console.log('   ⚡ Derivatives Pre-ATC (Vào ATC hay không?): 14:29 (T2-T6)');
+
+  // ─── SCHEDULE: DERIVATIVES POST-ATC / OVERNIGHT (14h44 T2-T6) ─
+  // Quyết định realtime: Có nên giữ vị thế qua đêm vào ATO hay đóng chốt lời/lỗ luôn?
+  // Cảnh báo đóng hết (Flat) nếu thanh khoản cạn kiệt, thị trường ảm đạm, tay to không găm vị thế
+  cron.schedule('44 14 * * 1-5', async () => {
+    if (!isWeekday()) return;
+    if (isDuplicate('derivativesPostATC_1444')) return;
+    const now = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
+    console.log(`\n🌙 [Derivatives Post-ATC 14h44] Cron triggered: ${now}`);
+    try {
+      await runPostATCJob();
+      jobLastSuccess['derivativesPostATC_1444'] = Date.now();
+    } catch (err) {
+      console.error('🌙 [Derivatives Post-ATC 14h44] Lỗi:', err.message);
+      jobLastError['derivativesPostATC_1444'] = { time: Date.now(), message: err.message };
+    }
+  }, { scheduled: true, timezone: config.timezone });
+  console.log('   🌙 Derivatives Post-ATC (Cầm qua đêm hay Đóng?): 14:44 (T2-T6)');
+
+  // ─── SCHEDULE: DERIVATIVES OI & TAY TO TRACKER (14h47 T2-T6 - Sơ bộ sau ATC) ─
+  // Báo cáo sơ bộ vị thế 3 phe, Khối ngoại chốt phiên, bảng 5 phiên ngay sau khi đóng cửa ATC 2 phút
+  cron.schedule('47 14 * * 1-5', async () => {
+    if (!isWeekday()) return;
+    if (isDuplicate('derivativesOI_afternoon_1447')) return;
+    const now = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
+    console.log(`\n📊 [Derivatives OI Afternoon 14h47] Cron triggered: ${now}`);
+    try {
+      await runDerivativesOIJob('afternoon');
+      jobLastSuccess['derivativesOI_afternoon_1447'] = Date.now();
+    } catch (err) {
+      console.error('📊 [Derivatives OI Afternoon 14h47] Lỗi:', err.message);
+      jobLastError['derivativesOI_afternoon_1447'] = { time: Date.now(), message: err.message };
+    }
+  }, { scheduled: true, timezone: config.timezone });
+  console.log('   📊 Derivatives OI Sơ bộ sau ATC: 14:47 (T2-T6)');
 
   // ─── SCHEDULE: DERIVATIVES OI & TAY TO TRACKER (19h35 T2-T6) ─
   // Báo cáo vị thế qua đêm Khối ngoại, Tự doanh, Tổng OI 5 ngày gần nhất
