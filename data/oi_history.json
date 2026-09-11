@@ -1,5 +1,5 @@
 {
-  "lastUpdated": "2026-09-09T13:19:35.959Z",
+  "lastUpdated": "2026-09-11T07:48:48.196Z",
   "history": [
     {
       "date": "26/8/2026",
@@ -67,6 +67,13 @@
       "f1mPrice": 1966,
       "vn30Price": 1967.64,
       "basis": -1.64,
+      "positionState": "NEUTRAL"
+    },
+    {
+      "date": "11/9/2026",
+      "totalOI": 35352,
+      "oiChange": 0,
+      "f1mPrice": 1940,
       "positionState": "NEUTRAL"
     }
   ]

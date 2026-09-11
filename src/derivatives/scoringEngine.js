@@ -286,7 +286,7 @@ function calculateScore({
     if (finalDirection === 'LONG' && nearest.resistance) {
       const distToResistance = nearest.resistance.price - currentPrice;
       if (distToResistance < rrThreshold && distToResistance > 0) {
-        vetoReason = `Giá cách cản trên (${nearest.resistance.price.toFixed(1)}) chỉ ${distToResistance.toFixed(1)} điểm — R:R < 1:1 → Chờ giá test lại vùng hỗ trợ rồi Long.`;
+        vetoReason = `Giá cách cản trên (${nearest.resistance.price.toFixed(1)}) chỉ ${distToResistance.toFixed(1)} điểm — R:R &lt; 1:1 → Chờ giá test lại vùng hỗ trợ rồi Long.`;
         vetoType = 'RR_VETO';
         finalDirection = 'NO_TRADE';
         tradeConfidence = 0;
@@ -295,7 +295,7 @@ function calculateScore({
     } else if (finalDirection === 'SHORT' && nearest.support) {
       const distToSupport = currentPrice - nearest.support.price;
       if (distToSupport < rrThreshold && distToSupport > 0) {
-        vetoReason = `Giá cách hỗ trợ (${nearest.support.price.toFixed(1)}) chỉ ${distToSupport.toFixed(1)} điểm — R:R < 1:1 → Chờ giá hồi lên kháng cự rồi Short.`;
+        vetoReason = `Giá cách hỗ trợ (${nearest.support.price.toFixed(1)}) chỉ ${distToSupport.toFixed(1)} điểm — R:R &lt; 1:1 → Chờ giá hồi lên kháng cự rồi Short.`;
         vetoType = 'RR_VETO';
         finalDirection = 'NO_TRADE';
         tradeConfidence = 0;
@@ -314,7 +314,7 @@ function calculateScore({
       // Đang đảo chiều trong cooldown → cần scoreDiff >= 15
       if (scoreDiff < 15) {
         const minutesAgo = Math.round(timeSinceLastSignal / 60000);
-        vetoReason = `Đảo chiều từ ${lastSignalDirection} → ${finalDirection} chỉ sau ${minutesAgo} phút (Long ${Math.round(longScore)}đ / Short ${Math.round(shortScore)}đ, chênh ${Math.round(scoreDiff)}đ < 15đ). Chờ xác nhận rõ hơn.`;
+        vetoReason = `Đảo chiều từ ${lastSignalDirection} → ${finalDirection} chỉ sau ${minutesAgo} phút (Long ${Math.round(longScore)}đ / Short ${Math.round(shortScore)}đ, chênh ${Math.round(scoreDiff)}đ &lt; 15đ). Chờ xác nhận rõ hơn.`;
         vetoType = 'ANTI_WHIPSAW';
         finalDirection = 'NO_TRADE';
         tradeConfidence = 0;

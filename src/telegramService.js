@@ -17,18 +17,36 @@ const TELEGRAM_API = `https://api.telegram.org/bot${config.telegram.botToken}`;
  * Gửi message text tới Telegram
  * @param {string} message - Nội dung message (hỗ trợ HTML)
  */
+async function sendMessageSafe(chatId, text) {
+  try {
+    return await axios.post(`${TELEGRAM_API}/sendMessage`, {
+      chat_id: chatId,
+      text,
+      parse_mode: 'HTML',
+      disable_web_page_preview: true,
+    });
+  } catch (error) {
+    const desc = error.response?.data?.description || error.message;
+    if (desc && (desc.includes("can't parse entities") || desc.includes("Bad Request: can't parse"))) {
+      console.warn(`⚠️ Telegram HTML entity parse error, retrying as plain text... (${desc})`);
+      const plainText = text.replace(/<[^>]+>/g, '');
+      return await axios.post(`${TELEGRAM_API}/sendMessage`, {
+        chat_id: chatId,
+        text: plainText,
+        disable_web_page_preview: true,
+      });
+    }
+    throw error;
+  }
+}
+
 async function sendTelegramMessage(message) {
   try {
     // Telegram giới hạn 4096 ký tự / message
     const chunks = splitMessage(message, 4000);
 
     for (const chunk of chunks) {
-      await axios.post(`${TELEGRAM_API}/sendMessage`, {
-        chat_id: config.telegram.chatId,
-        text: chunk,
-        parse_mode: 'HTML',
-        disable_web_page_preview: true,
-      });
+      await sendMessageSafe(config.telegram.chatId, chunk);
       // Delay nhẹ giữa các message để tránh rate limit
       if (chunks.length > 1) {
         await sleep(500);
@@ -54,12 +72,7 @@ async function sendDerivativesMessage(message) {
     const chunks = splitMessage(message, 4000);
 
     for (const chunk of chunks) {
-      await axios.post(`${TELEGRAM_API}/sendMessage`, {
-        chat_id: chatId,
-        text: chunk,
-        parse_mode: 'HTML',
-        disable_web_page_preview: true,
-      });
+      await sendMessageSafe(chatId, chunk);
       if (chunks.length > 1) {
         await sleep(500);
       }

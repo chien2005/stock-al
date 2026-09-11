@@ -782,14 +782,14 @@ async function main() {
     console.log(`   💓 Health check: http://localhost:${PORT}/health`);
   });
 
-  // ─── SELF-PING: Chống Render Free Tier ngủ (tự ping mỗi 10 phút) ──
+  // ─── SELF-PING: Chống Render Free Tier ngủ (tự ping mỗi 8 phút) ──
   const RENDER_URL = process.env.RENDER_EXTERNAL_URL || process.env.RENDER_SERVICE_URL;
-  if (RENDER_URL || process.env.RENDER) {
+  if (RENDER_URL || process.env.RENDER || process.env.NODE_ENV === 'production') {
     const https = require('https');
     const pingUrl = RENDER_URL 
       ? `${RENDER_URL}/health` 
-      : `https://vn-stock-bot-gywt.onrender.com/health`;
-    const PING_INTERVAL = 10 * 60 * 1000; // 10 phút
+      : `https://stock-al-yoq4.onrender.com/health`;
+    const PING_INTERVAL = 8 * 60 * 1000; // 8 phút (chống Render ngủ đông sau 15p)
     
     setInterval(() => {
       https.get(pingUrl, (res) => {
@@ -799,7 +799,7 @@ async function main() {
       });
     }, PING_INTERVAL);
     
-    console.log(`   🏓 Self-ping: ${pingUrl} (mỗi 10 phút)`);
+    console.log(`   🏓 Self-ping: ${pingUrl} (mỗi 8 phút)`);
   }
 
   console.log('\n' + '─'.repeat(55));
