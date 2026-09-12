@@ -871,7 +871,7 @@ async function main() {
   console.log('   🌐 Health:      http://localhost:' + PORT + '/health');
   console.log('   📅 Báo giá/AI: Thứ 2 → Thứ 6 | TTCK+Vàng: Mỗi ngày');
   console.log('   🔒 Dedup lock:  4 phút (chống double message)');
-  console.log('   🔮 Derivatives: Price-Change Monitor (≥4đ, poll 30s)');
+  console.log('   🔮 Derivatives: Price-Change Monitor (≥3.0đ, poll 10s, Multi-TF Flow & 3-Party Delta)');
   console.log('   💡 Nhấn Ctrl+C để dừng');
   console.log('─'.repeat(55) + '\n');
 }
