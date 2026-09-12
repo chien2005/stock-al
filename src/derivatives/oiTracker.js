@@ -16,6 +16,7 @@ const fs = require('fs');
 const path = require('path');
 const { config } = require('../config');
 const dataFetcher = require('./dataFetcher');
+const oiEstimator = require('./oiEstimator');
 
 const DATA_DIR = path.join(__dirname, '..', '..', 'data');
 const FOREIGN_OI_FILE = path.join(DATA_DIR, 'foreign_oi.json');
@@ -216,7 +217,16 @@ function getRecent5DaysData() {
     const buy = fItem.buy || 0;
     const sell = fItem.sell || 0;
     const overnightNet = fItem.overnightNet !== undefined ? fItem.overnightNet : (fItem.net !== undefined ? fItem.net : (buy - sell));
-    const tuDoanhOvernight = fItem.tuDoanhOvernight !== undefined ? fItem.tuDoanhOvernight : (fItem.tuDoanhNet || 0);
+    const rawTD = fItem.tuDoanhOvernight !== undefined ? fItem.tuDoanhOvernight : (fItem.tuDoanhNet || 0);
+
+    // Tách bạch 3 phe: Ngoại - Tự Doanh - Đám Đông (KHÔNG gom Tự Doanh vào Đám Đông)
+    // Khi Tự Doanh chưa có chốt sổ (= 0), ước lượng ~35% vị thế phòng hộ ngược chiều NN
+    let tuDoanhOvernight = rawTD;
+    let tdIsEstimated = false;
+    if (rawTD === 0 && overnightNet !== 0) {
+      tuDoanhOvernight = Math.round(-overnightNet * (oiEstimator.TD_ESTIMATION_RATIO || 0.35));
+      tdIsEstimated = true;
+    }
     const crowdOvernight = -(overnightNet + tuDoanhOvernight);
 
     return {
@@ -224,7 +234,9 @@ function getRecent5DaysData() {
       buy,
       sell,
       overnightNet,
+      rawTuDoanh: rawTD,
       tuDoanhOvernight,
+      tdIsEstimated,
       crowdOvernight,
       totalOI: oItem.totalOI || 30000,
       oiChange: oItem.oiChange || 0,
@@ -286,9 +298,11 @@ function analyzeOIPositions(days5 = null) {
   const sellRatio = totalVol > 0 ? ((latest.sell / totalVol) * 100).toFixed(1) : 50;
 
   // 2. Phân tích Tự Doanh
+  // 2. Phân tích Tự Doanh
   const tuDoanhNet = latest.tuDoanhOvernight;
   const tuDoanhSide = tuDoanhNet > 0 ? 'LONG' : tuDoanhNet < 0 ? 'SHORT' : 'CÂN BẰNG';
   const tuDoanhAbs = Math.abs(tuDoanhNet);
+  const tdIsEstimated = latest.tdIsEstimated;
 
   let tuDoanhStrength = 'CÂN BẰNG';
   if (tuDoanhAbs >= 1500) tuDoanhStrength = 'MẠNH';
@@ -304,10 +318,10 @@ function analyzeOIPositions(days5 = null) {
   let crowdBadge = '';
   if (crowdSide === 'SHORT' && crowdAbs >= 1000) {
     crowdBadge = '🔴 ĐÁM ĐÔNG ÔM SHORT NẶNG';
-    crowdSentiment = 'Thấy giá tăng mạnh +30đ nên nhảy vào Short chặn đầu hoặc dính bẫy kẹp Short chưa kịp đóng. Đám đông đang ở thế bất lợi, dễ bị tay to ép cắt lỗ phiên tới (Short Squeeze).';
+    crowdSentiment = 'Đám đông ôm Short chặn đầu hoặc dính bẫy kẹp Short chưa kịp đóng. Đang ở thế bất lợi nếu Khối ngoại kéo rướn ép cắt lỗ phiên tới (Short Squeeze).';
   } else if (crowdSide === 'LONG' && crowdAbs >= 1000) {
-    crowdBadge = '🟢 ĐÁM ĐÔNG FOMO LONG';
-    crowdSentiment = 'Đám đông hưng phấn đu Long giá cao. Nguy cơ bị tay to xả hàng chốt lời ép nhỏ lẻ cắt lỗ.';
+    crowdBadge = '🟢 ĐÁM ĐÔNG ÔM LONG';
+    crowdSentiment = 'Đám đông ôm Long đối ứng lực bán của Khối ngoại. Cần cảnh giác rủi ro tay to ép đè giá để nhỏ lẻ cắt lỗ.';
   } else {
     crowdBadge = '⚖️ ĐÁM ĐÔNG LƯỠNG LỰ';
     crowdSentiment = 'Vị thế đám đông tương đối cân bằng, tâm lý dè dặt quan sát.';
@@ -315,12 +329,15 @@ function analyzeOIPositions(days5 = null) {
 
   // 4. Tương quan 3 phe & Hành vi dòng tiền
   let battleSummary = '';
+  const tdSideDesc = tuDoanhSide === 'LONG' ? 'Long' : tuDoanhSide === 'SHORT' ? 'Short' : 'cân bằng';
+  const tdEstMark = tdIsEstimated ? '*' : '';
+  const tdSummary = `Tự doanh ${tdSideDesc} (${tuDoanhNet >= 0 ? '+' : ''}${tuDoanhNet}${tdEstMark} HĐ)`;
   if (foreignSide === 'LONG' && crowdSide === 'SHORT') {
-    battleSummary = `Khối ngoại cầm LONG (+${foreignAbs.toLocaleString('vi-VN')} HĐ) áp đảo ➔ Đang "úp sọt" phe Đám đông ôm SHORT (-${crowdAbs.toLocaleString('vi-VN')} HĐ) và Tự doanh phòng hộ (-${tuDoanhAbs.toLocaleString('vi-VN')} HĐ)`;
+    battleSummary = `Khối ngoại cầm LONG (+${foreignAbs.toLocaleString('vi-VN')} HĐ) áp đảo ➔ Đang ép phe Đám đông ôm SHORT (-${crowdAbs.toLocaleString('vi-VN')} HĐ) và ${tdSummary}`;
   } else if (foreignSide === 'SHORT' && crowdSide === 'LONG') {
-    battleSummary = `Khối ngoại cầm SHORT (-${foreignAbs.toLocaleString('vi-VN')} HĐ) ➔ Đang ép phe Đám đông đu LONG (+${crowdAbs.toLocaleString('vi-VN')} HĐ) rơi vào thế kẹt`;
+    battleSummary = `Khối ngoại cầm SHORT (-${foreignAbs.toLocaleString('vi-VN')} HĐ) ➔ Đang ép phe Đám đông ôm LONG (+${crowdAbs.toLocaleString('vi-VN')} HĐ), có ${tdSummary} đối ứng`;
   } else {
-    battleSummary = `Thế giằng co đa chiều giữa Khối ngoại (${foreignNet >= 0 ? '+' : ''}${foreignNet}), Tự doanh (${tuDoanhNet >= 0 ? '+' : ''}${tuDoanhNet}), Đám đông (${crowdNet >= 0 ? '+' : ''}${crowdNet})`;
+    battleSummary = `Thế giằng co 3 phe: Khối ngoại (${foreignNet >= 0 ? '+' : ''}${foreignNet}), ${tdSummary}, Đám đông (${crowdNet >= 0 ? '+' : ''}${crowdNet})`;
   }
 
   // 5. Dự báo tình thế & Kịch bản phiên kế tiếp
@@ -397,6 +414,13 @@ function analyzeOIPositions(days5 = null) {
  * v4.3: Async — fetch realtime data từ sàn trước khi build, auto-sync vào file
  */
 async function buildOIEveningNotificationAsync(session = 'evening') {
+  // ─── STEP 0: Kiểm tra ngày giao dịch ─────────────────────
+  const vnTime = dataFetcher.getVnTime();
+  if (!isTradingDay(vnTime)) {
+    console.log(`   ℹ️ [OI ${session}] Hôm nay không phải ngày giao dịch (${vnTime.toLocaleDateString('vi-VN')}), dùng dữ liệu phiên gần nhất.`);
+    return buildOIEveningNotificationSync(session);
+  }
+
   // ─── STEP 1: Fetch realtime data từ sàn ─────────────────
   console.log(`   📡 [OI ${session === 'afternoon' ? 'Afternoon 14h47' : 'Evening 19h35'}] Fetching realtime OI data from exchange...`);
   try {
@@ -406,7 +430,6 @@ async function buildOIEveningNotificationAsync(session = 'evening') {
 
     if (realtimeOI && (realtimeOI.foreignBuy > 0 || realtimeOI.foreignSell > 0 || realtimeOI.totalOI > 0)) {
       // ─── STEP 2: Auto-sync today's data vào file ────────
-      const vnTime = dataFetcher.getVnTime();
       const todayStr = `${vnTime.getDate()}/${vnTime.getMonth() + 1}/${vnTime.getFullYear()}`;
 
       const foreignBuy = realtimeOI.foreignBuy || 0;
@@ -506,12 +529,13 @@ function buildOIEveningNotificationSync(session = 'evening') {
   msg += `   └ Mức độ: <b>${foreign.badge} (${foreign.strength})</b>\n`;
 
   let tdLabel = '';
+  const tdEstNote = tuDoanh.isEstimated ? ' <i>(ước phòng hộ ~35%)</i>' : '';
   if (tuDoanh.side === 'LONG') {
-    tdLabel = `🟢 CẦM LONG ${fmtSign(tuDoanh.net)} HĐ (${tuDoanh.strength})`;
+    tdLabel = `🟢 CẦM LONG ${fmtSign(tuDoanh.net)} HĐ (${tuDoanh.strength})${tdEstNote}`;
   } else if (tuDoanh.side === 'SHORT') {
-    tdLabel = `🔴 CẦM SHORT ${fmtSign(tuDoanh.net)} HĐ (${tuDoanh.strength})`;
+    tdLabel = `🔴 CẦM SHORT ${fmtSign(tuDoanh.net)} HĐ (${tuDoanh.strength})${tdEstNote}`;
   } else {
-    tdLabel = `⚖️ CÂN BẰNG 0 HĐ (Chưa có số liệu chốt sổ)`;
+    tdLabel = `⚖️ CÂN BẰNG 0 HĐ`;
   }
   msg += `• 🏛️ <b>Tự doanh:</b> <b>${tdLabel}</b>\n`;
 
@@ -526,7 +550,7 @@ function buildOIEveningNotificationSync(session = 'evening') {
   msg += `• 👥 <b>Đám đông (Cá nhân):</b> <b>${crLabel}</b>\n`;
   msg += `   └ Đánh giá: <b>${crowd.badge}</b>\n`;
   msg += `• ⚖️ <i>Quy tắc bù trừ Zero-Sum:</i>\n`;
-  msg += `   <code>Ngoại (${fmtSign(foreign.net)}) + TD (${fmtSign(tuDoanh.net)}) + Đám đông (${fmtSign(crowd.net)}) = 0 HĐ</code>\n`;
+  msg += `   <code>Ngoại (${fmtSign(foreign.net)}) + TD (${fmtSign(tuDoanh.net)}${tuDoanh.isEstimated ? '*' : ''}) + Đám đông (${fmtSign(crowd.net)}) = 0 HĐ</code>\n`;
   msg += `• 🥊 <b>Tương quan 3 phe:</b> <i>${battleSummary}</i>\n\n`;
 
   // 2. BẢNG DIỄN BIẾN 5 PHIÊN GẦN NHẤT (3 PHE ĐỘC LẬP)
@@ -534,6 +558,7 @@ function buildOIEveningNotificationSync(session = 'evening') {
   msg += `<pre>`;
   msg += `Ngày  | Khối Ngoại | Tự Doanh   | Đám Đông   | Tổng OI\n`;
   msg += `------|------------|------------|------------|--------\n`;
+  let hasEstimatedTD = false;
   data.forEach(d => {
     let cleanDate = d.date;
     const dateParts = d.date.split('/');
@@ -542,7 +567,9 @@ function buildOIEveningNotificationSync(session = 'evening') {
     }
     const dStr = cleanDate.padEnd(5);
     const nnLabel = d.overnightNet >= 0 ? `+${d.overnightNet} L` : `${d.overnightNet} S`;
-    const tdLabel = d.tuDoanhOvernight >= 0 ? `+${d.tuDoanhOvernight} L` : `${d.tuDoanhOvernight} S`;
+    const tdSuffix = d.tdIsEstimated ? '*' : '';
+    if (d.tdIsEstimated) hasEstimatedTD = true;
+    const tdLabel = d.tuDoanhOvernight >= 0 ? `+${d.tuDoanhOvernight} L${tdSuffix}` : `${d.tuDoanhOvernight} S${tdSuffix}`;
     const crLabel = d.crowdOvernight >= 0 ? `+${d.crowdOvernight} L` : `${d.crowdOvernight} S`;
     const nnStr = nnLabel.padStart(10);
     const tdStr = tdLabel.padStart(10);
@@ -551,6 +578,9 @@ function buildOIEveningNotificationSync(session = 'evening') {
     msg += `${dStr} | ${nnStr} | ${tdStr} | ${crStr} | ${oiStr}\n`;
   });
   msg += `</pre>\n`;
+  if (hasEstimatedTD) {
+    msg += `• <i>(*) Tự doanh ước tính ~35% vị thế phòng hộ ngược chiều NN khi chưa có số liệu chốt sổ HNX.</i>\n`;
+  }
   msg += `• <i>Ròng Khối ngoại phiên nay: <b>${fmtSign(foreign.net)} HĐ</b> (Mua ${fmt(foreign.buy)} | Bán ${fmt(foreign.sell)})</i>\n`;
   msg += `• <i>Ròng Đám đông phiên nay: <b>${fmtSign(crowd.net)} HĐ</b> (Nhỏ lẻ ôm ${crowd.side} đối ứng)</i>\n`;
   msg += `• <i>Biến động OI phiên nay: <b>${fmtSign(market.oiChange)} HĐ</b> (Tổng OI sàn: <b>${fmt(market.totalOI)} HĐ</b>)</i>\n`;
@@ -571,12 +601,13 @@ function buildOIEveningNotificationSync(session = 'evening') {
   }
 
   // Dynamic tuDoanh intent
+  const tdIntentEst = tuDoanh.isEstimated ? ' (ước tính)' : '';
   if (tuDoanh.side === 'SHORT') {
-    msg += `• <b>Ý đồ Tự doanh:</b> Cầm <b>${fmtSign(tuDoanh.net)} HĐ Short</b> mang tính chất thuần phòng hộ cơ sở và ăn chênh lệch Basis.\n\n`;
+    msg += `• <b>Ý đồ Tự doanh:</b> Cầm <b>${fmtSign(tuDoanh.net)} HĐ Short${tdIntentEst}</b> mang tính chất thuần phòng hộ cơ sở và ăn chênh lệch Basis.\n\n`;
   } else if (tuDoanh.side === 'LONG') {
-    msg += `• <b>Ý đồ Tự doanh:</b> Cầm <b>${fmtSign(tuDoanh.net)} HĐ Long</b> cho thấy tự doanh đang kỳ vọng xu hướng tăng hoặc phòng hộ ngược.\n\n`;
+    msg += `• <b>Ý đồ Tự doanh:</b> Cầm <b>${fmtSign(tuDoanh.net)} HĐ Long${tdIntentEst}</b> đối ứng lượng Short của Khối ngoại nhằm cân bằng rủi ro danh mục.\n\n`;
   } else {
-    msg += `• <b>Ý đồ Tự doanh:</b> Giữ trạng thái cân bằng (0 HĐ) hoặc chờ Sở GDCK chốt số liệu cuối ngày.\n\n`;
+    msg += `• <b>Ý đồ Tự doanh:</b> Giữ trạng thái cân bằng (0 HĐ).\n\n`;
   }
 
   // 4. ĐÁNH GIÁ TÌNH THẾ & KỊCH BẢN PHIÊN KẾ TIẾP
@@ -584,6 +615,26 @@ function buildOIEveningNotificationSync(session = 'evening') {
   msg += `• <b>Định hướng chủ đạo:</b> <b>${prediction.biasDirection}</b> (Tin cậy: <b>${prediction.confidenceScore}%</b>)\n`;
   msg += `• <b>Tình thế thị trường:</b> ${prediction.outlook}\n`;
   msg += `• <b>Chiến thuật hành động:</b> ${prediction.tactics}\n`;
+
+  // 5. ƯỚC LƯỢNG VỊ THẾ QUA ĐÊM (CROSS-REFERENCE ΔOI)
+  try {
+    const estimatorHistory = data.map(d => ({
+      date: d.date,
+      overnightNet: d.overnightNet,
+      oiChange: d.oiChange,
+      tuDoanhOvernight: d.tuDoanhOvernight,
+      volume: d.totalOI, // proxy
+      buy: d.buy,
+      sell: d.sell,
+    }));
+    const report = oiEstimator.generateLatestReport(estimatorHistory);
+    if (report) {
+      msg += oiEstimator.buildEstimatedPositionMessage(report);
+    }
+  } catch (e) {
+    console.error('⚠️ OI Estimator error:', e.message);
+  }
+
   msg += `━━━━━━━━━━━━━━━━━━━━━━\n`;
   if (isAfternoon) {
     msg += `💡 <i>Báo cáo vị thế sơ bộ lúc 14h47 (Tự doanh & VSDC sẽ được chốt chính thức lúc 19h35) | VN Stock Bot v4.3</i>`;
@@ -811,7 +862,9 @@ async function buildPreATCNotificationAsync(simulatedData = null) {
   const foreignStore = loadForeignOIData();
   const existingToday = (foreignStore.history || []).find(h => h.date === todayStr);
   const tuDoanhNet = existingToday ? (existingToday.tuDoanhOvernight || 0) : 0;
+  const tdEst = oiEstimator.estimateTuDoanh(foreignNet, tuDoanhNet);
   const crowdNet = -(foreignNet + tuDoanhNet);
+  const crowdEst = -(foreignNet + tdEst.value);
 
   // Strength badge
   const foreignAbs = Math.abs(foreignNet);
@@ -900,8 +953,15 @@ async function buildPreATCNotificationAsync(simulatedData = null) {
   msg += `🔥 <b>2. VỊ THẾ 3 PHE REALTIME (ĐẾN 14H29):</b>\n`;
   msg += `• 🌐 <b>Khối ngoại:</b> <b>${foreignNet > 0 ? '🟢 MUA RÒNG' : foreignNet < 0 ? '🔴 BÁN RÒNG' : '⚖️ CÂN BẰNG'} ${fmtSign(foreignNet)} HĐ</b>\n`;
   msg += `   └ Mua: <code>${fmt(foreignBuy)}</code> | Bán: <code>${fmt(foreignSell)}</code> | Đánh giá: <b>${foreignStrengthBadge}</b>\n`;
-  msg += `• 🏛️ <b>Tự doanh:</b> <b>${tuDoanhNet > 0 ? `🟢 CẦM LONG ${fmtSign(tuDoanhNet)}` : tuDoanhNet < 0 ? `🔴 CẦM SHORT ${fmtSign(tuDoanhNet)}` : '⚖️ CÂN BẰNG 0'} HĐ</b>\n`;
+  if (tuDoanhNet !== 0) {
+    msg += `• 🏛️ <b>Tự doanh:</b> <b>${tuDoanhNet > 0 ? `🟢 CẦM LONG ${fmtSign(tuDoanhNet)}` : `🔴 CẦM SHORT ${fmtSign(tuDoanhNet)}`} HĐ</b>\n`;
+  } else {
+    msg += `• 🏛️ <b>Tự doanh:</b> <b>0 HĐ</b> <i>(Ước tính phòng hộ: ~${fmtSign(tdEst.value)} HĐ đối ứng)</i>\n`;
+  }
   msg += `• 👥 <b>Đám đông (Cá nhân):</b> <b>${crowdNet > 0 ? `🟢 ÔM LONG ${fmtSign(crowdNet)}` : crowdNet < 0 ? `🔴 ÔM SHORT ${fmtSign(crowdNet)}` : '⚖️ CÂN BẰNG 0'} HĐ</b>\n`;
+  if (tdEst.isEstimated && tdEst.value !== 0) {
+    msg += `   └ <i>(Nếu tính TD phòng hộ: Đám đông ròng ~${fmtSign(crowdEst)} HĐ)</i>\n`;
+  }
   if (crowdNet > 1000) {
     msg += `   └ Đánh giá: <b>🔴 ĐÁM ĐÔNG ĐU LONG BẮT ĐÁY BỊ KẸP NẶNG</b>\n`;
   } else if (crowdNet < -1000) {
@@ -1015,7 +1075,9 @@ async function buildPostATCNotificationAsync(simulatedData = null) {
   const foreignStore = loadForeignOIData();
   const existingToday = (foreignStore.history || []).find(h => h.date === todayStr);
   const tuDoanhNet = existingToday ? (existingToday.tuDoanhOvernight || 0) : 0;
+  const tdEst = oiEstimator.estimateTuDoanh(foreignNet, tuDoanhNet);
   const crowdNet = -(foreignNet + tuDoanhNet);
+  const crowdEst = -(foreignNet + tdEst.value);
 
   const foreignAbs = Math.abs(foreignNet);
 
@@ -1114,8 +1176,15 @@ async function buildPostATCNotificationAsync(simulatedData = null) {
   msg += `🔥 <b>2. VỊ THẾ 3 PHE CẦM QUA ĐÊM (CHỐT SỔ ATC):</b>\n`;
   msg += `• 🌐 <b>Khối ngoại:</b> <b>${foreignNet > 0 ? '🟢 CẦM LONG' : foreignNet < 0 ? '🔴 CẦM SHORT' : '⚖️ CÂN BẰNG'} ${fmtSign(foreignNet)} HĐ</b>\n`;
   msg += `   └ Mua: <code>${fmt(foreignBuy)}</code> | Bán: <code>${fmt(foreignSell)}</code>\n`;
-  msg += `• 🏛️ <b>Tự doanh:</b> <b>${tuDoanhNet > 0 ? `🟢 CẦM LONG ${fmtSign(tuDoanhNet)}` : tuDoanhNet < 0 ? `🔴 CẦM SHORT ${fmtSign(tuDoanhNet)}` : '⚖️ CÂN BẰNG 0'} HĐ</b>\n`;
+  if (tuDoanhNet !== 0) {
+    msg += `• 🏛️ <b>Tự doanh:</b> <b>${tuDoanhNet > 0 ? `🟢 CẦM LONG ${fmtSign(tuDoanhNet)}` : `🔴 CẦM SHORT ${fmtSign(tuDoanhNet)}`} HĐ</b>\n`;
+  } else {
+    msg += `• 🏛️ <b>Tự doanh:</b> <b>0 HĐ</b> <i>(Ước tính phòng hộ: ~${fmtSign(tdEst.value)} HĐ đối ứng NN)</i>\n`;
+  }
   msg += `• 👥 <b>Đám đông:</b> <b>${crowdNet > 0 ? `🟢 ÔM LONG ${fmtSign(crowdNet)}` : crowdNet < 0 ? `🔴 ÔM SHORT ${fmtSign(crowdNet)}` : '⚖️ CÂN BẰNG 0'} HĐ</b>\n`;
+  if (tdEst.isEstimated && tdEst.value !== 0) {
+    msg += `   └ <i>(Nếu tính TD phòng hộ: Đám đông ròng ~${fmtSign(crowdEst)} HĐ)</i>\n`;
+  }
   msg += `• 📊 <b>Tổng OI sàn qua đêm:</b> <b>${fmt(totalOI)} HĐ</b> (Biến động: <b>${fmtSign(totalOIChange)} HĐ</b>)\n\n`;
 
   // 3. PHÁN QUYẾT CỐT LÕI
@@ -1144,5 +1213,9 @@ module.exports = {
   buildPostATCNotificationAsync,
   recordDailySessionOI,
   getRealtimePositionSnapshot,
+  // Re-export estimator functions for direct access
+  estimateOvernightPositions: oiEstimator.estimateCumulativePositions,
+  classifyTradeAction: oiEstimator.classifyTradeAction,
+  generateOvernightReport: oiEstimator.generateLatestReport,
 };
 

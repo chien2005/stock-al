@@ -21,7 +21,7 @@ const { sendDerivativesMessage } = require('../telegramService');
 const dataFetcher = require('./dataFetcher');
 const { buildPriceMap, findNearestLevels } = require('./marketStructure');
 const { analyzeTests, analyzeAcceptance } = require('./testRetest');
-const { analyzeFlow, detectAbsorption, detectLiquiditySweep, calculateVelocity, calculateEfficiency } = require('./flowEngine');
+const { analyzeFlow, detectAbsorption, detectLiquiditySweep, calculateVelocity, calculateEfficiency, analyzeMultiTFSupplyDemand } = require('./flowEngine');
 const { analyzeBasis, classifyOIState, analyzeLeadLag } = require('./crossMarket');
 const { analyzeBreadth, analyzeLeaders, analyzeLiquidity } = require('./breadthEngine');
 const { classifyRegime } = require('./regimeEngine');
@@ -46,6 +46,7 @@ const _state = {
   prevLiquiditySnapshot: null,   // { vn30Value, vnindexValue, vn30Price, vnindexPrice }
   prevOISnapshot: null,          // { totalOI, totalVolume, f1mPrice }
   prevVN30BuySellSnapshot: null, // { [sym]: { totalVal, fnNet } }
+  prevPositionSnapshot: null,    // { foreignBuy, foreignSell, foreignNet, tuDoanhNet, crowdNet, totalOI }
   // ─── v4.2: Anti-Whipsaw state ───
   lastSignalDirection: null,     // 'LONG' | 'SHORT' | null
   lastSignalTime: null,          // timestamp (ms)
@@ -83,6 +84,7 @@ async function runFullAnalysis() {
   const sweepResult = detectLiquiditySweep(allData.intraday1m, priceMap.levels);
   const velocityResult = calculateVelocity(allData.intraday1m);
   const efficiencyResult = calculateEfficiency(allData.intraday1m, 20);
+  const supplyDemandResult = analyzeMultiTFSupplyDemand(allData.intraday1m);
 
   // ─── LỚP 4: CROSS-MARKET ─────────────────────────
   console.log('   📐 [4/8] Cross-Market...');
@@ -137,6 +139,8 @@ async function runFullAnalysis() {
     lastSignalDirection: _state.lastSignalDirection,
     lastSignalTime: _state.lastSignalTime,
     dailyVN30: allData.daily.vn30,
+    // ─── v4.3 NEW PARAMS ───
+    supplyDemandResult,
   });
 
   // v4.2: Track signal direction for anti-whipsaw
@@ -160,7 +164,7 @@ async function runFullAnalysis() {
     console.log(`   🛡️ VETO [${scoreResult.vetoType}]: ${scoreResult.vetoReason}`);
   }
 
-  console.log(`   ✅ Pipeline v4.2 hoàn thành: ${scoreResult.direction} (${scoreResult.confidence}/100, ${scoreResult.setupQuality})`);
+  console.log(`   ✅ Pipeline v4.3 hoàn thành: ${scoreResult.direction} (${scoreResult.confidence}/100, ${scoreResult.setupQuality})`);
 
   return {
     scoreResult,
@@ -172,6 +176,7 @@ async function runFullAnalysis() {
     sweepResult,
     velocityResult,
     efficiencyResult,
+    supplyDemandResult,
     basisResult,
     oiState,
     leadLag,
@@ -251,6 +256,7 @@ async function runDerivativesSignalJob() {
     };
 
     const currentVN30BuySell = _buildVN30BuySellSnapshot(allData.realtimeVN30);
+    const currentPosition = oiTracker.getRealtimePositionSnapshot(allData);
 
     // ─── Compute deltas vs prev noti ───
     let deltaData = null;
@@ -295,11 +301,27 @@ async function runDerivativesSignalJob() {
       // VN30 buy/sell delta
       const vn30Deltas = _computeVN30Deltas(currentVN30BuySell, _state.prevVN30BuySellSnapshot);
 
+      // Delta vị thế 3 phe (NN, TD, Đám đông) trong nhịp biến động vừa qua
+      let positionDelta = null;
+      if (_state.prevPositionSnapshot) {
+        const prev = _state.prevPositionSnapshot;
+        positionDelta = {
+          foreignBuyDelta: currentPosition.foreignBuy - prev.foreignBuy,
+          foreignSellDelta: currentPosition.foreignSell - prev.foreignSell,
+          foreignNetDelta: currentPosition.foreignNet - prev.foreignNet,
+          tuDoanhNetDelta: currentPosition.tuDoanhNet - prev.tuDoanhNet,
+          crowdNetDelta: currentPosition.crowdNet - prev.crowdNet,
+          oiDelta: (currentPosition.totalOI && prev.totalOI) ? (currentPosition.totalOI - prev.totalOI) : 0,
+        };
+      }
+
       deltaData = {
         timeDiffMin,
         liqDelta,
         oiDelta,
         vn30Deltas,
+        positionDelta,
+        currentPosition,
       };
     }
 
@@ -320,6 +342,7 @@ async function runDerivativesSignalJob() {
     _state.prevLiquiditySnapshot = currentLiquidity;
     _state.prevOISnapshot = currentOI;
     _state.prevVN30BuySellSnapshot = currentVN30BuySell;
+    _state.prevPositionSnapshot = currentPosition;
     _state.lastNotiPrice = basisResult.f1mPrice || _state.lastNotiPrice;
     _state.lastNotiTime = Date.now();
     _state.initialNotiSent = true;
@@ -539,13 +562,25 @@ function stopPositionMonitor() {
 }
 
 // ─── v4.3: PRICE-CHANGE MONITOR ─────────────────────────────────
-// Bắn full bản tin phân tích v4.2 khi giá phái sinh biến động >= 4 điểm (bất kể 5p, 10p, 30p)
+// Bắn full bản tin phân tích v4.3 khi giá phái sinh biến động >= 3 điểm (bất kể 5p, 10p, 30p)
 
 const _priceHistory = []; // [{ price, ts }] buffer 30p theo dõi biến động rolling
-const PRICE_CHANGE_THRESHOLD = 4.0;          // Biến động tối thiểu để bắn noti (điểm)
+const PRICE_CHANGE_THRESHOLD = 3.0;          // Biến động tối thiểu để bắn noti (điểm) - v4.3
 const PRICE_CHANGE_COOLDOWN = 2 * 60 * 1000; // Cooldown tối thiểu 2p giữa 2 noti
-const PRICE_POLL_INTERVAL = 20 * 1000;       // Poll giá mỗi 20 giây
+const PRICE_POLL_INTERVAL = 10 * 1000;       // Poll giá mỗi 10 giây (nhạy bén trong phiên)
 const ROLLING_WINDOW_MS = 30 * 60 * 1000;    // Buffer 30 phút cho rolling swings
+
+/**
+ * Kiểm tra các khung giờ nhạy cảm hay kéo thả trong ngày:
+ * - 09h15 - 10h30: Kéo thả sau ATO
+ * - 10h30 - 11h15: Áp trưa
+ * - 11h20 - 11h30: 5p cuối trưa (kéo trộm)
+ * - 13h35 - 14h30: Kéo thả phiên chiều / bẻ trend
+ */
+function isCriticalTimeWindow() {
+  const vnHour = dataFetcher.getVnHour ? dataFetcher.getVnHour() : (new Date().getHours() + new Date().getMinutes() / 60);
+  return (vnHour >= 9.25 && vnHour <= 11.50) || (vnHour >= 13.58 && vnHour <= 14.50);
+}
 
 async function checkPriceChange() {
   if (!isCurrentInstanceActive()) return;
@@ -590,15 +625,17 @@ async function checkPriceChange() {
       return;
     }
 
-    // ─── Check biến động >= 4 điểm ───
+    // ─── Check biến động >= 3 điểm (v4.3) ───
     if (_state.lastNotiPrice === null) {
       _state.lastNotiPrice = currentPrice;
       return;
     }
 
     const timeSinceLastNoti = nowTs - _state.lastNotiTime;
+    const inCriticalWindow = isCriticalTimeWindow();
+    const cooldownMs = inCriticalWindow ? 90 * 1000 : PRICE_CHANGE_COOLDOWN; // 90s trong giờ kéo thả, 120s ngoài giờ
 
-    // Điều kiện 1: Biến động tích lũy so với lần bắn noti trước >= 4 điểm (bất kể 10p, 30p, 1h)
+    // Điều kiện 1: Biến động tích lũy so với lần bắn noti trước >= 3 điểm
     const diffFromLastNoti = currentPrice - _state.lastNotiPrice;
     const absDiffLastNoti = Math.abs(diffFromLastNoti);
     let shouldTrigger = false;
@@ -610,9 +647,9 @@ async function checkPriceChange() {
       triggerReason = `${dir} ${absDiffLastNoti.toFixed(1)}đ so với noti trước (${_state.lastNotiPrice.toFixed(1)} → ${currentPrice.toFixed(1)})`;
     }
 
-    // Điều kiện 2: Biến động nhanh trong rolling window >= 4 điểm (bất kể khoảng 2p - 30p)
-    // Kích hoạt khi giá hiện tại lệch ít nhất 2.0đ so với noti trước (tránh lặp cùng mức giá)
-    if (!shouldTrigger && absDiffLastNoti >= 2.0 && _priceHistory.length >= 2) {
+    // Điều kiện 2: Biến động nhanh trong rolling window >= 3 điểm
+    // Kích hoạt khi giá hiện tại lệch ít nhất 1.5đ so với noti trước (tránh lặp cùng mức giá)
+    if (!shouldTrigger && absDiffLastNoti >= 1.5 && _priceHistory.length >= 2) {
       for (const past of _priceHistory) {
         if (nowTs - past.ts < 60 * 1000) continue; // Cách ít nhất 1 phút
         const swing = currentPrice - past.price;
@@ -628,12 +665,13 @@ async function checkPriceChange() {
     }
 
     if (shouldTrigger) {
-      if (timeSinceLastNoti < PRICE_CHANGE_COOLDOWN) {
-        console.log(`   ⏳ [PriceChange] ${triggerReason} nhưng còn cooldown (${Math.round((PRICE_CHANGE_COOLDOWN - timeSinceLastNoti) / 1000)}s)`);
+      if (timeSinceLastNoti < cooldownMs) {
+        console.log(`   ⏳ [PriceChange] ${triggerReason} nhưng còn cooldown (${Math.round((cooldownMs - timeSinceLastNoti) / 1000)}s)`);
         return;
       }
 
-      console.log(`\n   🔔 [PriceChange] BIẾN ĐỘNG ≥4đ: ${triggerReason} — BẮN BẢN TIN PHÂN TÍCH v4.2!`);
+      const windowTag = inCriticalWindow ? '⚡ GIỜ KÉO THẢ' : 'Bình thường';
+      console.log(`\n   🔔 [PriceChange] BIẾN ĐỘNG ≥${PRICE_CHANGE_THRESHOLD}đ (${windowTag}): ${triggerReason} — BẮN BẢN TIN PHÂN TÍCH v4.3!`);
 
       try {
         await runDerivativesSignalJob();
@@ -663,7 +701,7 @@ function startPriceChangeMonitor() {
     checkPriceChange().catch(e => console.error('   ⚠️ [PriceChange] error:', e.message));
   }, PRICE_POLL_INTERVAL);
 
-  console.log(`   📡 Price-Change Monitor v4.3: Started (poll ${PRICE_POLL_INTERVAL / 1000}s, threshold ≥${PRICE_CHANGE_THRESHOLD}đ)`);
+  console.log(`   📡 Price-Change Monitor v4.3: Started (poll ${PRICE_POLL_INTERVAL / 1000}s, threshold ≥${PRICE_CHANGE_THRESHOLD}đ, critical windows boosted)`);
 }
 
 function stopPriceChangeMonitor() {
@@ -689,6 +727,7 @@ function resetDerivativesState() {
   _state.prevLiquiditySnapshot = null;
   _state.prevOISnapshot = null;
   _state.prevVN30BuySellSnapshot = null;
+  _state.prevPositionSnapshot = null;
   _state.lastNotiPrice = null;
   _state.lastNotiTime = 0;
   _state.initialNotiSent = false;
@@ -756,4 +795,5 @@ module.exports = {
   fetchVN30LiquidityRadar: async () => null,
   formatRadarBlock: () => '',
   getDerivativesState: () => ({ ..._state }),
+  runFullAnalysis,
 };

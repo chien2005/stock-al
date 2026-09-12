@@ -599,10 +599,10 @@ async function main() {
   }, { scheduled: true, timezone: config.timezone });
 
   // ─── DERIVATIVES SIGNAL: PRICE-CHANGE BASED (thay thế cron 5p cố định) ───
-  // Monitor được start lúc 9h00 ở trên, poll giá mỗi 30s
-  // Bắn noti khi VN30F1M biến động >= 4 điểm so với lần noti trước
+  // Monitor được start lúc 9h00 ở trên, poll giá mỗi 10s
+  // Bắn noti khi VN30F1M biến động >= 3 điểm so với lần noti trước
   // Noti đầu phiên tự động bắn lúc ~9h05 (baseline)
-  console.log('   🔮 Derivatives Signal v4.3: Price-Change Monitor (≥4đ trigger, poll 30s)');
+  console.log('   🔮 Derivatives Signal v4.3: Price-Change Monitor (≥3đ trigger, poll 10s, critical windows boosted)');
 
   // ─── SCHEDULE: AI DERIVATIVES FORECAST (9h22, 10h22 & 13h50, T2-T6) ───
   cron.schedule('22 9 * * 1-5', async () => {

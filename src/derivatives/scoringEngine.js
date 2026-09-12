@@ -37,6 +37,8 @@ function calculateScore({
   lastSignalDirection,   // 'LONG' | 'SHORT' | null
   lastSignalTime,        // timestamp (ms)
   dailyVN30,             // daily data cho EMA50 auto macro bias
+  // ─── v4.3 NEW PARAMS ─────────────────────────────────
+  supplyDemandResult,    // Phân tích cung cầu F1 đa khung (1p, 3p, 5p, 15p)
 }) {
   let longScore = 0;
   let shortScore = 0;
@@ -136,6 +138,25 @@ function calculateScore({
     } else if (sweepResult.signal === 'BULLISH') {
       longScore += 12;
       breakdown.flow.long += 12;
+    }
+  }
+
+  // ─── v4.3: CUNG CẦU F1 ĐA KHUNG (1p, 3p, 5p, 15p) ───
+  if (supplyDemandResult) {
+    if (supplyDemandResult.consensus === 'BEARISH') {
+      shortScore += 12;
+      breakdown.flow.short += 12;
+    } else if (supplyDemandResult.consensus === 'BULLISH') {
+      longScore += 12;
+      breakdown.flow.long += 12;
+    }
+
+    if (supplyDemandResult.exhaustion === 'DEMAND_EXHAUSTION') {
+      shortScore += 10;
+      breakdown.flow.short += 10;
+    } else if (supplyDemandResult.exhaustion === 'SUPPLY_EXHAUSTION') {
+      longScore += 10;
+      breakdown.flow.long += 10;
     }
   }
 
@@ -304,6 +325,27 @@ function calculateScore({
     }
   }
 
+  // ─── CUNG CẦU F1 VETO GATEKEEPER (v4.3) ───────────────
+  // Chặn Long khi kiệt cầu ở cản hoặc nến 3m/5m râu trên xả hàng mạnh
+  // Chặn Short khi kiệt cung ở đáy hoặc nến 3m/5m rút chân đỡ giá
+  if (finalDirection === 'LONG' && supplyDemandResult) {
+    if (supplyDemandResult.exhaustion === 'DEMAND_EXHAUSTION' || supplyDemandResult.rejection === 'UPPER_REJECTION') {
+      vetoReason = `Cung cầu F1: ${supplyDemandResult.summaryText} → Chặn mở Long đỉnh, chờ kiểm định lại.`;
+      vetoType = 'SUPPLY_DEMAND_VETO';
+      finalDirection = 'NO_TRADE';
+      tradeConfidence = 0;
+      setupQuality = 'N/A';
+    }
+  } else if (finalDirection === 'SHORT' && supplyDemandResult) {
+    if (supplyDemandResult.exhaustion === 'SUPPLY_EXHAUSTION' || supplyDemandResult.rejection === 'LOWER_ABSORPTION') {
+      vetoReason = `Cung cầu F1: ${supplyDemandResult.summaryText} → Chặn Short đuổi đáy, chờ hồi lên cản.`;
+      vetoType = 'SUPPLY_DEMAND_VETO';
+      finalDirection = 'NO_TRADE';
+      tradeConfidence = 0;
+      setupQuality = 'N/A';
+    }
+  }
+
   // ─── ANTI-WHIPSAW COOLDOWN ───────────────────────────
   // Nếu đảo chiều trong vòng 30 phút → đòi hỏi scoreDiff cao hơn
   if (finalDirection !== 'NO_TRADE' && lastSignalDirection && lastSignalTime) {
@@ -329,7 +371,9 @@ function calculateScore({
   else if (longScore >= shortScore + 8) structureSummary = 'Nghiêng Mua (Giá trên VWAP, giữ vững hỗ trợ)';
 
   let flowSummary = 'Cân bằng (Chưa có phe áp đảo)';
-  if (flowResult) {
+  if (supplyDemandResult && supplyDemandResult.summaryText && supplyDemandResult.consensus !== 'NEUTRAL') {
+    flowSummary = supplyDemandResult.summaryText;
+  } else if (flowResult) {
     if (flowResult.cvd.direction === 'FALLING' || (sweepResult && sweepResult.signal === 'BEARISH')) {
       flowSummary = 'Phe Bán chiếm ưu thế / CVD dốc xuống';
     } else if (flowResult.cvd.direction === 'RISING') {

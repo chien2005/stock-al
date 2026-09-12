@@ -16,6 +16,7 @@ function buildSignalNotification(session, analysisResult, deltaData = null) {
   const {
     scoreResult, priceMap, flowResult, absorptionResult, sweepResult,
     velocityResult, efficiencyResult, basisResult, breadthResult, leaderResult, liquidityResult, regimeResult, targetMap,
+    supplyDemandResult,
     allData,
   } = analysisResult;
 
@@ -25,12 +26,12 @@ function buildSignalNotification(session, analysisResult, deltaData = null) {
     'afternoon': '🌆 PHIÊN CHIỀU',
     'update': '🔄 CẬP NHẬT REALTIME',
   };
-  const sessionLabel = sessionLabels[session] || '🔮 BẢN TIN PHÂN TÍCH';
+  const sessionLabel = sessionLabels[session] || '🔄 CẬP NHẬT REALTIME';
 
   const direction = scoreResult.direction;
   const isTradeable = direction === 'LONG' || direction === 'SHORT';
 
-  let msg = `🔮 <b>VN30F v4.2 — ${sessionLabel}</b>\n`;
+  let msg = `🔮 <b>VN30F v4.3 — ${sessionLabel}</b>\n`;
   msg += `🕐 <i>${vnNow()}</i>\n`;
   msg += `━━━━━━━━━━━━━━━━━━━━\n\n`;
 
@@ -39,12 +40,20 @@ function buildSignalNotification(session, analysisResult, deltaData = null) {
     const dirIcon = direction === 'LONG' ? '🟢' : '🔴';
     const dirText = direction === 'LONG' ? 'MỞ VỊ THẾ LONG (MUA)' : 'MỞ VỊ THẾ SHORT (BÁN)';
     msg += `${dirIcon} <b>KHUYẾN NGHỊ: ${dirText}</b>\n`;
-    msg += `📊 Độ tin cậy: <b>${scoreResult.confidence}/100</b> | Chất lượng Setup: <b>${scoreResult.setupQuality}</b> | Rủi ro: <b>${scoreResult.risk}</b>\n\n`;
+    msg += `📊 Độ tin cậy: <b>${scoreResult.confidence}/100</b> | Setup: <b>${scoreResult.setupQuality}</b> | Rủi ro: <b>${scoreResult.risk}</b>\n`;
+    if (targetMap && targetMap.entry) {
+      const tpStr = (targetMap.targets || []).slice(0, 2).map(t => `${t.type}: ${t.price.toFixed(1)}`).join(' | ');
+      msg += `🎯 <b>KẾ HOẠCH:</b> Vùng vào <b>${targetMap.entry.zone[0]} – ${targetMap.entry.zone[1]}</b> | ${tpStr} | SL: <b>±${targetMap.hardStop}đ</b>\n`;
+    }
+    const reasonText = (supplyDemandResult && supplyDemandResult.summaryText)
+      ? `${supplyDemandResult.summaryText}`
+      : (scoreResult.layerSummaries ? scoreResult.layerSummaries.flow : 'Dòng tiền và cấu trúc xác nhận');
+    msg += `⚠️ <b>Lý do:</b> ${reasonText}\n\n`;
   } else {
     msg += `⚪ <b>TRẠNG THÁI: ĐỨNG NGOÀI QUAN SÁT</b>\n`;
-    // v4.2: Veto type-specific display
     const vetoTypeLabels = {
       'RR_VETO': '🛡️ R:R KHÔNG ĐỦ',
+      'SUPPLY_DEMAND_VETO': '⚠️ CUNG CẦU F1 CHƯA ĐỒNG THUẬN',
       'ANTI_WHIPSAW': '⚠️ CHỐNG ĐẢO CHIỀU LIÊN TỤC',
       'RANGE_DAY': '⇔ NGÀY SIDEWAY',
     };
@@ -65,16 +74,15 @@ function buildSignalNotification(session, analysisResult, deltaData = null) {
     msg += `🌡️ <b>CHẾ ĐỘ THỊ TRƯỜNG:</b>\n`;
     msg += `${regimeIcons[regimeResult.regime] || '↔️'} ${regimeResult.description}\n`;
     if (regimeResult.expiryMode && regimeResult.expiryMode.mode !== 'NORMAL') {
-      msg += `📅 <b>Đáo hạn:</b> ${regimeResult.expiryMode.mode} (Còn ${regimeResult.expiryMode.daysToExpiry} ngày — lưu ý biến động bất ngờ)\n`;
+      msg += `📅 <b>Đáo hạn:</b> ${regimeResult.expiryMode.mode} (Còn ${regimeResult.expiryMode.daysToExpiry} ngày)\n`;
     }
     msg += `\n`;
   }
 
-  // ─── THANH KHOẢN & VỊ THẾ PHÁI SINH (delta giữa 2 noti) ───
+  // ─── 3. THANH KHOẢN REALTIME ──────────────────────────────
   if (deltaData || liquidityResult) {
     msg += `💰 <b>THANH KHOẢN REALTIME:</b>\n`;
 
-    // VN30 liquidity
     if (liquidityResult) {
       const liqPct = Math.round(liquidityResult.volumeRatio * 100);
       msg += `   • VN30: <b>${liquidityResult.totalValue.toLocaleString('vi-VN')} tỷ</b> (${liqPct}% TB)`;
@@ -85,7 +93,6 @@ function buildSignalNotification(session, analysisResult, deltaData = null) {
       msg += `\n`;
     }
 
-    // VNINDEX price
     if (allData && allData.vnindexPrice) {
       const vnidx = allData.vnindexPrice;
       const vnidxChange = vnidx.prevPrice ? ((vnidx.price - vnidx.prevPrice) / vnidx.prevPrice * 100).toFixed(2) : '0';
@@ -93,9 +100,9 @@ function buildSignalNotification(session, analysisResult, deltaData = null) {
       msg += `   • VNINDEX: ${vnidxIcon} <b>${vnidx.price.toFixed(2)}</b> (${parseFloat(vnidxChange) >= 0 ? '+' : ''}${vnidxChange}%)\n`;
     }
 
-    // ─── VỊ THẾ TAY TO & ĐÁM ĐÔNG REALTIME ─────────────────
+    // ─── 4. VỊ THẾ TAY TO & ĐÁM ĐÔNG REALTIME ─────────────────
     const oiTracker = require('./oiTracker');
-    const posSnap = oiTracker.getRealtimePositionSnapshot(allData);
+    const posSnap = (deltaData && deltaData.currentPosition) || oiTracker.getRealtimePositionSnapshot(allData);
     const fmtSign = (num) => (num > 0 ? `+${num.toLocaleString('vi-VN')}` : num.toLocaleString('vi-VN'));
     const fmtNum = (num) => (num || 0).toLocaleString('vi-VN');
 
@@ -103,9 +110,26 @@ function buildSignalNotification(session, analysisResult, deltaData = null) {
     msg += `   • Ròng Khối ngoại: <b>${fmtSign(posSnap.foreignNet)} HĐ</b> (Mua ${fmtNum(posSnap.foreignBuy)} | Bán ${fmtNum(posSnap.foreignSell)})\n`;
     msg += `   • Ròng Tự doanh: <b>${fmtSign(posSnap.tuDoanhNet)} HĐ</b> (Mua ${fmtNum(posSnap.tuDoanhBuy)} | Bán ${fmtNum(posSnap.tuDoanhSell)})\n`;
     msg += `   • Ròng Đám đông: <b>${fmtSign(posSnap.crowdNet)} HĐ</b> (Nhỏ lẻ ôm đối ứng)\n`;
-    msg += `   • Biến động OI phiên nay: <b>${fmtSign(posSnap.oiChange)} HĐ</b> (Tổng OI sàn: <b>${fmtNum(posSnap.totalOI)} HĐ</b>)\n\n`;
+    msg += `   • Biến động OI thay đổi đến thời điểm hiện tại: <b>${fmtSign(posSnap.oiChange)} HĐ</b> (Tổng OI sàn: <b>${fmtNum(posSnap.totalOI)} HĐ</b>)\n`;
 
-    // VN30 buy/sell delta
+    if (deltaData && deltaData.positionDelta) {
+      const pd = deltaData.positionDelta;
+      const fnNetD = pd.foreignNetDelta || 0;
+      const oiD = pd.oiDelta || 0;
+
+      let actionDesc = '⚪ Cân bằng';
+      if (fnNetD < -100 && oiD > 0) actionDesc = '🔴 Phe Short được nhồi mới!';
+      else if (fnNetD < -100 && oiD <= 0) actionDesc = '🔴 Khối ngoại ép bán xả Short!';
+      else if (fnNetD > 100 && oiD > 0) actionDesc = '🟢 Phe Long được gia tăng!';
+      else if (fnNetD > 100 && oiD <= 0) actionDesc = '🟡 Khối ngoại cover chốt Short!';
+      else if (fnNetD < -50) actionDesc = '🔴 Nghiêng nhồi Short';
+      else if (fnNetD > 50) actionDesc = '🟢 Nghiêng gia tăng Long';
+
+      msg += `   • Nhịp ${deltaData.timeDiffMin}p qua: NN <b>${fmtSign(fnNetD)} HĐ</b> (Mua +${fmtNum(pd.foreignBuyDelta)} | Bán +${fmtNum(pd.foreignSellDelta)}) → <i>${actionDesc}</i>\n`;
+    }
+    msg += `\n`;
+
+    // ─── 5. BIẾN ĐỘNG VN30 (xp qua) ──────────────────────────
     if (deltaData && deltaData.vn30Deltas) {
       const { buyers, sellers } = deltaData.vn30Deltas;
       if (buyers.length > 0 || sellers.length > 0) {
@@ -120,7 +144,7 @@ function buildSignalNotification(session, analysisResult, deltaData = null) {
       }
     }
 
-    // OI position delta (long/short contracts)
+    // ─── 6. VỊ THẾ PHÁI SINH (xp qua) ────────────────────────
     if (deltaData && deltaData.oiDelta) {
       const oi = deltaData.oiDelta;
       const posLabels = {
@@ -137,24 +161,27 @@ function buildSignalNotification(session, analysisResult, deltaData = null) {
       }
       msg += `   • Giá F1M: ${oi.priceDelta >= 0 ? '+' : ''}${oi.priceDelta}đ\n`;
       msg += `   • Trạng thái: <b>${posLabels[oi.positionState] || oi.positionState}</b>\n`;
+      if (supplyDemandResult && supplyDemandResult.summaryText) {
+        msg += `   • Cung Cầu F1: <i>${supplyDemandResult.summaryText}</i>\n`;
+      }
       msg += `\n`;
     }
   }
 
   msg += `━━━━━━━━━━━━━━━━━━━━\n`;
 
-  // ─── 3. BẢN ĐỒ GIÁ (PRICE MAP) ───────────────────────────
+  // ─── 7. BẢN ĐỒ GIÁ REALTIME ──────────────────────────────
   if (priceMap) {
     msg += `📍 <b>BẢN ĐỒ GIÁ REALTIME:</b>\n`;
     if (priceMap.currentPrice && basisResult) {
       msg += `   • VN30: <b>${basisResult.vn30Price}</b> | Phái sinh F1M: <b>${basisResult.f1mPrice}</b>\n`;
     }
-    if (priceMap.todayRange.high) {
+    if (priceMap.todayRange && priceMap.todayRange.high) {
       msg += `   • Biên độ phiên nay: <b>${priceMap.todayRange.low?.toFixed(1)}</b> → <b>${priceMap.todayRange.high?.toFixed(1)}</b>\n\n`;
     }
 
-    msg += `   <b>Các mốc cản & hỗ trợ quan trọng:</b>\n`;
-    const keyLevels = (priceMap.levels || []).slice(0, 7);
+    msg += `   <b>Các mốc cản & hỗ trợ quan trọng:</b>\n\n`;
+    const keyLevels = (priceMap.levels || []).slice(0, 6);
     for (const lvl of keyLevels) {
       const icon = lvl.type === 'RESISTANCE' || lvl.type === 'VAH' ? '🔴'
         : lvl.type === 'SUPPORT' || lvl.type === 'VAL' ? '🟢'
@@ -166,43 +193,27 @@ function buildSignalNotification(session, analysisResult, deltaData = null) {
 
   msg += `━━━━━━━━━━━━━━━━━━━━\n`;
 
-  // ─── 4. ĐỘ RỘNG & XUNG LỰC GIÁ ───────────────────────────
+  // ─── 8. ĐỘ RỘNG & XUNG LỰC ───────────────────────────────
   if (breadthResult) {
     msg += `🔥 <b>ĐỘ RỘNG & XUNG LỰC:</b>\n`;
-    msg += `   • Độ rộng VN30: <b>${breadthResult.greenCount}🟢 / ${breadthResult.redCount}🔴</b>`;
-    if (breadthResult.acceleration.trend === 'IMPROVING') msg += ` (Đang cải thiện ↑)`;
-    else if (breadthResult.acceleration.trend === 'DETERIORATING') msg += ` (Đang xấu đi ↓)`;
-    msg += `\n`;
-
-    // Bank
+    msg += `   • Độ rộng VN30: <b>${breadthResult.greenCount}🟢 / ${breadthResult.redCount}🔴</b>\n`;
     msg += `   • Nhóm Ngân hàng: <b>${breadthResult.bank.label}</b> (${breadthResult.bank.greenCount}/${breadthResult.bank.totalCount} mã xanh)\n`;
 
-    // Concentration
-    if (breadthResult.concentration.level === 'HIGH' && breadthResult.concentration.topContributors.length > 0) {
-      const top3 = breadthResult.concentration.topContributors.slice(0, 3);
-      msg += `   ⚠️ <b>Chỉ số tập trung vào vài trụ:</b> ${top3.map(c => `${c.sym} (${c.changePct > 0 ? '+' : ''}${c.changePct}%)`).join(', ')}\n`;
-    }
-
-    // Velocity action
     if (velocityResult) {
-      msg += `   • Tốc độ biến động: <b>${velocityResult.label}</b>`;
-      if (velocityResult.isImpulse) msg += ` (${velocityResult.move5Pts > 0 ? '+' : ''}${velocityResult.move5Pts}đ/5p)`;
-      msg += `\n     → <i>${velocityResult.actionAdvice}</i>\n`;
+      msg += `   • Tốc độ biến động: <b>${velocityResult.label}</b>\n`;
     }
 
-    // Efficiency action
     if (efficiencyResult) {
       msg += `   • Trạng thái sóng: <b>${efficiencyResult.label}</b>\n`;
       msg += `     → <i>${efficiencyResult.actionAdvice}</i>\n`;
     }
 
-    // Trap warning
-    if (breadthResult.trap.detected) {
+    if (breadthResult.trap && breadthResult.trap.detected) {
       const isTrapLong = breadthResult.trap.detected === 'TRAP_LONG';
       const trapIcon = isTrapLong ? '🪤🔴' : '🪤🟢';
       const trapText = isTrapLong
-        ? `CẢNH BÁO BẪY LONG (${breadthResult.greenCount} mã xanh nhưng biên độ rất nhỏ, lái kéo dàn trải)`
-        : `CẢNH BÁO BẪY SHORT (${breadthResult.redCount} mã đỏ nhưng biên độ nhỏ, lái đè dàn trải)`;
+        ? `CẢNH BÁO BẪY LONG (${breadthResult.greenCount} mã xanh nhưng biên độ rất nhỏ)`
+        : `CẢNH BÁO BẪY SHORT (${breadthResult.redCount} mã đỏ nhưng biên độ rất nhỏ)`;
       msg += `   ${trapIcon} <b>${trapText}</b>\n`;
     }
 
@@ -211,103 +222,21 @@ function buildSignalNotification(session, analysisResult, deltaData = null) {
 
   msg += `━━━━━━━━━━━━━━━━━━━━\n`;
 
-  // ─── 5. DÒNG TIỀN & HÀNH ĐỘNG THỰC TẾ ───────────────────
-  if (flowResult) {
-    msg += `📊 <b>DÒNG TIỀN & HÀNH ĐỘNG:</b>\n`;
-    if (liquidityResult) {
-      const liqPct = Math.round(liquidityResult.volumeRatio * 100);
-      let liqDesc = 'Bình thường';
-      if (liqPct < 60) liqDesc = 'Thanh khoản cạn, dòng tiền yếu';
-      else if (liqPct < 80) liqDesc = 'Thanh khoản thấp hơn trung bình';
-      else if (liqPct >= 120) liqDesc = 'Thanh khoản bùng nổ, dòng tiền vào mạnh';
-      msg += `   • Thanh khoản: <b>${liqPct}% mức trung bình</b> (${liqDesc})\n`;
-    }
-
-    const buyVolK = Math.round(flowResult.aggression.buyVol / 1000);
-    const sellVolK = Math.round(flowResult.aggression.sellVol / 1000);
-    const deltaK = (flowResult.delta.cumulative / 1000).toFixed(1);
-    const deltaIcon = flowResult.delta.cumulative > 0 ? '↑ Mua áp đảo' : '↓ Bán áp đảo';
-
-    msg += `   • Khớp lệnh: <b>${buyVolK}k HĐ Mua</b> / <b>${sellVolK}k HĐ Bán</b>\n`;
-    msg += `   • Chênh lệch lệnh (Delta): <b>${deltaK > 0 ? '+' : ''}${deltaK}k HĐ</b> (${deltaIcon})\n`;
-
-    // CVD trend
-    const cvdText = flowResult.cvd.direction === 'RISING' ? 'Dốc lên (Phe mua duy trì lực)'
-      : flowResult.cvd.direction === 'FALLING' ? 'Dốc xuống (Phe bán xả hàng liên tục)' : 'Đi ngang (Giằng co)';
-    msg += `   • Xu hướng dòng tiền (CVD): <b>${cvdText}</b>\n`;
-
-    if (flowResult.cvd.divergence) {
-      const divText = flowResult.cvd.divergence === 'BEARISH_DIVERGENCE'
-        ? '⚠️ PHÂN KỲ GIẢM: Giá tăng nhưng dòng tiền không vào → Dễ quay đầu giảm'
-        : '⚠️ PHÂN KỲ TĂNG: Giá giảm nhưng dòng tiền ngầm mua gom → Dễ bật tăng';
-      msg += `   <b>${divText}</b>\n`;
-    }
-
-    // Absorption action tip
-    if (absorptionResult && absorptionResult.detected) {
-      const absIcon = absorptionResult.detected === 'SELL_ABSORPTION' ? '🟢' : '🔴';
-      msg += `   ${absIcon} <b>HẤP THỤ CUNG CẦU:</b> ${absorptionResult.actionTip || absorptionResult.description}\n`;
-    }
-
-    // Sweep action tip
-    if (sweepResult && sweepResult.detected) {
-      msg += `   ⚡ <b>QUÉT THANH KHOẢN (BẪY GIÁ):</b> ${sweepResult.actionTip || sweepResult.description}\n`;
-    }
-
-    // Leader exhaustion action tip
-    if (leaderResult && leaderResult.exhaustion.length > 0) {
-      const ex = leaderResult.exhaustion[0];
-      msg += `   ⚠️ <b>Trụ mất đà (${ex.sym}):</b> Đã tăng +${ex.peak}% nay quay đầu còn +${ex.current}% → Cẩn thận chỉ số hạ nhiệt\n`;
-    }
-
-    msg += `\n`;
-  }
-
-  msg += `━━━━━━━━━━━━━━━━━━━━\n`;
-
-  // ─── 6. KẾ HOẠCH GIAO DỊCH CHI TIẾT ──────────────────────
-  if (targetMap && isTradeable) {
-    msg += `🎯 <b>KẾ HOẠCH GIAO DỊCH:</b>\n\n`;
-    msg += `   • <b>VÙNG VÀO LỆNH:</b> <b>${targetMap.entry.zone[0]} – ${targetMap.entry.zone[1]}</b>\n`;
-    msg += `     <i>(${targetMap.entry.reason})</i>\n\n`;
-
-    for (const tp of targetMap.targets) {
-      msg += `   • <b>${tp.type}:</b> <b>${tp.price.toFixed(1)}</b> (${tp.reason})\n`;
-    }
-
-    msg += `\n   • <b>ĐIỀU KIỆN HUỶ KẾ HOẠCH:</b> ${targetMap.invalidation.condition}\n`;
-    msg += `   • <b>Cắt lỗ cứng:</b> Tối đa ±${targetMap.hardStop} điểm để bảo vệ vốn\n`;
-
-    if (targetMap.noTradeZone) {
-      msg += `\n   🚫 <b>VÙNG TRÁNH GIAO DỊCH:</b> ${targetMap.noTradeZone.from} – ${targetMap.noTradeZone.to}\n`;
-      msg += `     <i>(${targetMap.noTradeZone.reason})</i>\n`;
-    }
-    msg += `\n━━━━━━━━━━━━━━━━━━━━\n`;
-  }
-
-  // ─── 7. ĐÁNH GIÁ TỔNG HỢP ĐA LỚP ────────────────────────
+  // ─── 9. ĐÁNH GIÁ TỔNG HỢP ────────────────────────────────
   if (scoreResult.layerSummaries) {
     msg += `📊 <b>ĐÁNH GIÁ TỔNG HỢP:</b>\n`;
-    msg += `   • 🟥 Cấu trúc đồ thị: <b>${scoreResult.layerSummaries.structure}</b>\n`;
-    msg += `   • 🟦 Dòng tiền chủ động: <b>${scoreResult.layerSummaries.flow}</b>\n`;
-    msg += `   • 🟨 Độ rộng thị trường: <b>${scoreResult.layerSummaries.breadth}</b>\n`;
-    msg += `   • 🟩 Chế độ thị trường: <b>${scoreResult.layerSummaries.regime}</b>\n`;
-    // v4.2: OI summary
-    if (scoreResult.layerSummaries.oi) {
-      msg += `   • 📊 Vị thế OI: <b>${scoreResult.layerSummaries.oi}</b>\n`;
-    }
-    // v4.2: Macro Bias
+    msg += `   • 🟥 Cấu trúc đồ thị: ${scoreResult.layerSummaries.structure}\n`;
+    msg += `   • 🟦 Dòng tiền chủ động: ${scoreResult.layerSummaries.flow}\n`;
+    msg += `   • 🟨 Độ rộng thị trường: ${scoreResult.layerSummaries.breadth}\n`;
+    msg += `   • 🟩 Chế độ thị trường: ${scoreResult.layerSummaries.regime}\n`;
+
     if (scoreResult.layerSummaries.macroBias && scoreResult.layerSummaries.macroBias !== 'NEUTRAL') {
       const biasIcon = scoreResult.layerSummaries.macroBias === 'BULLISH' ? '🟢' : '🔴';
       const biasText = scoreResult.layerSummaries.macroBias === 'BULLISH' ? 'TĂNG (EMA50)' : 'GIẢM (EMA50)';
       msg += `   • 🌍 Xu hướng lớn: ${biasIcon} <b>${biasText}</b>\n`;
     }
-    // v4.2: Sweep Hunter badge
-    if (scoreResult.sweepHunterActive) {
-      msg += `   ⚡ <b>SETUP CAO CẤP:</b> Vào lệnh sau bẫy quét thanh khoản (Sweep Hunter)\n`;
-    }
-    msg += `\n`;
 
+    msg += `\n`;
     if (isTradeable) {
       msg += `   → <b>KẾT LUẬN:</b> Ưu tiên vị thế <b>${direction}</b> theo đúng kế hoạch trên, tuân thủ kỷ luật cắt lỗ.\n`;
     } else {
@@ -315,7 +244,7 @@ function buildSignalNotification(session, analysisResult, deltaData = null) {
     }
   }
 
-  msg += `\n<i>🔮 VN30F Signal Engine v4.2 — Thiên Hạ Ngũ Tuyệt | VN Stock Bot</i>`;
+  msg += `\n<i>🔮 VN30F Signal Engine v4.3 — Thiên Hạ Ngũ Tuyệt | VN Stock Bot</i>`;
 
   return msg;
 }

@@ -1,5 +1,5 @@
 {
-  "lastUpdated": "2026-09-11T13:08:34.710Z",
+  "lastUpdated": "2026-09-12T12:17:21.387Z",
   "history": [
     {
       "date": "26/8/2026",
@@ -83,23 +83,30 @@
     },
     {
       "date": "10/9/2026",
-      "totalOI": 31441,
-      "oiChange": 0,
+      "totalOI": 35352,
+      "oiChange": 3911,
       "f1mPrice": 1975.5,
       "vn30Price": 1976.82,
       "basis": -1.32,
       "volume": 225642,
-      "positionState": "NEUTRAL"
+      "positionState": "LONG_BUILDUP"
     },
     {
       "date": "11/9/2026",
-      "totalOI": 35352,
-      "oiChange": 3911,
+      "totalOI": 33803,
+      "oiChange": -1549,
       "f1mPrice": 1940,
-      "positionState": "NEUTRAL",
+      "positionState": "LONG_LIQUIDATION",
       "vn30Price": 1936.69,
       "basis": 3.31,
       "volume": 221675
+    },
+    {
+      "date": "12/9/2026",
+      "totalOI": 35352,
+      "oiChange": 0,
+      "f1mPrice": 1940,
+      "positionState": "NEUTRAL"
     }
   ]
 }
