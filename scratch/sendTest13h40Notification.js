@@ -118,6 +118,8 @@ async function sendTest13h40() {
       tuDoanhSell: 0,
       tuDoanhNet: 0,
       crowdNet: 2191,
+      crowdBuy: 154253,
+      crowdSell: 152062,
       totalOI: 35352,
       oiChange: -1549,
     }

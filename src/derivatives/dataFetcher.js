@@ -367,6 +367,7 @@ async function fetchDerivativesOIData() {
       totalOI: hasOI ? totalOI : null,
       totalOIChange: totalOIChange,
       totalVolume: totalVolume > 0 ? totalVolume : null,
+      f1mVolume: f1mData ? parseInt(f1mData.lot || '0') : (totalVolume || 0),
       // Dữ liệu hợp đồng chính VN30F1M (chuẩn phái sinh nhất)
       foreignBuy: f1mForeignBuy,
       foreignSell: f1mForeignSell,

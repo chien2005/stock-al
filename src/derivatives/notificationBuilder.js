@@ -109,7 +109,11 @@ function buildSignalNotification(session, analysisResult, deltaData = null) {
     msg += `\n🔥 <b>VỊ THẾ TAY TO & ĐÁM ĐÔNG REALTIME:</b>\n`;
     msg += `   • Ròng Khối ngoại: <b>${fmtSign(posSnap.foreignNet)} HĐ</b> (Mua ${fmtNum(posSnap.foreignBuy)} | Bán ${fmtNum(posSnap.foreignSell)})\n`;
     msg += `   • Ròng Tự doanh: <b>${fmtSign(posSnap.tuDoanhNet)} HĐ</b> (Mua ${fmtNum(posSnap.tuDoanhBuy)} | Bán ${fmtNum(posSnap.tuDoanhSell)})\n`;
-    msg += `   • Ròng Đám đông: <b>${fmtSign(posSnap.crowdNet)} HĐ</b> (Nhỏ lẻ ôm đối ứng)\n`;
+    if (posSnap.crowdBuy > 0 || posSnap.crowdSell > 0) {
+      msg += `   • Ròng Đám đông: <b>${fmtSign(posSnap.crowdNet)} HĐ</b> (Long ${fmtNum(posSnap.crowdBuy)} | Short ${fmtNum(posSnap.crowdSell)})\n`;
+    } else {
+      msg += `   • Ròng Đám đông: <b>${fmtSign(posSnap.crowdNet)} HĐ</b> (Nhỏ lẻ ôm đối ứng)\n`;
+    }
     msg += `   • Biến động OI thay đổi đến thời điểm hiện tại: <b>${fmtSign(posSnap.oiChange)} HĐ</b> (Tổng OI sàn: <b>${fmtNum(posSnap.totalOI)} HĐ</b>)\n`;
 
     if (deltaData && deltaData.positionDelta) {
@@ -181,7 +185,7 @@ function buildSignalNotification(session, analysisResult, deltaData = null) {
     }
 
     msg += `   <b>Các mốc cản & hỗ trợ quan trọng:</b>\n\n`;
-    const keyLevels = (priceMap.levels || []).slice(0, 6);
+    const keyLevels = Array.isArray(priceMap.levels) ? priceMap.levels.slice(0, 6) : [];
     for (const lvl of keyLevels) {
       const icon = lvl.type === 'RESISTANCE' || lvl.type === 'VAH' ? '🔴'
         : lvl.type === 'SUPPORT' || lvl.type === 'VAL' ? '🟢'

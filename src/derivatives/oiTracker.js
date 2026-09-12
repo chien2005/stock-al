@@ -770,6 +770,14 @@ function getRealtimePositionSnapshot(allData) {
   // ─── 3. Đám đông = Zero-Sum rule ────
   const crowdNet = -(foreignNet + tuDoanhNet);
 
+  // Khối lượng F1M đã giao dịch đến thời điểm hiện tại
+  const f1mVolume = (allData && allData.oiData && (allData.oiData.f1mVolume || allData.oiData.totalVolume || (allData.oiData.f1mRealtime && parseInt(allData.oiData.f1mRealtime.lot || '0')))) || 0;
+
+  // Đám đông Mua (Long) = Tổng Volume - Khối ngoại Mua - Tự doanh Mua
+  // Đám đông Bán (Short) = Tổng Volume - Khối ngoại Bán - Tự doanh Bán
+  const crowdBuy = f1mVolume > 0 ? Math.max(0, f1mVolume - foreignBuy - tuDoanhBuy) : 0;
+  const crowdSell = f1mVolume > 0 ? Math.max(0, f1mVolume - foreignSell - tuDoanhSell) : 0;
+
   return {
     foreignBuy,
     foreignSell,
@@ -778,6 +786,9 @@ function getRealtimePositionSnapshot(allData) {
     tuDoanhBuy,
     tuDoanhSell,
     crowdNet,
+    crowdBuy,
+    crowdSell,
+    f1mVolume,
     totalOI,
     oiChange,
   };
