@@ -174,7 +174,9 @@ function getRecent5DaysData() {
   let needSaveForeign = false;
   let needSaveOI = false;
 
-  const results = targetTradingDays.map((targetDateStr, idx) => {
+  const results = [];
+  for (let idx = 0; idx < targetTradingDays.length; idx++) {
+    const targetDateStr = targetTradingDays[idx];
     const normTarget = normalizeDateStr(targetDateStr);
 
     // Tìm trong foreign_oi.json
@@ -229,7 +231,7 @@ function getRecent5DaysData() {
     }
     const crowdOvernight = -(overnightNet + tuDoanhOvernight);
 
-    return {
+    results.push({
       date: targetDateStr,
       buy,
       sell,
@@ -244,8 +246,8 @@ function getRecent5DaysData() {
       vn30Price: oItem.vn30Price || 0,
       basis: oItem.basis || 0,
       positionState: oItem.positionState || 'NEUTRAL',
-    };
-  });
+    });
+  }
 
   if (needSaveForeign) {
     foreignStore.history = fHistory;

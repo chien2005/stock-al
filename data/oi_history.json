@@ -1,5 +1,5 @@
 {
-  "lastUpdated": "2026-09-12T12:17:21.387Z",
+  "lastUpdated": "2026-09-14T12:21:03.218Z",
   "history": [
     {
       "date": "26/8/2026",
@@ -106,6 +106,13 @@
       "totalOI": 35352,
       "oiChange": 0,
       "f1mPrice": 1940,
+      "positionState": "NEUTRAL"
+    },
+    {
+      "date": "14/9/2026",
+      "totalOI": 33803,
+      "oiChange": 0,
+      "f1mPrice": 1930.9,
       "positionState": "NEUTRAL"
     }
   ]

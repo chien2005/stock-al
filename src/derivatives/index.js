@@ -348,7 +348,7 @@ async function runDerivativesSignalJob() {
     _state.initialNotiSent = true;
 
   } catch (e) {
-    console.error('   ❌ Derivatives signal job error v4.2:', e.message);
+    console.error('   ❌ Derivatives signal job error v4.3:', e.stack || e.message);
   }
 }
 
