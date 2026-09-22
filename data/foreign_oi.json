@@ -1,5 +1,5 @@
 {
-  "lastUpdated": "2026-09-14T12:20:34.473Z",
+  "lastUpdated": "2026-09-22T13:28:04.386Z",
   "history": [
     {
       "date": "26/8/2026",
@@ -73,6 +73,41 @@
     },
     {
       "date": "14/9/2026",
+      "buy": 6050,
+      "sell": 9094,
+      "overnightNet": 0,
+      "tuDoanhOvernight": 0
+    },
+    {
+      "date": "16/9/2026",
+      "buy": 6050,
+      "sell": 9094,
+      "overnightNet": 0,
+      "tuDoanhOvernight": 0
+    },
+    {
+      "date": "17/9/2026",
+      "buy": 6050,
+      "sell": 9094,
+      "overnightNet": 0,
+      "tuDoanhOvernight": 0
+    },
+    {
+      "date": "18/9/2026",
+      "buy": 6050,
+      "sell": 9094,
+      "overnightNet": 0,
+      "tuDoanhOvernight": 0
+    },
+    {
+      "date": "21/9/2026",
+      "buy": 6050,
+      "sell": 9094,
+      "overnightNet": 0,
+      "tuDoanhOvernight": 0
+    },
+    {
+      "date": "22/9/2026",
       "buy": 6050,
       "sell": 9094,
       "overnightNet": 0,

@@ -33,7 +33,7 @@ const { startBotHandler, stopBotHandler } = require('./botHandler');
 const { startAlertMonitor, stopAlertMonitor, resetDailyData, flushBigTradeBuffer } = require('./alertService');
 const { runSmartMoneyReport } = require('./smartMoneyReport');
 const { runWhaleTrackerReport } = require('./whaleTracker');
-const { runDerivativesSignalJob, runMorningDerivativesJob, runMidMorningDerivativesJob, runAfternoonDerivativesJob, runAIDerivativesJob, runDerivativesOIJob, runPreATCJob, runPostATCJob, resetDerivativesState, startMomentumMonitor, startPriceChangeMonitor, stopMomentumMonitor, stopPriceChangeMonitor } = require('./derivatives');
+const { runDerivativesSignalJob, runMorningDerivativesJob, runMidMorningDerivativesJob, runAfternoonDerivativesJob, runAIDerivativesJob, runDerivativesOIJob, runPreATCJob, runPostATCJob, resetDerivativesState, startMomentumMonitor, startPriceChangeMonitor, stopMomentumMonitor, stopPriceChangeMonitor, start5MinCandleMonitor, stop5MinCandleMonitor } = require('./derivatives');
 
 // ─── Thời điểm khởi động (cho health check) ─────────────
 const startedAt = new Date();
@@ -544,6 +544,7 @@ async function main() {
   // ─── START DERIVATIVES MONITORS (chạy cả khi khởi động lại trong phiên) ───
   startMomentumMonitor();
   startPriceChangeMonitor();
+  start5MinCandleMonitor();
 
   // Reset alert data mỗi ngày lúc 9:00 (trước phiên)
   cron.schedule('0 9 * * 1-5', () => {
@@ -595,6 +596,7 @@ async function main() {
       resetDerivativesState();
       startMomentumMonitor();
       startPriceChangeMonitor();
+      start5MinCandleMonitor();
     } catch (err) { console.error('🔮 [Derivatives Reset] Lỗi:', err.message); }
   }, { scheduled: true, timezone: config.timezone });
 
@@ -602,7 +604,7 @@ async function main() {
   // Monitor được start lúc 9h00 ở trên, poll giá mỗi 10s
   // Bắn noti khi VN30F1M biến động >= 3 điểm so với lần noti trước
   // Noti đầu phiên tự động bắn lúc ~9h05 (baseline)
-  console.log('   🔮 Derivatives Signal v4.3: Price-Change Monitor (≥3đ trigger, poll 10s, critical windows boosted)');
+  console.log('   🔮 Derivatives Signal v4.4: Price-Change Monitor (≥3đ trigger, poll 10s) + 5-Min Candle Tracker (notable patterns)');
 
   // ─── SCHEDULE: AI DERIVATIVES FORECAST (9h22, 10h22 & 13h50, T2-T6) ───
   cron.schedule('22 9 * * 1-5', async () => {
@@ -841,16 +843,16 @@ async function main() {
   // ─── SELF-PING: Chống Render Free Tier ngủ (tự ping mỗi 8 phút) ──
   const RENDER_URL = process.env.RENDER_EXTERNAL_URL || process.env.RENDER_SERVICE_URL;
   if (RENDER_URL || process.env.RENDER || process.env.NODE_ENV === 'production') {
-    const https = require('https');
+    const axios = require('axios');
     const pingUrl = RENDER_URL 
       ? `${RENDER_URL}/health` 
       : `https://stock-al-yoq4.onrender.com/health`;
     const PING_INTERVAL = 8 * 60 * 1000; // 8 phút (chống Render ngủ đông sau 15p)
     
     setInterval(() => {
-      https.get(pingUrl, (res) => {
-        console.log(`🏓 Self-ping: ${res.statusCode} OK (${new Date().toLocaleTimeString('vi-VN', { timeZone: config.timezone })})`);
-      }).on('error', (err) => {
+      axios.get(pingUrl, { timeout: 15000 }).then((res) => {
+        console.log(`🏓 Self-ping: ${res.status} OK (${new Date().toLocaleTimeString('vi-VN', { timeZone: config.timezone })})`);
+      }).catch((err) => {
         console.log(`🏓 Self-ping failed: ${err.message}`);
       });
     }, PING_INTERVAL);
@@ -872,6 +874,7 @@ async function main() {
   console.log('   📅 Báo giá/AI: Thứ 2 → Thứ 6 | TTCK+Vàng: Mỗi ngày');
   console.log('   🔒 Dedup lock:  4 phút (chống double message)');
   console.log('   🔮 Derivatives: Price-Change Monitor (≥3.0đ, poll 10s, Multi-TF Flow & 3-Party Delta)');
+  console.log('   🕯️ Derivatives: 5-Min Candle Monitor (poll 15s, notable patterns only)');
   console.log('   💡 Nhấn Ctrl+C để dừng');
   console.log('─'.repeat(55) + '\n');
 }
@@ -884,6 +887,7 @@ process.on('SIGINT', () => {
   stopAlertMonitor();
   stopMomentumMonitor();
   stopPriceChangeMonitor();
+  stop5MinCandleMonitor();
   console.log('👋 Bot đã dừng. Hẹn gặp lại!');
   process.exit(0);
 });
@@ -894,12 +898,18 @@ process.on('SIGTERM', () => {
   stopAlertMonitor();
   stopMomentumMonitor();
   stopPriceChangeMonitor();
+  stop5MinCandleMonitor();
   process.exit(0);
 });
 
 // Prevent crash on unhandled promise rejections
 process.on('unhandledRejection', (reason) => {
   console.error('💥 Unhandled rejection:', reason);
+});
+
+// Prevent crash on uncaught exceptions
+process.on('uncaughtException', (err) => {
+  console.error('💥 Uncaught exception (prevented crash):', err?.stack || err?.message || err);
 });
 
 // Run!

@@ -1,5 +1,5 @@
 {
-  "lastUpdated": "2026-09-14T12:21:03.218Z",
+  "lastUpdated": "2026-09-22T13:32:28.913Z",
   "history": [
     {
       "date": "26/8/2026",
@@ -113,6 +113,48 @@
       "totalOI": 33803,
       "oiChange": 0,
       "f1mPrice": 1930.9,
+      "positionState": "NEUTRAL"
+    },
+    {
+      "date": "22/9/2026",
+      "totalOI": 29207,
+      "oiChange": 0,
+      "f1mPrice": 1962.9,
+      "positionState": "NEUTRAL"
+    },
+    {
+      "date": "16/9/2026",
+      "totalOI": 29207,
+      "oiChange": 0,
+      "f1mPrice": 1962.9,
+      "basis": 0,
+      "positionState": "NEUTRAL"
+    },
+    {
+      "date": "17/9/2026",
+      "totalOI": 29207,
+      "oiChange": 0,
+      "f1mPrice": 1962.9,
+      "vn30Price": 0,
+      "basis": 0,
+      "positionState": "NEUTRAL"
+    },
+    {
+      "date": "18/9/2026",
+      "totalOI": 29207,
+      "oiChange": 0,
+      "f1mPrice": 1962.9,
+      "vn30Price": 0,
+      "basis": 0,
+      "positionState": "NEUTRAL"
+    },
+    {
+      "date": "21/9/2026",
+      "totalOI": 29207,
+      "oiChange": 0,
+      "f1mPrice": 1962.9,
+      "vn30Price": 0,
+      "basis": 0,
       "positionState": "NEUTRAL"
     }
   ]

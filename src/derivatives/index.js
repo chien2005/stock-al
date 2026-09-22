@@ -30,6 +30,7 @@ const { buildTargetMap } = require('./targetEngine');
 const { buildSignalNotification, buildLeaderAlert, buildTrapAlert } = require('./notificationBuilder');
 const { saveSignalSnapshot } = require('./snapshotStore');
 const oiTracker = require('./oiTracker');
+const candleTracker5m = require('./candleTracker5m');
 
 // ─── STATE ───────────────────────────────────────────────────────
 const _state = {
@@ -715,6 +716,7 @@ function stopPriceChangeMonitor() {
 function resetDerivativesState() {
   stopMomentumMonitor();
   stopPriceChangeMonitor();
+  candleTracker5m.reset5MinCandleState();
   _priceHistory.length = 0;
   _state.morningSignal = null;
   _state.afternoonSignal = null;
@@ -732,7 +734,7 @@ function resetDerivativesState() {
   _state.lastNotiTime = 0;
   _state.initialNotiSent = false;
   dataFetcher.resetDailyCache();
-  console.log('   🔄 Derivatives state reset v4.3');
+  console.log('   🔄 Derivatives state reset v4.4');
 }
 
 // ─── SAVE SNAPSHOT ───────────────────────────────────────────
@@ -785,6 +787,10 @@ module.exports = {
   startPriceChangeMonitor,
   stopPriceChangeMonitor,
   stopPositionMonitor,
+  // v4.4: 5-Min Candle Tracker
+  start5MinCandleMonitor: candleTracker5m.start5MinCandleMonitor,
+  stop5MinCandleMonitor: candleTracker5m.stop5MinCandleMonitor,
+  reset5MinCandleState: candleTracker5m.reset5MinCandleState,
   oiTracker,
   buildOIEveningNotification: oiTracker.buildOIEveningNotification,
   buildOIEveningNotificationAsync: oiTracker.buildOIEveningNotificationAsync,
