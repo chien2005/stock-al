@@ -4,3 +4,5 @@ node_modules/
 dist/
 bot.log
 data/
+scratch/
+

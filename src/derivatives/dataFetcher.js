@@ -177,15 +177,18 @@ async function fetchRealtimeVN30() {
   }
 }
 
+let _activeDerivSymbol = '41I1GA000';
+
 // ─── FETCH REALTIME FUTURES PRICE ────────────────────────────
 async function fetchRealtimeFuturesPrice() {
   // Ưu tiên 1: Snapshot phái sinh realtime từ VPS (nhanh, chính xác từng giây)
   try {
-    const res = await axios.get(`${VPS_PS_SNAPSHOT}/41I1G9000`, { headers: HEADERS, timeout: 3000 });
+    const sym = _activeDerivSymbol || '41I1GA000';
+    const res = await axios.get(`${VPS_PS_SNAPSHOT}/${sym}`, { headers: HEADERS, timeout: 3000 });
     if (res.data && Array.isArray(res.data) && res.data.length > 0 && res.data[0].lastPrice) {
       const d = res.data[0];
       const p = parseFloat(d.lastPrice);
-      const r = d.r ? parseFloat(d.r) : p;
+      const r = d.r ? parseFloat(d.r) : (d.closePrice ? parseFloat(d.closePrice) : p);
       return {
         price: p,
         prevPrice: r,
@@ -334,6 +337,7 @@ async function fetchDerivativesOIData() {
       const f1mItem = mapData.find(d => d.CHART_CODE === 'VN30F1M');
       if (f1mItem) f1mCode = f1mItem.SYMBOL;
     }
+    _activeDerivSymbol = f1mCode;
     const f1mData = rawList.find(d => d.sym === f1mCode) || rawList[0];
 
     let totalOI = 0;

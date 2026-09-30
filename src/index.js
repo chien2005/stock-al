@@ -33,7 +33,7 @@ const { startBotHandler, stopBotHandler } = require('./botHandler');
 const { startAlertMonitor, stopAlertMonitor, resetDailyData, flushBigTradeBuffer } = require('./alertService');
 const { runSmartMoneyReport } = require('./smartMoneyReport');
 const { runWhaleTrackerReport } = require('./whaleTracker');
-const { runDerivativesSignalJob, runMorningDerivativesJob, runMidMorningDerivativesJob, runAfternoonDerivativesJob, runAIDerivativesJob, runDerivativesOIJob, runPreATCJob, runPostATCJob, resetDerivativesState, startMomentumMonitor, startPriceChangeMonitor, stopMomentumMonitor, stopPriceChangeMonitor, start5MinCandleMonitor, stop5MinCandleMonitor } = require('./derivatives');
+const { runAIDerivativesJob, runDerivativesOIJob, runPreATCJob, runPostATCJob, resetDerivativesState, startVolumeScalper, stopVolumeScalper } = require('./derivatives');
 
 // ─── Thời điểm khởi động (cho health check) ─────────────
 const startedAt = new Date();
@@ -541,10 +541,8 @@ async function main() {
   // ─── START ALERT MONITOR (cảnh báo giao dịch bất thường) ───
   startAlertMonitor();
 
-  // ─── START DERIVATIVES MONITORS (chạy cả khi khởi động lại trong phiên) ───
-  startMomentumMonitor();
-  startPriceChangeMonitor();
-  start5MinCandleMonitor();
+  // ─── START VOLUME SCALPER v5.0 (chạy cả khi khởi động lại trong phiên) ───
+  startVolumeScalper();
 
   // Reset alert data mỗi ngày lúc 9:00 (trước phiên)
   cron.schedule('0 9 * * 1-5', () => {
@@ -587,24 +585,19 @@ async function main() {
   }, { scheduled: true, timezone: config.timezone });
   console.log('   🐋 Whale Tracker: 19:45 (T2-T6)');
 
-  // ─── SCHEDULE: DERIVATIVES SIGNAL — RESET & START MONITORS 9h00 ───
+  // ─── SCHEDULE: DERIVATIVES — RESET & START VOLUME SCALPER 9h00 ───
   cron.schedule('0 9 * * 1-5', async () => {
     if (!isCurrentInstanceActive()) return;
     if (!isWeekday()) return;
-    console.log('\n🔮 [Derivatives v4.3] Reset daily state & start monitors');
+    console.log('\n🔮 [Derivatives v5.0] Reset daily state & start Volume Scalper');
     try { 
       resetDerivativesState();
-      startMomentumMonitor();
-      startPriceChangeMonitor();
-      start5MinCandleMonitor();
+      startVolumeScalper();
     } catch (err) { console.error('🔮 [Derivatives Reset] Lỗi:', err.message); }
   }, { scheduled: true, timezone: config.timezone });
 
-  // ─── DERIVATIVES SIGNAL: PRICE-CHANGE BASED (thay thế cron 5p cố định) ───
-  // Monitor được start lúc 9h00 ở trên, poll giá mỗi 10s
-  // Bắn noti khi VN30F1M biến động >= 3 điểm so với lần noti trước
-  // Noti đầu phiên tự động bắn lúc ~9h05 (baseline)
-  console.log('   🔮 Derivatives Signal v4.4: Price-Change Monitor (≥3đ trigger, poll 10s) + 5-Min Candle Tracker (notable patterns)');
+  // Volume Scalper v5.0: Poll mỗi 60s từ 09:12, Entry vol 2.3k-2.8k, Exit/Reverse vol đối ứng
+  console.log('   🔮 Derivatives v5.0: Volume Scalper (poll 60s, entry 09:12-14:20, BB+MA filter)');
 
   // ─── SCHEDULE: AI DERIVATIVES FORECAST (9h22, 10h22 & 13h50, T2-T6) ───
   cron.schedule('22 9 * * 1-5', async () => {
@@ -873,8 +866,7 @@ async function main() {
   console.log('   🌐 Health:      http://localhost:' + PORT + '/health');
   console.log('   📅 Báo giá/AI: Thứ 2 → Thứ 6 | TTCK+Vàng: Mỗi ngày');
   console.log('   🔒 Dedup lock:  4 phút (chống double message)');
-  console.log('   🔮 Derivatives: Price-Change Monitor (≥3.0đ, poll 10s, Multi-TF Flow & 3-Party Delta)');
-  console.log('   🕯️ Derivatives: 5-Min Candle Monitor (poll 15s, notable patterns only)');
+  console.log('   🔮 Derivatives v5.0: Volume Scalper (poll 60s, entry 09:12-14:20, BB+MA filter)');
   console.log('   💡 Nhấn Ctrl+C để dừng');
   console.log('─'.repeat(55) + '\n');
 }
@@ -885,9 +877,7 @@ process.on('SIGINT', () => {
   console.log('\n👋 Bot đang dừng...');
   stopBotHandler();
   stopAlertMonitor();
-  stopMomentumMonitor();
-  stopPriceChangeMonitor();
-  stop5MinCandleMonitor();
+  stopVolumeScalper();
   console.log('👋 Bot đã dừng. Hẹn gặp lại!');
   process.exit(0);
 });
@@ -896,9 +886,7 @@ process.on('SIGTERM', () => {
   console.log('\n👋 Bot đang dừng (SIGTERM)...');
   stopBotHandler();
   stopAlertMonitor();
-  stopMomentumMonitor();
-  stopPriceChangeMonitor();
-  stop5MinCandleMonitor();
+  stopVolumeScalper();
   process.exit(0);
 });
 
