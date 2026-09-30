@@ -188,6 +188,177 @@ function getMA9_26Analysis(candle, ma9, ma26) {
   };
 }
 
+// ─── MACD & RSI CALCULATIONS ─────────────────────────────────
+function calcEMA(data, period) {
+  if (!data || data.length < period) return [];
+  const k = 2 / (period + 1);
+  const ema = [data.slice(0, period).reduce((s, v) => s + v, 0) / period];
+  for (let i = period; i < data.length; i++) {
+    ema.push(data[i] * k + ema[ema.length - 1] * (1 - k));
+  }
+  return ema;
+}
+
+function calcMACDSeries(closes, fast = 12, slow = 26, signalPeriod = 9) {
+  if (!closes || closes.length < slow + signalPeriod) return [];
+  const emaFast = calcEMA(closes, fast);
+  const emaSlow = calcEMA(closes, slow);
+  const macdLine = [];
+  for (let i = 0; i < emaSlow.length; i++) {
+    macdLine.push(emaFast[i + (slow - fast)] - emaSlow[i]);
+  }
+  if (macdLine.length < signalPeriod) return [];
+  const signalLine = calcEMA(macdLine, signalPeriod);
+  const result = [];
+  for (let i = 0; i < signalLine.length; i++) {
+    const m = macdLine[i + (signalPeriod - 1)];
+    const s = signalLine[i];
+    result.push({
+      macd: Number(m.toFixed(2)),
+      signal: Number(s.toFixed(2)),
+      hist: Number((m - s).toFixed(2)),
+    });
+  }
+  return result;
+}
+
+function calcRSISeries(closes, period = 14) {
+  if (!closes || closes.length < period + 1) return [];
+  const rsi = [];
+  for (let i = period + 1; i <= closes.length; i++) {
+    const slice = closes.slice(i - (period + 1), i);
+    let gains = 0, losses = 0;
+    for (let j = 1; j < slice.length; j++) {
+      const d = slice[j] - slice[j - 1];
+      if (d > 0) gains += d;
+      else losses += Math.abs(d);
+    }
+    const avgGain = gains / period;
+    const avgLoss = losses / period;
+    const val = avgLoss === 0 ? 100 : Number((100 - (100 / (1 + avgGain / avgLoss))).toFixed(1));
+    rsi.push(val);
+  }
+  return rsi;
+}
+
+/**
+ * Phân tích chuyên sâu MACD:
+ * - Hướng lên / hướng xuống
+ * - Vùng: Dương dốc lên, Dương dốc xuống, Âm dốc xuống, Âm dốc lên
+ * - Phân kỳ âm / dương
+ */
+function analyzeMACD(closes) {
+  const macdList = calcMACDSeries(closes);
+  if (!macdList || macdList.length < 2) return null;
+
+  const curM = macdList[macdList.length - 1];
+  const prevM = macdList[macdList.length - 2];
+
+  const isSlopeUp = curM.macd > prevM.macd;
+  const isPositive = curM.macd >= 0;
+
+  let zoneDesc = '';
+  if (isPositive) {
+    zoneDesc = isSlopeUp ? '🟢 Dương dốc lên ↗' : '⚠️ Dương dốc xuống ↘';
+  } else {
+    zoneDesc = isSlopeUp ? '⚡ Âm dốc lên ↗' : '🔴 Âm dốc xuống ↘';
+  }
+
+  const directionStr = isSlopeUp ? 'Hướng lên ↗' : (curM.macd < prevM.macd ? 'Hướng xuống ↘' : 'Đi ngang →');
+
+  // Phân kỳ MACD trong 25 nến gần nhất
+  let divDesc = 'Không phân kỳ';
+  let hasBearishDiv = false;
+  let hasBullishDiv = false;
+
+  if (closes.length >= 25 && macdList.length >= 25) {
+    const cSlice = closes.slice(-25);
+    const mSlice = macdList.slice(-25);
+    let maxI1 = 0, maxI2 = 13;
+    for (let i = 1; i < 12; i++) if (cSlice[i] > cSlice[maxI1]) maxI1 = i;
+    for (let i = 14; i < 25; i++) if (cSlice[i] > cSlice[maxI2]) maxI2 = i;
+
+    if (cSlice[maxI2] >= cSlice[maxI1] + 0.3 && mSlice[maxI2].macd < mSlice[maxI1].macd - 0.1) {
+      divDesc = '⚠️ Phân kỳ âm (Đỉnh MACD hạ)';
+      hasBearishDiv = true;
+    } else {
+      let minI1 = 0, minI2 = 13;
+      for (let i = 1; i < 12; i++) if (cSlice[i] < cSlice[minI1]) minI1 = i;
+      for (let i = 14; i < 25; i++) if (cSlice[i] < cSlice[minI2]) minI2 = i;
+
+      if (cSlice[minI2] <= cSlice[minI1] - 0.3 && mSlice[minI2].macd > mSlice[minI1].macd + 0.1) {
+        divDesc = '⚡ Phân kỳ dương (Đáy MACD nâng)';
+        hasBullishDiv = true;
+      }
+    }
+  }
+
+  const text = `${zoneDesc} (MACD: <b>${curM.macd >= 0 ? '+' : ''}${curM.macd.toFixed(2)}</b> | Sig: <b>${curM.signal >= 0 ? '+' : ''}${curM.signal.toFixed(2)}</b>) | ${directionStr} | ${divDesc}`;
+
+  return {
+    curM,
+    prevM,
+    isPositive,
+    isSlopeUp,
+    directionStr,
+    zoneDesc,
+    divDesc,
+    hasBearishDiv,
+    hasBullishDiv,
+    text,
+  };
+}
+
+/**
+ * Phân tích chuyên sâu RSI:
+ * - Hướng lên / hướng xuống
+ * - Xung lực: Mạnh / Yếu / Quá mua / Quá bán / Cân bằng
+ */
+function analyzeRSI(closes) {
+  const rsiList = calcRSISeries(closes);
+  if (!rsiList || rsiList.length < 2) return null;
+
+  const curRSI = rsiList[rsiList.length - 1];
+  const prevRSI = rsiList[rsiList.length - 2];
+
+  const isSlopeUp = curRSI > prevRSI;
+  const directionStr = isSlopeUp ? 'Hướng lên ↗' : (curRSI < prevRSI ? 'Hướng xuống ↘' : 'Đi ngang →');
+
+  let momentum = '';
+  let isStrong = false;
+  let isWeak = false;
+
+  if (curRSI >= 70) {
+    momentum = 'Quá Mua (Xung lực Cực Mạnh / Đỉnh cao trào ⚠️)';
+    isStrong = true;
+  } else if (curRSI >= 60) {
+    momentum = isSlopeUp ? 'Xung lực MẠNH (Phe Mua áp đảo 🟢)' : 'Xung lực Khá (Hạ nhiệt ↘)';
+    isStrong = isSlopeUp;
+  } else if (curRSI > 45) {
+    momentum = isSlopeUp ? 'Xung lực Trung bình (Nghiêng Tăng ↗)' : 'Xung lực Trung bình (Nghiêng Giảm ↘)';
+  } else if (curRSI > 30) {
+    momentum = !isSlopeUp ? 'Xung lực YẾU (Phe Bán áp đảo 🔴)' : 'Xung lực Yếu (Hồi phục nhẹ ↗)';
+    isWeak = !isSlopeUp;
+  } else {
+    momentum = 'Quá Bán (Xung lực Cực Yếu / Đáy cao trào ⚡)';
+    isWeak = true;
+  }
+
+  const text = `<b>${curRSI.toFixed(1)}</b> | ${directionStr} | ${momentum}`;
+
+  return {
+    curRSI,
+    prevRSI,
+    val: curRSI.toFixed(1),
+    isSlopeUp,
+    directionStr,
+    momentum,
+    isStrong,
+    isWeak,
+    text,
+  };
+}
+
 // ─── PARSE RAW OHLCV → CANDLE OBJECTS ────────────────────────
 function parseCandles(rawData) {
   if (!rawData || !rawData.t || !rawData.c) return [];
@@ -236,7 +407,9 @@ async function processNewCandle(candle, allCandles, oiData) {
   const ma50 = calcSMA(closes, MA50_PERIOD);
   const bb = calcBollingerBands(closes);
   const ma9_26Analysis = getMA9_26Analysis(candle, ma9, ma26);
-  const indicators = { ma9, ma26, ma20, ma50, bb, ma9_26Analysis };
+  const macdAnalysis = analyzeMACD(closes);
+  const rsiAnalysis = analyzeRSI(closes);
+  const indicators = { ma9, ma26, ma20, ma50, bb, ma9_26Analysis, macdAnalysis, rsiAnalysis };
 
   // Cập nhật floating profit & breakeven
   if (_state.position === 'LONG') {
@@ -788,7 +961,16 @@ async function fastTickCycle() {
         _state.position = 'NONE';
       }
 
-      await sendFlashCrashWarning(currentPrice, dropPts, dropWindow, fromPrice, isAfter14h, wasLong);
+      // Đính kèm chỉ báo MACD & RSI nếu có dữ liệu
+      let indicators = null;
+      if (_state.processedCandles && _state.processedCandles.length >= 26) {
+        const cArr = _state.processedCandles.map(c => c.close);
+        const macdAnalysis = analyzeMACD(cArr);
+        const rsiAnalysis = analyzeRSI(cArr);
+        indicators = { macdAnalysis, rsiAnalysis };
+      }
+
+      await sendFlashCrashWarning(currentPrice, dropPts, dropWindow, fromPrice, isAfter14h, wasLong, indicators);
     }
   } catch (e) {
     // Fast tick error silently
@@ -797,6 +979,7 @@ async function fastTickCycle() {
 
 // ─── BUILD NOTIFICATION BLOCKS ──────────────────────────────
 function buildIndicatorBlock(indicators) {
+  if (!indicators) return '';
   let block = '';
   if (indicators.ma9 && indicators.ma26) {
     block += `MA9: ${indicators.ma9.toFixed(1)} | MA26: ${indicators.ma26.toFixed(1)}`;
@@ -808,6 +991,12 @@ function buildIndicatorBlock(indicators) {
   }
   if (indicators.bb) {
     block += `\n   BB: ↑${indicators.bb.upper} | Mid ${indicators.bb.middle} | ↓${indicators.bb.lower}`;
+  }
+  if (indicators.macdAnalysis) {
+    block += `\n   🌊 <b>MACD:</b> ${indicators.macdAnalysis.text}`;
+  }
+  if (indicators.rsiAnalysis) {
+    block += `\n   ⚡ <b>RSI(14):</b> ${indicators.rsiAnalysis.text}`;
   }
   return block;
 }
@@ -890,6 +1079,17 @@ async function sendSignalNoti(signalType, candle, trade, indicators, oiData) {
   // Indicators
   msg += `📈 <b>Chỉ báo:</b>\n   ${buildIndicatorBlock(indicators)}\n\n`;
 
+  // Xác nhận Xung Lực Đồng Thuận MACD + RSI
+  if (indicators && indicators.macdAnalysis && indicators.rsiAnalysis) {
+    const isLongConf = indicators.macdAnalysis.isSlopeUp && indicators.rsiAnalysis.isSlopeUp;
+    const isShortConf = !indicators.macdAnalysis.isSlopeUp && !indicators.rsiAnalysis.isSlopeUp;
+    if (_state.position === 'LONG') {
+      msg += `🎯 <b>Xác nhận Xung Lực:</b> ${isLongConf ? '✅ MACD & RSI đều hướng lên dốc mạnh → Ủng hộ LONG vững chắc' : '⚠️ Xung lực có dấu hiệu phân hóa, quan sát chặt chẽ'}\n\n`;
+    } else if (_state.position === 'SHORT') {
+      msg += `🎯 <b>Xác nhận Xung Lực:</b> ${isShortConf ? '✅ MACD & RSI đều cắm đầu dốc xuống → Ủng hộ SHORT vững chắc' : '⚠️ Xung lực có dấu hiệu phân hóa, quan sát chặt chẽ'}\n\n`;
+    }
+  }
+
   // Vị thế
   msg += `📋 <b>Vị thế:</b> ${buildPositionBlock()}\n`;
 
@@ -914,7 +1114,8 @@ async function sendFomoWarning(candle, indicators, oiData) {
   let msg = `⛔ <b>[VN30F v5.1] CẤM FOMO — Vol ${candle.volume.toLocaleString()} HĐ</b>\n`;
   msg += `🕐 <b>${getVnTimeHHMMSS()}</b> (Nến ${candle.time}) | ${candle.isGreen ? '🟢 XANH' : '🔴 ĐỎ'} | F1M: <b>${candle.close.toFixed(1)}</b>\n`;
   msg += `   Body: ${candle.body}đ | Râu ↑${candle.upperWick}đ ↓${candle.lowerWick}đ\n\n`;
-  msg += `💡 <i>Vol > ${VOL_FOMO.toLocaleString()} HĐ → Tuyệt đối KHÔNG vào lệnh FOMO!</i>\n`;
+  msg += `💡 <i>Vol > ${VOL_FOMO.toLocaleString()} HĐ → Tuyệt đối KHÔNG vào lệnh FOMO!</i>\n\n`;
+  msg += `📈 <b>Chỉ báo:</b>\n   ${buildIndicatorBlock(indicators)}\n\n`;
   msg += `📋 Vị thế: ${buildPositionBlock()}\n`;
   msg += `━━━━━━━━━━━━━━━━━━━━\n`;
   msg += `<i>🔮 Volume Scalper v5.1</i>`;
@@ -926,6 +1127,7 @@ async function sendAnomalyWarning(candle, indicators, oiData, severity) {
   let msg = `${isCritical ? '🚨' : '⚠️'} <b>[VN30F v5.1] ${isCritical ? 'BƠM ĐỂU GÂY NHIỄU' : 'CÂN NHẮC QUAN SÁT'}</b>\n`;
   msg += `🕐 <b>${getVnTimeHHMMSS()}</b> (Nến ${candle.time}) | ${candle.isGreen ? '🟢' : '🔴'} | F1M: <b>${candle.close.toFixed(1)}</b>\n`;
   msg += `   Vol: <b>${candle.volume.toLocaleString()} HĐ</b> (thấp!) | Râu ↑${candle.upperWick}đ ↓${candle.lowerWick}đ\n\n`;
+  msg += `📈 <b>Chỉ báo:</b>\n   ${buildIndicatorBlock(indicators)}\n\n`;
 
   if (_state.position !== 'NONE') {
     msg += `📋 Đang cầm ${_state.position} @ ${_state.entryPrice.toFixed(1)}\n`;
@@ -939,10 +1141,11 @@ async function sendAnomalyWarning(candle, indicators, oiData, severity) {
 }
 
 async function sendBBBlockWarning(candle, indicators, oiData, blockedDir) {
-  const bb = indicators.bb;
+  const bb = indicators ? indicators.bb : null;
   let msg = `🚧 <b>[VN30F v5.1] BOLLINGER CHẶN ${blockedDir}</b>\n`;
   msg += `🕐 <b>${getVnTimeHHMMSS()}</b> (Nến ${candle.time}) | Vol: ${candle.volume.toLocaleString()} HĐ | F1M: ${candle.close.toFixed(1)}\n`;
-  msg += `   BB Upper: ${bb.upper} | BB Lower: ${bb.lower}\n`;
+  if (bb) msg += `   BB Upper: ${bb.upper} | BB Lower: ${bb.lower}\n\n`;
+  msg += `📈 <b>Chỉ báo:</b>\n   ${buildIndicatorBlock(indicators)}\n\n`;
   msg += `💡 <i>Giá ${blockedDir === 'LONG' ? 'trên đỉnh BB → Cấm đuổi LONG' : 'dưới đáy BB → Cấm đuổi SHORT'}!</i>\n`;
   msg += `━━━━━━━━━━━━━━━━━━━━\n`;
   msg += `<i>🔮 Volume Scalper v5.1</i>`;
@@ -951,16 +1154,15 @@ async function sendBBBlockWarning(candle, indicators, oiData, blockedDir) {
 
 async function sendMA9_26BlockWarning(candle, indicators, oiData, blockedDir) {
   let msg = `⚠️ <b>[VN30F v5.1] MA9/26 CHẶN ${blockedDir}</b>\n`;
-  msg += `🕐 <b>${getVnTimeHHMMSS()}</b> (Nến ${candle.time}) | F1M: <b>${candle.close.toFixed(1)}</b>\n`;
-  msg += `   MA9: ${indicators.ma9.toFixed(1)} | MA26: ${indicators.ma26.toFixed(1)}\n`;
-  msg += `   Xu hướng: <b>${indicators.ma9_26Analysis.text}</b>\n\n`;
+  msg += `🕐 <b>${getVnTimeHHMMSS()}</b> (Nến ${candle.time}) | F1M: <b>${candle.close.toFixed(1)}</b>\n\n`;
+  msg += `📈 <b>Chỉ báo:</b>\n   ${buildIndicatorBlock(indicators)}\n\n`;
   msg += `💡 <i>Tín hiệu ${blockedDir} ngược cấu trúc MA9 & MA26 → Cấm đuổi lệnh!</i>\n`;
   msg += `━━━━━━━━━━━━━━━━━━━━\n`;
   msg += `<i>🔮 Volume Scalper v5.1</i>`;
   await sendDerivativesMessage(msg);
 }
 
-async function sendFlashCrashWarning(currentPrice, dropPts, dropWindow, fromPrice, isAfter14h, wasLong) {
+async function sendFlashCrashWarning(currentPrice, dropPts, dropWindow, fromPrice, isAfter14h, wasLong, indicators) {
   let msg = `🚨🚨🚨 <b>[CẢNH BÁO KHẨN CẤP] CÁ MẬP ÚP BÔ / FORCE SELL / FLASH CRASH!</b>\n`;
   msg += `🕐 <b>${getVnTimeHHMMSS()}</b> | F1M: <b>${currentPrice.toFixed(1)}</b>\n\n`;
 
@@ -969,6 +1171,11 @@ async function sendFlashCrashWarning(currentPrice, dropPts, dropWindow, fromPric
   if (isAfter14h) {
     msg += `   ⚠️ <b>ĐẶC BIỆT NGUY HIỂM SAU 14H00 — Giờ Call Margin & Xả Kho Lái!</b>\n`;
   }
+
+  if (indicators) {
+    msg += `\n📈 <b>Chỉ báo:</b>\n   ${buildIndicatorBlock(indicators)}\n`;
+  }
+
   msg += `\n🛡️ <b>HÀNH ĐỘNG HỆ THỐNG:</b>\n`;
   if (wasLong) {
     msg += `   🛑 <b>ĐÃ TỰ ĐỘNG THOÁT KHẨN CẤP VỊ THẾ LONG @ ${currentPrice.toFixed(1)}!</b>\n`;
@@ -991,6 +1198,8 @@ async function sendTripleTopWarning(candle, tripleTop, indicators, oiData) {
   msg += `   • Đỉnh 1: <b>${tripleTop.p1.high.toFixed(1)}</b> (${tripleTop.p1.time})\n`;
   msg += `   • Đỉnh 2: <b>${tripleTop.p2.high.toFixed(1)}</b> (${tripleTop.p2.time})\n`;
   msg += `   • Đỉnh 3: <b>${candle.high.toFixed(1)}</b> (${candle.time}) → Rút râu trên ↑<b>${candle.upperWick}đ</b> tụt về ${candle.close.toFixed(1)}\n\n`;
+
+  msg += `📈 <b>Chỉ báo:</b>\n   ${buildIndicatorBlock(indicators)}\n\n`;
 
   msg += `💡 <b>Nhận định:</b> Lái kéo fakeout dụ Long đỉnh rồi xả!\n`;
   msg += `👉 <b>ĐANG CẦM LONG:</b> Đã đóng / Chốt lời ngay lập tức!\n`;
