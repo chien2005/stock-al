@@ -138,6 +138,24 @@ async function fetchIntraday1m(symbol = 'VN30F1M') {
   return null;
 }
 
+// ─── FETCH INTRADAY 5-MINUTE (cho Volume & Flow Engine 5M) ─────
+async function fetchIntraday5m(symbol = 'VN30F1M') {
+  if (_cache.intraday5m && (Date.now() - _cache.intraday5m.fetchedAt < CACHE_TTL_5M)) {
+    return _cache.intraday5m.data;
+  }
+
+  try {
+    const data = await fetchOHLCV(symbol, '5', 5);
+    if (data && data.c && data.c.length > 0) {
+      _cache.intraday5m = { data, fetchedAt: Date.now() };
+      return data;
+    }
+  } catch (e) {
+    console.error('   ⚠️ Intraday 5m fetch error:', e.message);
+  }
+  return null;
+}
+
 // ─── FETCH INTRADAY VN30 INDEX 1-MINUTE ──────────────────────
 async function fetchVN30Intraday1m() {
   const now = Math.floor(Date.now() / 1000);
@@ -465,6 +483,7 @@ async function fetchAllData() {
 module.exports = {
   fetchOHLCV,
   fetchIntraday1m,
+  fetchIntraday5m,
   fetchVN30Intraday1m,
   fetchRealtimeVN30,
   fetchRealtimeFuturesPrice,

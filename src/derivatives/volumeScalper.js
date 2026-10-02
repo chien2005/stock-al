@@ -25,7 +25,7 @@ const START_TIME = '09:12';               // Bỏ qua 12 phút đầu phiên (AT
 const STOP_ENTRY_TIME = '14:20';          // Không mở mới sau 14:20
 const END_TIME = '14:30';                 // Dừng poll nến 1p
 
-// Volume thresholds
+// Volume thresholds (1-Minute)
 const VOL_ENTRY_MIN = 2300;               // Vol tối thiểu để vào lệnh
 const VOL_ENTRY_MAX = 2800;               // Vol tối đa vào lệnh (trên = FOMO)
 const VOL_FOMO = 2800;                    // Cấm FOMO trên mức này
@@ -37,6 +37,18 @@ const VOL_QUIET_THRESHOLD = 1000;         // Dưới 1.000 HĐ và không có bi
 const VOL_ANOMALY_LOW = 1300;             // Cảnh báo "bơm đểu" nếu dưới mức này
 const VOL_ANOMALY_MED = 1500;             // Cảnh báo "cân nhắc quan sát"
 const VOL_CONSECUTIVE_EXIT_RATIO = 0.9;   // 2-3 cây đối ứng cộng lại >= 90%
+
+// Volume thresholds (5-Minute — v5.2)
+const START_5M_TIME = '09:15';             // Bỏ qua nến 5p đầu ATO (09:00-09:10)
+const VOL_5M_BREAKOUT_MIN = 4800;          // Vol tối thiểu nến 5p bùng nổ (vùng 5k-8k HĐ)
+const VOL_5M_BREAKOUT_RATIO_MIN = 1.15;    // 115% MA20/MA50 Vol
+const VOL_5M_BREAKOUT_RATIO_MAX = 1.45;    // 145% MA20/MA50 Vol
+const VOL_5M_CONT_RATIO_MIN = 0.90;        // 90% MA20/MA50 Vol cho 2 cây liên tiếp
+const VOL_5M_CONT_RATIO_MAX = 1.15;        // 110-115% MA20/MA50 Vol cho 2 cây liên tiếp
+const VOL_5M_CONT_MIN_BAR_VOL = 3800;      // Vol tối thiểu mỗi cây trong 2 cây liên tiếp
+const VOL_5M_CLIMAX_RATIO = 1.90;          // > 190% MA20/MA50 Vol (Chốt lời đỉnh/đáy, FOMO cao trào)
+const VOL_5M_EXIT_OPPOSITE_MIN = 5000;     // Nến 5M đối ứng nổ vol >= 5.000 HĐ
+const WICK_5M_TRAP_MIN = 2.0;              // Râu nến 5p >= 2.0đ = Trap râu
 
 // Wick thresholds
 const WICK_TRAP_MIN = 1.5;                // Râu >= 1.5đ = Trap
@@ -66,6 +78,7 @@ const ANOMALY_COOLDOWN_MS = 3 * 60 * 1000; // 3 phút giữa 2 cảnh báo anoma
 const FLASH_COOLDOWN_MS = 90 * 1000;      // 90s giữa 2 cảnh báo Flash Crash
 const TRIPLE_TOP_COOLDOWN_MS = 15 * 60 * 1000; // 15 phút giữa 2 cảnh báo Triple Top
 const SWING_COOLDOWN_MS = 5 * 60 * 1000;  // 5 phút giữa 2 cảnh báo Swing High
+const ALERT_5M_COOLDOWN_MS = 4 * 60 * 1000; // 4 phút cooldown cho alert 5M tương tự
 
 // ─── STATE ───────────────────────────────────────────────────
 const _state = {
@@ -79,7 +92,9 @@ const _state = {
   maxProfit: 0,
   breakevenActive: false,
   lastProcessedTimestamp: 0,     // Timestamp nến 1p cuối cùng đã xử lý
-  processedCandles: [],          // Lịch sử nến đã xử lý trong ngày
+  processedCandles: [],          // Lịch sử nến 1p đã xử lý trong ngày
+  lastProcessed5mTimestamp: 0,   // Timestamp nến 5p cuối cùng đã xử lý
+  processed5mCandles: [],        // Lịch sử nến 5p đã xử lý
   tradeLog: [],                  // Lịch sử lệnh trong ngày
   priceTicks: [],                // [{ time: ms, price: number }] lưu 70s gần nhất
   lastNotiTime: 0,
@@ -90,6 +105,10 @@ const _state = {
   lastTripleTopAlertTime: 0,
   lastSwingAlertTime: 0,
   lastConfirmedPeak: null,       // { time, high, close }
+  last5mClimaxAlertTime: 0,      // Cooldown cảnh báo 5M Climax
+  last5mContAlertTime: 0,        // Cooldown cảnh báo 5M Continuation
+  last5mBreakoutAlertTime: 0,    // Cooldown cảnh báo 5M Breakout
+  last5mOppositeAlertTime: 0,    // Cooldown cảnh báo 5M Opposite Exit
 };
 
 // ─── HELPERS ─────────────────────────────────────────────────
@@ -381,6 +400,44 @@ function parseCandles(rawData) {
     candles.push({
       timestamp: rawData.t[i],
       time: timeStr,
+      open: o,
+      high: h,
+      low: l,
+      close: c,
+      volume: v,
+      isGreen,
+      body: Number(body.toFixed(2)),
+      upperWick: Number(upperWick.toFixed(2)),
+      lowerWick: Number(lowerWick.toFixed(2)),
+    });
+  }
+  return candles;
+}
+
+// ─── PARSE RAW OHLCV 5M → CANDLE OBJECTS ─────────────────────
+function parse5mCandles(rawData) {
+  if (!rawData || !rawData.t || !rawData.c) return [];
+  const candles = [];
+  for (let i = 0; i < rawData.t.length; i++) {
+    const t = rawData.t[i];
+    const timeStr = candleTimeStr(t);
+    const isToday = isTodayCandle(t);
+
+    const o = rawData.o[i];
+    const h = rawData.h[i];
+    const l = rawData.l[i];
+    const c = rawData.c[i];
+    const v = rawData.v[i];
+    const isGreen = c >= o;
+    const body = Math.abs(c - o);
+    const upperWick = h - Math.max(o, c);
+    const lowerWick = Math.min(o, c) - l;
+
+    candles.push({
+      idx: i,
+      timestamp: t,
+      time: timeStr,
+      isToday,
       open: o,
       high: h,
       low: l,
@@ -1210,7 +1267,329 @@ async function sendTripleTopWarning(candle, tripleTop, indicators, oiData) {
   await sendDerivativesMessage(msg);
 }
 
-// ─── MAIN POLL CYCLE (NẾN 1 PHÚT) ────────────────────────────
+// ─── 5-MINUTE INDICATOR BLOCK ────────────────────────────────
+function build5mIndicatorBlock(indicators) {
+  if (!indicators) return '';
+  let block = '';
+  if (indicators.ma20Price && indicators.ma50Price) {
+    block += `MA20 Giá: <b>${indicators.ma20Price.toFixed(1)}</b> | MA50 Giá: <b>${indicators.ma50Price.toFixed(1)}</b>`;
+  }
+  if (indicators.bb) {
+    block += `\n   BB 5M: ↑<b>${indicators.bb.upper}</b> | Mid <b>${indicators.bb.middle}</b> | ↓<b>${indicators.bb.lower}</b>`;
+  }
+  if (indicators.macdAnalysis) {
+    block += `\n   🌊 <b>MACD 5M:</b> ${indicators.macdAnalysis.text}`;
+  }
+  if (indicators.rsiAnalysis) {
+    block += `\n   ⚡ <b>RSI 5M(14):</b> ${indicators.rsiAnalysis.text}`;
+  }
+  return block;
+}
+
+// ─── 5-MINUTE NOTIFICATION FUNCTIONS ─────────────────────────
+async function send5mBreakoutSignal(candle, dir, indicators, oiData, plan) {
+  const isLong = dir === 'LONG';
+  let msg = `🚀 <b>[VN30F 5M] BÙNG NỔ XU HƯỚNG — 1 CÂY ${dir} (115-145% MA)</b>\n`;
+  msg += `🕐 <b>${getVnTimeHHMMSS()}</b> (Nến 5M ${candle.time}) | F1M: <b>${candle.close.toFixed(1)}</b>\n\n`;
+
+  // Khối Volume 5M
+  msg += `📊 <b>Khối Lượng 5M Bùng Nổ Chuẩn Form:</b>\n`;
+  msg += `   ${isLong ? '🟢' : '🔴'} Volume: <b>${candle.volume.toLocaleString()} HĐ</b> (<b>${(indicators.volRatioAvg * 100).toFixed(0)}% MA Vol</b>)\n`;
+  msg += `   MA20 Vol: ${Math.round(indicators.ma20Vol).toLocaleString()} | MA50 Vol: ${Math.round(indicators.ma50Vol).toLocaleString()} | Khoảng chuẩn: <b>115% - 145%</b>\n`;
+  msg += `   Body: ${candle.body}đ | Râu ↑${candle.upperWick}đ ↓${candle.lowerWick}đ\n\n`;
+
+  // Cấu trúc giá & MA
+  msg += `💹 <b>Cấu Trúc Giá 5M:</b>\n`;
+  msg += `   Giá ${candle.close.toFixed(1)} <b>${isLong ? '> MA20 & MA50 (Đồng thuận Uptrend 🟢)' : '< MA20 & MA50 (Đồng thuận Downtrend 🔴)'}</b>\n`;
+  msg += `   ${build5mIndicatorBlock(indicators)}\n\n`;
+
+  // Thanh khoản & Dòng tiền
+  const oiBlock = buildOIBlock(oiData);
+  if (oiBlock) {
+    msg += `💰 <b>Thanh khoản:</b>\n   ${oiBlock}\n\n`;
+  }
+
+  // Kế hoạch giao dịch
+  msg += `🎯 <b>CHIẾN LƯỢC GIAO DỊCH 5M:</b>\n`;
+  msg += `   👉 <b>Hành động:</b> Mở / Giữ <b>${dir} @ ${plan.entry.toFixed(1)}</b>\n`;
+  msg += `   🎯 <b>TP1 (Chốt 50%):</b> <b>${plan.tp1.toFixed(1)}</b> (+${plan.targetPnl1.toFixed(1)}đ)\n`;
+  msg += `   🎯 <b>TP2 (Gồng Sóng):</b> <b>${plan.tp2.toFixed(1)}</b> (+${plan.targetPnl2.toFixed(1)}đ)\n`;
+  msg += `   🛑 <b>Cắt lỗ (SL):</b> ${plan.sl.toFixed(1)} (-${Math.abs(plan.entry - plan.sl).toFixed(1)}đ)\n`;
+  msg += `   💡 <i>Khung 5M lọc sạch nhiễu vi mô 1M → Tự tin gồng trọn target TP1 & TP2!</i>\n`;
+
+  msg += `\n━━━━━━━━━━━━━━━━━━━━\n`;
+  msg += `<i>🔮 Volume Scalper v5.2 | VN Stock Bot</i>`;
+
+  await sendDerivativesMessage(msg);
+}
+
+async function send5mContinuationSignal(candle, prevCandle, dir, indicators, oiData, ratios) {
+  let msg = `🌊 <b>[VN30F 5M] SÓNG ĐẨY BỀN BỈ — 2 CÂY ${dir} LIÊN TIẾP (90-110% MA)</b>\n`;
+  msg += `🕐 <b>${getVnTimeHHMMSS()}</b> (Nến 5M ${candle.time}) | F1M: <b>${candle.close.toFixed(1)}</b>\n\n`;
+
+  msg += `📊 <b>Dòng Tiền Cá Mập Giữ Nhịp Đều Đặn:</b>\n`;
+  msg += `   • Cây 1 (${prevCandle.time}): <b>${prevCandle.volume.toLocaleString()} HĐ</b> (${(ratios.prevRatio * 100).toFixed(0)}% MA Vol)\n`;
+  msg += `   • Cây 2 (${candle.time}): <b>${candle.volume.toLocaleString()} HĐ</b> (${(ratios.volRatioAvg * 100).toFixed(0)}% MA Vol)\n`;
+  msg += `   MA20 Vol: ${Math.round(indicators.ma20Vol).toLocaleString()} | MA50 Vol: ${Math.round(indicators.ma50Vol).toLocaleString()} (Chuẩn nhịp: 90% - 110%)\n\n`;
+
+  msg += `📈 <b>Chỉ báo Kỹ Thuật 5M:</b>\n`;
+  msg += `   ${build5mIndicatorBlock(indicators)}\n\n`;
+
+  const oiBlock = buildOIBlock(oiData);
+  if (oiBlock) {
+    msg += `💰 <b>Thanh khoản:</b>\n   ${oiBlock}\n\n`;
+  }
+
+  msg += `🛡️ <b>HÀNH ĐỘNG KHUYẾN NGHỊ:</b>\n`;
+  msg += `   ✅ 2 cây cùng chiều giữ vol đều đặn → Không có áp lực xả cản trở!\n`;
+  msg += `   👉 <b>TIẾP TỤC GỒNG VỊ THẾ ${dir}</b> ăn trọn mục tiêu <b>TP1 (+4-6đ)</b> và <b>TP2 (+8-12đ)</b>!\n`;
+  if (_state.position === 'NONE') {
+    msg += `   👉 Có thể cân nhắc mở vị thế thuận sóng ${dir} theo nhịp đẩy bền bỉ.\n`;
+  }
+
+  msg += `\n━━━━━━━━━━━━━━━━━━━━\n`;
+  msg += `<i>🔮 Volume Scalper v5.2 | VN Stock Bot</i>`;
+
+  await sendDerivativesMessage(msg);
+}
+
+async function send5mClimaxWarning(candle, dir, indicators, oiData) {
+  const isGreen = candle.isGreen;
+  let msg = `🚨🚨🚨 <b>[VN30F 5M] CẢNH BÁO CAO TRÀO / CLIMAX — NỔ VOL ${candle.volume.toLocaleString()} HĐ (>190% MA)</b>\n`;
+  msg += `🕐 <b>${getVnTimeHHMMSS()}</b> (Nến 5M ${candle.time}) | ${isGreen ? '🟢 XANH' : '🔴 ĐỎ'} | F1M: <b>${candle.close.toFixed(1)}</b>\n\n`;
+
+  msg += `⚡ <b>KHỐI LƯỢNG CAO TRÀO ĐỘT BIẾN:</b>\n`;
+  msg += `   • Volume 5M: <b>${candle.volume.toLocaleString()} HĐ</b>\n`;
+  msg += `   • Tỷ lệ: <b>${(indicators.volRatioAvg * 100).toFixed(0)}% MA Vol</b> (Vượt ngưỡng đỏ > 190%!)\n`;
+  msg += `   • MA20 Vol: ${Math.round(indicators.ma20Vol).toLocaleString()} | MA50 Vol: ${Math.round(indicators.ma50Vol).toLocaleString()}\n`;
+  msg += `   • Thân: ${candle.body}đ | Râu ↑${candle.upperWick}đ ↓${candle.lowerWick}đ\n\n`;
+
+  msg += `⚠️ <b>BẢN CHẤT DÒNG TIỀN:</b>\n`;
+  if (isGreen) {
+    msg += `   🔥 <b>ĐÂY LÀ LÚC TAY TO CHỐT LỜI TRÊN ĐỈNH + ĐÁM ĐÔNG FOMO MUA ĐUỔI CAO TRÀO!</b>\n\n`;
+  } else {
+    msg += `   ⚡ <b>ĐÂY LÀ LÚC TAY TO HẤP THỤ GOM HÀNG ĐÁY + ĐÁM ĐÔNG BÁN THÁO HOẢNG LOẠN!</b>\n\n`;
+  }
+
+  msg += `🛑 <b>QUY TẮC SỐNG CÒN (TUYỆT ĐỐI TUÂN THỦ):</b>\n`;
+  msg += `   ⛔ <b>CẤM TUYỆT ĐỐI ĐU BÁM HOẶC BỒI THÊM VỊ THẾ VÀO CÂY NÀY!</b>\n`;
+  msg += `   👉 <b>ĐANG CẦM LỆNH CÙNG CHIỀU:</b> Đã kích hoạt chốt lời bảo toàn lợi nhuận tối đa!\n`;
+  msg += `   👉 <b>ĐỨNG NGOÀI QUAN SÁT:</b> Không fomo đỉnh, không bắt dao rơi đáy!\n\n`;
+
+  msg += `📈 <b>Chỉ báo Kỹ Thuật 5M:</b>\n`;
+  msg += `   ${build5mIndicatorBlock(indicators)}\n`;
+
+  msg += `\n━━━━━━━━━━━━━━━━━━━━\n`;
+  msg += `<i>🔮 Volume Scalper v5.2 | VN Stock Bot</i>`;
+
+  await sendDerivativesMessage(msg);
+}
+
+async function send5mOppositeExit(candle, closedPos, trade, indicators, oiData) {
+  const isGreen = candle.isGreen;
+  let msg = `⚠️ <b>[VN30F 5M] ĐÓNG VỊ THẾ — CÂY ĐỐI ỨNG 5M NỔ VOL ${candle.volume.toLocaleString()} HĐ</b>\n`;
+  msg += `🕐 <b>${getVnTimeHHMMSS()}</b> (Nến 5M ${candle.time}) | F1M: <b>${candle.close.toFixed(1)}</b>\n\n`;
+
+  msg += `📊 <b>Chi Tiết Nến Đối Ứng 5M:</b>\n`;
+  msg += `   ${isGreen ? '🟢 XANH' : '🔴 ĐỎ'} Vol: <b>${candle.volume.toLocaleString()} HĐ</b> (<b>${(indicators.volRatioAvg * 100).toFixed(0)}% MA Vol</b>)\n`;
+  msg += `   Body: ${candle.body}đ | Râu ↑${candle.upperWick}đ ↓${candle.lowerWick}đ\n\n`;
+
+  msg += `📋 <b>Xử Lý Vị Thế:</b>\n`;
+  msg += `   🛑 <b>ĐÃ ĐÓNG VỊ THẾ ${closedPos} @ ${candle.close.toFixed(1)}</b> (${trade.pnl >= 0 ? '+' : ''}${trade.pnl}đ)\n`;
+  msg += `   💡 <b>Lý do:</b> Xuất hiện nến 5M đối ứng nổ vol mạnh ngược chiều → Thoát vị thế ngay để bảo toàn vốn và lãi!\n\n`;
+
+  msg += `📈 <b>Chỉ báo Kỹ Thuật 5M:</b>\n`;
+  msg += `   ${build5mIndicatorBlock(indicators)}\n`;
+
+  msg += `\n━━━━━━━━━━━━━━━━━━━━\n`;
+  msg += `<i>🔮 Volume Scalper v5.2 | VN Stock Bot</i>`;
+
+  await sendDerivativesMessage(msg);
+}
+
+// ─── 5-MINUTE CORE ENGINE ────────────────────────────────────
+async function processNew5mCandle(candle5m, all5mCandles, oiData) {
+  const now = Date.now();
+  const idx = candle5m.idx !== undefined ? candle5m.idx : all5mCandles.findIndex(c => c.timestamp === candle5m.timestamp);
+  if (idx < 20) return;
+
+  // Lịch sử volume & price để tính MA
+  const vSlice = all5mCandles.slice(Math.max(0, idx - 49), idx + 1).map(c => c.volume);
+  const cSlice = all5mCandles.slice(0, idx + 1).map(c => c.close);
+
+  const ma20Vol = vSlice.slice(-20).reduce((s, x) => s + x, 0) / Math.min(20, vSlice.length);
+  const ma50Vol = vSlice.reduce((s, x) => s + x, 0) / vSlice.length;
+  const avgMAVol = (ma20Vol + ma50Vol) / 2;
+
+  const volRatioAvg = avgMAVol > 0 ? candle5m.volume / avgMAVol : 1.0;
+  const volRatio20 = ma20Vol > 0 ? candle5m.volume / ma20Vol : 1.0;
+  const volRatio50 = ma50Vol > 0 ? candle5m.volume / ma50Vol : 1.0;
+
+  const ma20Price = calcSMA(cSlice, MA20_PERIOD);
+  const ma50Price = calcSMA(cSlice, MA50_PERIOD);
+  const bb5m = calcBollingerBands(cSlice, BB_PERIOD, BB_STDDEV);
+  const macdAnalysis5m = analyzeMACD(cSlice);
+  const rsiAnalysis5m = analyzeRSI(cSlice);
+
+  const indicators5m = {
+    ma20Vol,
+    ma50Vol,
+    avgMAVol,
+    volRatioAvg,
+    volRatio20,
+    volRatio50,
+    ma20Price,
+    ma50Price,
+    bb: bb5m,
+    macdAnalysis: macdAnalysis5m,
+    rsiAnalysis: rsiAnalysis5m,
+  };
+
+  const isGreen = candle5m.isGreen;
+  const dir = isGreen ? 'LONG' : 'SHORT';
+
+  console.log(`   ⏱️ [5M Engine] Nến ${candle5m.time} | ${isGreen ? '🟢 XANH' : '🔴 ĐỎ'} | Vol: ${candle5m.volume} (${(volRatioAvg * 100).toFixed(0)}% MA) | C: ${candle5m.close} | MA20P: ${ma20Price?.toFixed(1)} | MA50P: ${ma50Price?.toFixed(1)}`);
+
+  // ─── RULE 3: CẢNH BÁO CLIMAX CAO TRÀO / FOMO (> 190% MA20 & MA50) ──
+  const isClimax = volRatioAvg >= VOL_5M_CLIMAX_RATIO || (volRatio20 >= VOL_5M_CLIMAX_RATIO && volRatio50 >= VOL_5M_CLIMAX_RATIO);
+  if (isClimax) {
+    console.log(`   🔥 [5M Engine] CLIMAX CAO TRÀO: ${candle5m.time} | Vol ${candle5m.volume} (${(volRatioAvg * 100).toFixed(0)}% MA) > 190%!`);
+
+    // Nếu đang giữ vị thế cùng chiều với cây Climax -> Chốt lời ngay lập tức để bảo vệ lợi nhuận đỉnh/đáy!
+    if (_state.position === dir) {
+      const pnl = dir === 'LONG' ? (candle5m.close - _state.entryPrice) : (_state.entryPrice - candle5m.close);
+      const trade = {
+        type: _state.position,
+        entryTime: _state.entryTime,
+        entryPrice: _state.entryPrice,
+        exitTime: candle5m.time,
+        exitPrice: candle5m.close,
+        pnl: Number(pnl.toFixed(2)),
+        reason: `🔥 Chốt lời bảo toàn lợi nhuận: Nến 5M Climax > 190% MA (${(volRatioAvg * 100).toFixed(0)}% MA)`,
+        maxProfit: Number(_state.maxProfit.toFixed(2)),
+      };
+      _state.tradeLog.push(trade);
+      _state.position = 'NONE';
+    }
+
+    if (now - _state.last5mClimaxAlertTime > ALERT_5M_COOLDOWN_MS) {
+      _state.last5mClimaxAlertTime = now;
+      await send5mClimaxWarning(candle5m, dir, indicators5m, oiData);
+    }
+    return; // Cấm tuyệt đối đu bám/bồi vào theo yêu cầu user!
+  }
+
+  // ─── CÂY ĐỐI ỨNG 5M (EXIT KHI ĐANG CÓ VỊ THẾ) ──────────────
+  if (_state.position !== 'NONE') {
+    const isOpposite = (_state.position === 'LONG' && !isGreen) || (_state.position === 'SHORT' && isGreen);
+    const isOppositeVolStrong = candle5m.volume >= VOL_5M_EXIT_OPPOSITE_MIN || volRatioAvg >= VOL_5M_BREAKOUT_RATIO_MIN;
+
+    if (isOpposite && isOppositeVolStrong) {
+      const pnl = _state.position === 'LONG' ? (candle5m.close - _state.entryPrice) : (_state.entryPrice - candle5m.close);
+      const trade = {
+        type: _state.position,
+        entryTime: _state.entryTime,
+        entryPrice: _state.entryPrice,
+        exitTime: candle5m.time,
+        exitPrice: candle5m.close,
+        pnl: Number(pnl.toFixed(2)),
+        reason: `🛑 Cây 5M ${isGreen ? 'XANH' : 'ĐỎ'} đối ứng nổ vol ${candle5m.volume.toLocaleString()} HĐ (${(volRatioAvg * 100).toFixed(0)}% MA) → Đóng ${_state.position} ngay!`,
+        maxProfit: Number(_state.maxProfit.toFixed(2)),
+      };
+      _state.tradeLog.push(trade);
+      const closedPos = _state.position;
+      _state.position = 'NONE';
+
+      if (now - _state.last5mOppositeAlertTime > NOTI_COOLDOWN_MS) {
+        _state.last5mOppositeAlertTime = now;
+        await send5mOppositeExit(candle5m, closedPos, trade, indicators5m, oiData);
+      }
+      return;
+    }
+  }
+
+  // ─── RULE 1: 1 CÂY LONG/SHORT 5M BÙNG NỔ (BREAKOUT 115% - 145% MA) ──
+  const isVol115_145 = (volRatioAvg >= VOL_5M_BREAKOUT_RATIO_MIN && volRatioAvg <= VOL_5M_BREAKOUT_RATIO_MAX) ||
+                       (volRatio20 >= VOL_5M_BREAKOUT_RATIO_MIN && volRatio20 <= VOL_5M_BREAKOUT_RATIO_MAX && volRatio50 >= 1.10);
+  const isVolMinQualified = candle5m.volume >= VOL_5M_BREAKOUT_MIN;
+
+  // Nằm trên/dưới MA20 và MA50
+  const isPriceMAQualified = ma20Price && ma50Price && (
+    isGreen ? (candle5m.close > ma20Price && candle5m.close > ma50Price)
+            : (candle5m.close < ma20Price && candle5m.close < ma50Price)
+  );
+
+  // Lọc Trap râu nến (tiêu chuẩn 1p áp vào 5p)
+  const isWickTrap = isGreen
+    ? (candle5m.upperWick >= WICK_5M_TRAP_MIN && candle5m.upperWick > candle5m.body)
+    : (candle5m.lowerWick >= WICK_5M_TRAP_MIN && candle5m.lowerWick > candle5m.body);
+
+  // Lọc Bollinger Bands 5M (cấm đuổi đỉnh/đáy ngoài BB)
+  const isBBBlocked = bb5m && (
+    isGreen ? (candle5m.close > bb5m.upper) : (candle5m.close < bb5m.lower)
+  );
+
+  const isTimeValid = candle5m.time >= START_5M_TIME && candle5m.time <= STOP_ENTRY_TIME;
+
+  if (isVol115_145 && isVolMinQualified && isPriceMAQualified && !isWickTrap && !isBBBlocked && isTimeValid) {
+    console.log(`   🚀 [5M Engine] RULE 1 BREAKOUT 5M: ${candle5m.time} | ${dir} | Vol ${candle5m.volume} (${(volRatioAvg * 100).toFixed(0)}% MA)`);
+
+    const entry = candle5m.close;
+    const tp1 = dir === 'LONG' ? entry + 5.0 : entry - 5.0; // +4 đến +6đ
+    const tp2 = dir === 'LONG' ? entry + 10.0 : entry - 10.0; // +8 đến +12đ
+    const sl = dir === 'LONG' ? entry - 2.8 : entry + 2.8;
+
+    const plan = { entry, tp1, tp2, sl, targetPnl1: 5.0, targetPnl2: 10.0 };
+
+    if (_state.position === 'NONE') {
+      _state.position = dir;
+      _state.entryPrice = entry;
+      _state.entryTime = candle5m.time;
+      _state.entryVol = candle5m.volume;
+      _state.maxProfit = 0;
+      _state.breakevenActive = false;
+    }
+
+    if (now - _state.last5mBreakoutAlertTime > ALERT_5M_COOLDOWN_MS) {
+      _state.last5mBreakoutAlertTime = now;
+      await send5mBreakoutSignal(candle5m, dir, indicators5m, oiData, plan);
+    }
+    return;
+  }
+
+  // ─── RULE 2: 2 CÂY LONG/SHORT 5M LIÊN TIẾP (CONTINUATION 90% - 110% MA) ──
+  if (idx > 0) {
+    const prevCandle5m = all5mCandles[idx - 1];
+    const sameColor = isGreen === prevCandle5m.isGreen;
+
+    if (sameColor) {
+      const prevVSlice = all5mCandles.slice(Math.max(0, idx - 50), idx).map(c => c.volume);
+      const prevMa20V = prevVSlice.slice(-20).reduce((s, x) => s + x, 0) / Math.min(20, prevVSlice.length);
+      const prevMa50V = prevVSlice.reduce((s, x) => s + x, 0) / prevVSlice.length;
+      const prevAvgMA = (prevMa20V + prevMa50V) / 2;
+      const prevRatio = prevAvgMA > 0 ? prevCandle5m.volume / prevAvgMA : 1.0;
+
+      const isContVol1 = volRatioAvg >= VOL_5M_CONT_RATIO_MIN && volRatioAvg <= VOL_5M_CONT_RATIO_MAX;
+      const isContVol2 = prevRatio >= VOL_5M_CONT_RATIO_MIN && prevRatio <= VOL_5M_CONT_RATIO_MAX;
+      const isContMinVol = candle5m.volume >= VOL_5M_CONT_MIN_BAR_VOL && prevCandle5m.volume >= VOL_5M_CONT_MIN_BAR_VOL;
+
+      const isPrevWickTrap = isGreen
+        ? (prevCandle5m.upperWick >= WICK_5M_TRAP_MIN && prevCandle5m.upperWick > prevCandle5m.body)
+        : (prevCandle5m.lowerWick >= WICK_5M_TRAP_MIN && prevCandle5m.lowerWick > prevCandle5m.body);
+
+      if (isContVol1 && isContVol2 && isContMinVol && !isWickTrap && !isPrevWickTrap && isTimeValid) {
+        console.log(`   🌊 [5M Engine] RULE 2 SÓNG ĐẨY 5M: ${candle5m.time} | 2 cây ${dir} liên tiếp (${(prevRatio * 100).toFixed(0)}% & ${(volRatioAvg * 100).toFixed(0)}% MA)`);
+
+        if (now - _state.last5mContAlertTime > ALERT_5M_COOLDOWN_MS) {
+          _state.last5mContAlertTime = now;
+          await send5mContinuationSignal(candle5m, prevCandle5m, dir, indicators5m, oiData, { volRatioAvg, prevRatio });
+        }
+      }
+    }
+  }
+}
+
+// ─── MAIN POLL CYCLE (NẾN 1 PHÚT & NẾN 5 PHÚT) ───────────────
 async function pollCycle() {
   if (!isCurrentInstanceActive()) return;
   if (!dataFetcher.isMarketHours()) return;
@@ -1219,31 +1598,54 @@ async function pollCycle() {
   if (currentTime < START_TIME || currentTime > END_TIME) return;
 
   try {
-    const [rawIntraday, oiData] = await Promise.all([
+    const [rawIntraday1m, rawIntraday5m, oiData] = await Promise.all([
       dataFetcher.fetchIntraday1m('VN30F1M'),
+      dataFetcher.fetchIntraday5m('VN30F1M'),
       dataFetcher.fetchDerivativesOIData(),
     ]);
 
-    if (!rawIntraday || !rawIntraday.t || rawIntraday.t.length === 0) return;
-
-    const candles = parseCandles(rawIntraday);
-    if (candles.length === 0) return;
-
-    // Lọc nến đã đóng hoàn chỉnh (timestamp <= now - 50s)
     const nowSec = Math.floor(Date.now() / 1000);
-    const closedCandles = candles.filter(c => c.timestamp <= nowSec - 50);
-    if (closedCandles.length === 0) return;
 
-    // Lấy nến mới nhất vừa đóng xong
-    const targetCandle = closedCandles[closedCandles.length - 1];
-    if (targetCandle.timestamp <= _state.lastProcessedTimestamp) return;
+    // ─── 1. XỬ LÝ NẾN 1 PHÚT ───
+    if (rawIntraday1m && rawIntraday1m.t && rawIntraday1m.t.length > 0) {
+      const candles1m = parseCandles(rawIntraday1m);
+      if (candles1m.length > 0) {
+        // Lọc nến đã đóng hoàn chỉnh (timestamp <= now - 50s)
+        const closed1m = candles1m.filter(c => c.timestamp <= nowSec - 50);
+        if (closed1m.length > 0) {
+          const target1m = closed1m[closed1m.length - 1];
+          if (target1m.timestamp > _state.lastProcessedTimestamp) {
+            console.log(`   🔮 [Scalper 1M] Nến mới: ${target1m.time} (${getVnTimeHHMMSS()}) | ${target1m.isGreen ? 'XANH' : 'ĐỎ'} | Vol:${target1m.volume} | C:${target1m.close.toFixed(1)}`);
+            _state.processedCandles = closed1m;
+            _state.lastProcessedTimestamp = target1m.timestamp;
+            await processNewCandle(target1m, closed1m, oiData);
+          }
+        }
+      }
+    }
 
-    console.log(`   🔮 [Scalper] Nến mới: ${targetCandle.time} (${getVnTimeHHMMSS()}) | ${targetCandle.isGreen ? 'XANH' : 'ĐỎ'} | Vol:${targetCandle.volume} | C:${targetCandle.close.toFixed(1)}`);
+    // ─── 2. XỬ LÝ NẾN 5 PHÚT ───
+    if (rawIntraday5m && rawIntraday5m.t && rawIntraday5m.t.length > 0) {
+      const all5mCandles = parse5mCandles(rawIntraday5m);
+      if (all5mCandles.length > 0) {
+        // Nến 5p đã đóng hoàn chỉnh:
+        // Nến i < length - 1 chắc chắn đã đóng, hoặc cây cuối cùng khi nowSec >= timestamp + 280
+        const closed5m = all5mCandles.filter((c, i) => {
+          if (i < all5mCandles.length - 1) return true;
+          return (nowSec >= c.timestamp + 280);
+        });
 
-    _state.processedCandles = closedCandles;
-    _state.lastProcessedTimestamp = targetCandle.timestamp;
-
-    await processNewCandle(targetCandle, closedCandles, oiData);
+        if (closed5m.length > 0) {
+          const target5m = closed5m[closed5m.length - 1];
+          if (target5m.isToday && target5m.timestamp > _state.lastProcessed5mTimestamp) {
+            console.log(`   ⏱️ [Scalper 5M] Nến mới đóng: ${target5m.time} (${getVnTimeHHMMSS()}) | ${target5m.isGreen ? 'XANH' : 'ĐỎ'} | Vol:${target5m.volume} | C:${target5m.close.toFixed(1)}`);
+            _state.processed5mCandles = closed5m;
+            _state.lastProcessed5mTimestamp = target5m.timestamp;
+            await processNew5mCandle(target5m, all5mCandles, oiData);
+          }
+        }
+      }
+    }
   } catch (e) {
     console.error(`   ⚠️ [Scalper] Poll error: ${e.message}`);
   }
@@ -1252,9 +1654,9 @@ async function pollCycle() {
 // ─── START / STOP / RESET ────────────────────────────────────
 function start() {
   stop();
-  console.log(`   🔮 Volume Scalper v5.1: Started (poll 60s, fast tick 5s, entry ${START_TIME}-${STOP_ENTRY_TIME})`);
+  console.log(`   🔮 Volume Scalper v5.2: Started (1M scalper 60s, 5M volume engine, fast tick 5s, entry ${START_TIME}-${STOP_ENTRY_TIME})`);
 
-  // Poll nến 1p mỗi 60s
+  // Poll nến 1p & 5p mỗi 60s
   _state.timer = setInterval(() => {
     pollCycle().catch(e => console.error('   ⚠️ [Scalper] cycle error:', e.message));
   }, POLL_INTERVAL_MS);
@@ -1293,6 +1695,8 @@ function reset() {
   _state.breakevenActive = false;
   _state.lastProcessedTimestamp = 0;
   _state.processedCandles = [];
+  _state.lastProcessed5mTimestamp = 0;
+  _state.processed5mCandles = [];
   _state.tradeLog = [];
   _state.lastNotiTime = 0;
   _state.lastAnomalyNotiTime = 0;
@@ -1303,7 +1707,11 @@ function reset() {
   _state.lastTripleTopAlertTime = 0;
   _state.lastSwingAlertTime = 0;
   _state.lastConfirmedPeak = null;
-  console.log('   🔄 Volume Scalper v5.1: State reset');
+  _state.last5mClimaxAlertTime = 0;
+  _state.last5mContAlertTime = 0;
+  _state.last5mBreakoutAlertTime = 0;
+  _state.last5mOppositeAlertTime = 0;
+  console.log('   🔄 Volume Scalper v5.2: State reset');
 }
 
 function getState() {
@@ -1317,4 +1725,7 @@ module.exports = {
   getState,
   pollCycle,
   fastTickCycle,
+  processNewCandle,
+  processNew5mCandle,
+  parse5mCandles,
 };
