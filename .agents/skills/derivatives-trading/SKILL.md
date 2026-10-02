@@ -318,24 +318,23 @@ BẮT ĐẦU NGAY KHI TÔI HỎI CÂU ĐẦU TIÊN.
 
 ---
 
-## GHI CHÚ CHO DEVELOPER
+## GHI CHÚ CHO DEVELOPER & AI AGENT
+
+### Tài liệu tri thức chiến lược toàn diện:
+- Xem toàn bộ giáo trình thực chiến, ma trận volume 1M & 5M, và bộ lọc bẫy lái Trap Shield tại: [VN30F_MASTER_TRADING_PLAYBOOK.md](file:///d:/2026/c/docs/VN30F_MASTER_TRADING_PLAYBOOK.md)
 
 ### Khi dùng trong project code (vn-stock-bot):
 
 - File này nằm ở `.agents/skills/derivatives-trading/SKILL.md`
-- Logic scoring 0-12 điểm trong prompt này đồng bộ với [derivativesSignal.js](file:///d:/2026/c/src/derivativesSignal.js)
+- Logic volume scalper 1M & 5M đồng bộ với [volumeScalper.js](file:///d:/2026/c/src/derivatives/volumeScalper.js)
 - Rổ VN30 được cập nhật realtime từ [vn30Resolver.js](file:///d:/2026/c/src/vn30Resolver.js)
 - 6 mã trụ: VCB, VIC, VHM, FPT, BID, MWG — trùng với `PILLAR_SYMBOLS` trong code
 - Cụm Vingroup: VIC, VHM, VRE, VPL — trùng với `VIN_SYMBOLS` trong code
 
 ### Khi paste vào AI web:
 
-- Copy toàn bộ phần trong block ``` ở trên (từ "BẠN LÀ CHUYÊN GIA..." đến "BẮT ĐẦU NGAY...")
-- Paste vào đầu cuộc hội thoại mới trên Gemini/GPT/Claude
+- Copy toàn bộ phần trong block ``` ở trên (từ "BẠN LÀ CHUYÊN GIA..." đến "BẮT ĐẦU NGAY...") hoặc copy Phần VII trong [VN30F_MASTER_TRADING_PLAYBOOK.md](file:///d:/2026/c/docs/VN30F_MASTER_TRADING_PLAYBOOK.md)
+- Paste vào đầu cuộc hội thoại mới trên Gemini/GPT/Claude/DeepSeek
 - Sau đó hỏi bình thường, VD: "9h30 rồi, nên mở long hay short VN30F?"
 - AI sẽ tự search realtime và trả lời theo format đã quy định
 
-### Cập nhật:
-
-- Nếu rổ VN30 thay đổi (review tháng 1 và tháng 7 hàng năm), update lại danh sách
-- Nếu có thêm indicator/logic mới trong derivativesSignal.js, sync vào prompt này
