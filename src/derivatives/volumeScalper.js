@@ -54,6 +54,13 @@ const WICK_5M_TRAP_MIN = 2.0;              // Râu nến 5p >= 2.0đ = Trap râu
 const WICK_TRAP_MIN = 1.5;                // Râu >= 1.5đ = Trap
 const WICK_ANOMALY_MIN = 2.0;             // Râu >= 2.0đ + vol thấp = Anomaly warning
 
+// Trap / Dụ Long & Dụ Short thresholds (v5.3)
+const TRAP_MOVE_MIN = 1.5;                // Kéo/xả bất thường >= 1.5đ trong tgian ngắn
+const VOL_TRAP_LEVEL1_MAX = 1300;         // Mức độ 1: Vol kiệt quệ < 1.300 HĐ (Bơm/đạp đểu cực nặng)
+const VOL_TRAP_LEVEL2_MAX = 1500;         // Mức độ 2: Vol thiếu cầu/cung < 1.500 HĐ (Kéo/xả ảo)
+const TRAP_COOLDOWN_MS = 90 * 1000;       // 90s giữa 2 cảnh báo bẫy cùng loại
+const TRAP_PROTECTION_DURATION_MS = 2 * 60 * 1000; // Khóa entry trong 2 phút sau khi gặp bẫy dụ
+
 // Flash Crash thresholds (Cá mập úp bô / Force Sell)
 const FLASH_DROP_FAST_PTS = 5.0;          // Tụt >= 5 điểm trong vòng 15 giây
 const FLASH_DROP_1M_PTS = 7.0;            // Tụt >= 7 điểm trong vòng 60 giây
@@ -109,6 +116,10 @@ const _state = {
   last5mContAlertTime: 0,        // Cooldown cảnh báo 5M Continuation
   last5mBreakoutAlertTime: 0,    // Cooldown cảnh báo 5M Breakout
   last5mOppositeAlertTime: 0,    // Cooldown cảnh báo 5M Opposite Exit
+  trapCooldownUntil: 0,          // Timestamp kết thúc khóa entry bảo vệ chống bẫy dụ
+  lastTrapLevel1AlertTime: 0,    // Cooldown cảnh báo Dụ Long/Short Mức 1
+  lastTrapLevel2AlertTime: 0,    // Cooldown cảnh báo Dụ Long/Short Mức 2
+  lastFastTrapAlertTime: 0,      // Cooldown cảnh báo Fast Tick bẫy vài giây
 };
 
 // ─── HELPERS ─────────────────────────────────────────────────
@@ -505,15 +516,8 @@ async function processNewCandle(candle, allCandles, oiData) {
   // ─── CHECK CẤU TRÚC ĐỈNH SAU VS ĐỈNH TRƯỚC (SWING HIGHS) ─
   await checkSwingHighStructure(candle, allCandles);
 
-  // ─── CHECK ANOMALY WARNING (biến động mạnh + vol thấp) ────
-  const maxWick = Math.max(candle.upperWick, candle.lowerWick);
-  if (maxWick >= WICK_ANOMALY_MIN && candle.volume < VOL_ANOMALY_LOW && now - _state.lastAnomalyNotiTime > ANOMALY_COOLDOWN_MS) {
-    await sendAnomalyWarning(candle, indicators, oiData, 'critical');
-    _state.lastAnomalyNotiTime = now;
-  } else if (maxWick >= WICK_ANOMALY_MIN && candle.volume >= VOL_ANOMALY_LOW && candle.volume < VOL_ANOMALY_MED && now - _state.lastAnomalyNotiTime > ANOMALY_COOLDOWN_MS) {
-    await sendAnomalyWarning(candle, indicators, oiData, 'caution');
-    _state.lastAnomalyNotiTime = now;
-  }
+  // ─── CHECK BẪY DỤ LONG & DỤ SHORT (MỨC ĐỘ 1 & 2) ─────────
+  await checkDuLongDuShortTrap(candle, indicators, oiData);
 
   // ─── CHECK MA CROSSOVER (3 cây liên tiếp) ────────────────
   await checkMACrossover(allCandles, indicators, oiData);
@@ -616,6 +620,12 @@ async function processNewCandle(candle, allCandles, oiData) {
 
   // ─── 2. KIỂM TRA ENTRY KHI ĐANG NONE ─────────────────────
   if (_state.position === 'NONE' && candle.time >= START_TIME && candle.time <= STOP_ENTRY_TIME) {
+    // Chặn entry nếu đang trong thời gian bảo vệ chống bẫy Dụ Long/Dụ Short
+    if (now < _state.trapCooldownUntil) {
+      console.log(`   🚫 [Scalper] Chặn mở lệnh ${candle.time}: Đang trong thời gian bảo vệ chống bẫy Dụ Long/Dụ Short`);
+      return;
+    }
+
     // Cấm FOMO khi nổ vol quá lớn (> 2.800 HĐ)
     if (candle.volume > VOL_FOMO) {
       if (now - _state.lastNotiTime > NOTI_COOLDOWN_MS) {
@@ -1029,6 +1039,54 @@ async function fastTickCycle() {
 
       await sendFlashCrashWarning(currentPrice, dropPts, dropWindow, fromPrice, isAfter14h, wasLong, indicators);
     }
+
+    // ─── CHECK BẪY DỤ LONG / DỤ SHORT REALTIME (VÀI GIÂY ĐẾN 60 GIÂY) ───
+    if (!isFastDrop && !is1mDrop && ticks15s.length >= 2) {
+      const minPrice15s = Math.min(...ticks15s.map(t => t.price));
+      const jump15s = currentPrice - minPrice15s;
+
+      const minPrice60s = Math.min(...ticks60s.map(t => t.price));
+      const jump60s = currentPrice - minPrice60s;
+
+      const isFastTrapDrop = (drop15s >= TRAP_MOVE_MIN || drop60s >= TRAP_MOVE_MIN);
+      const isFastTrapJump = (jump15s >= TRAP_MOVE_MIN || jump60s >= TRAP_MOVE_MIN);
+
+      if ((isFastTrapDrop || isFastTrapJump) && (now - _state.lastFastTrapAlertTime > 60 * 1000)) {
+        const lastC = _state.processedCandles.length > 0 ? _state.processedCandles[_state.processedCandles.length - 1] : null;
+        const refVol = lastC ? lastC.volume : 0;
+
+        let trapLevel = 0;
+        let levelDesc = '';
+        if (refVol < VOL_TRAP_LEVEL1_MAX) {
+          trapLevel = 1;
+          levelDesc = 'MỨC ĐỘ 1: BƠM/ĐẠP ĐỂU VÀI GIÂY KHÔNG VOL (< 1.300 HĐ)';
+        } else if (refVol < VOL_TRAP_LEVEL2_MAX) {
+          trapLevel = 2;
+          levelDesc = 'MỨC ĐỘ 2: KÉO/XẢ ẢO VÀI GIÂY THIẾU CẦU/CUNG (< 1.500 HĐ)';
+        }
+
+        if (trapLevel > 0) {
+          _state.lastFastTrapAlertTime = now;
+          _state.trapCooldownUntil = now + TRAP_PROTECTION_DURATION_MS;
+
+          const isDrop = isFastTrapDrop && (!isFastTrapJump || drop15s >= jump15s);
+          const movePts = isDrop ? Math.max(drop15s, drop60s) : Math.max(jump15s, jump60s);
+          const trapType = isDrop ? 'DỤ_SHORT' : 'DỤ_LONG';
+          const moveDir = isDrop ? 'Đạp giảm nhanh' : 'Kéo giật nhanh';
+          const dirEmoji = isDrop ? '🔴' : '🟢';
+
+          let indicators = null;
+          if (_state.processedCandles && _state.processedCandles.length >= 26) {
+            const cArr = _state.processedCandles.map(c => c.close);
+            const macdAnalysis = analyzeMACD(cArr);
+            const rsiAnalysis = analyzeRSI(cArr);
+            indicators = { macdAnalysis, rsiAnalysis };
+          }
+
+          await sendRealtimeFastTrapWarning(currentPrice, movePts, moveDir, trapType, dirEmoji, trapLevel, levelDesc, refVol, indicators);
+        }
+      }
+    }
   } catch (e) {
     // Fast tick error silently
   }
@@ -1179,22 +1237,206 @@ async function sendFomoWarning(candle, indicators, oiData) {
   await sendDerivativesMessage(msg);
 }
 
+// ─── CHECK BẪY DỤ LONG & DỤ SHORT (MỨC ĐỘ 1 & 2) ─────────────
+async function checkDuLongDuShortTrap(candle, indicators, oiData) {
+  const now = Date.now();
+
+  // Tính các biên độ dịch chuyển giá của nến 1p
+  const dropBody = candle.open - candle.close; // Điểm giảm thân nến đỏ
+  const riseBody = candle.close - candle.open; // Điểm tăng thân nến xanh
+  const dropWick = candle.lowerWick;           // Râu dưới (giật xuống quét đáy rồi rút)
+  const riseWick = candle.upperWick;           // Râu trên (giật lên kéo đỉnh rồi rút)
+  const totalRange = candle.high - candle.low; // Tổng biên độ dao động
+
+  const maxDrop = Math.max(dropBody, dropWick);
+  const maxRise = Math.max(riseBody, riseWick);
+
+  const isDropMove = maxDrop >= TRAP_MOVE_MIN;
+  const isRiseMove = maxRise >= TRAP_MOVE_MIN;
+  const isLargeRange = totalRange >= TRAP_MOVE_MIN;
+
+  if (!isDropMove && !isRiseMove && !isLargeRange) return false;
+
+  // Xác định chiều dụ
+  let trapType = '';     // 'DỤ_SHORT' | 'DỤ_LONG' | 'GIẬT_QUÉT_2_ĐẦU'
+  let moveDir = '';      // 'Đạp giảm' | 'Kéo tăng' | 'Dao động giật'
+  let movePts = 0;
+  let dirEmoji = '';
+
+  if (isDropMove && (!isRiseMove || maxDrop >= maxRise)) {
+    trapType = 'DỤ_SHORT';
+    moveDir = 'Đạp giảm nhanh';
+    movePts = maxDrop;
+    dirEmoji = '🔴';
+  } else if (isRiseMove && (!isDropMove || maxRise >= maxDrop)) {
+    trapType = 'DỤ_LONG';
+    moveDir = 'Kéo tăng nhanh';
+    movePts = maxRise;
+    dirEmoji = '🟢';
+  } else {
+    trapType = 'GIẬT_QUÉT_2_ĐẦU';
+    moveDir = 'Dao động giật 2 đầu';
+    movePts = totalRange;
+    dirEmoji = '⚡';
+  }
+
+  // Xác định mức độ theo Volume 1 phút
+  let level = 0;
+  let levelDesc = '';
+
+  if (candle.volume < VOL_TRAP_LEVEL1_MAX) {
+    level = 1;
+    levelDesc = 'MỨC ĐỘ 1: BƠM/ĐẠP ĐỂU CỰC NẶNG (Vol teo tóp < 1.300 HĐ)';
+  } else if (candle.volume < VOL_TRAP_LEVEL2_MAX) {
+    level = 2;
+    levelDesc = 'MỨC ĐỘ 2: KÉO/XẢ ẢO THIẾU CẦU/CUNG (Vol thấp < 1.500 HĐ)';
+  } else {
+    return false; // Volume >= 1.500 HĐ không thuộc diện bẫy vol thấp
+  }
+
+  // Kích hoạt khóa mở vị thế (chống bị dụ vào lệnh)
+  _state.trapCooldownUntil = now + TRAP_PROTECTION_DURATION_MS;
+
+  const trapInfo = {
+    trapType,
+    level,
+    levelDesc,
+    moveDir,
+    movePts,
+    dirEmoji,
+    dropPts: maxDrop,
+    risePts: maxRise,
+  };
+
+  console.log(`   🚨 [Trap Shield] BẪY ${trapType} MỨC ${level}: ${candle.time} | ${moveDir} ${movePts.toFixed(1)}đ | Vol ${candle.volume} HĐ`);
+
+  const lastAlertTime = level === 1 ? _state.lastTrapLevel1AlertTime : _state.lastTrapLevel2AlertTime;
+  if (now - lastAlertTime > TRAP_COOLDOWN_MS) {
+    if (level === 1) _state.lastTrapLevel1AlertTime = now;
+    else _state.lastTrapLevel2AlertTime = now;
+    await sendTrapWarning(candle, trapInfo, indicators, oiData);
+  }
+
+  return true;
+}
+
+async function sendTrapWarning(candle, trapInfo, indicators, oiData) {
+  const isLevel1 = trapInfo.level === 1;
+  const isDuShort = trapInfo.trapType === 'DỤ_SHORT';
+  const isDuLong = trapInfo.trapType === 'DỤ_LONG';
+
+  let title = isLevel1
+    ? `🚨🚨 [CẢNH BÁO MỨC 1] BẪY ${trapInfo.trapType} — BƠM/ĐẠP ĐỂU VOL THẤP`
+    : `⚠️ [CẢNH BÁO MỨC 2] BẪY ${trapInfo.trapType} — KÉO/XẢ ẢO THIẾU VOL`;
+
+  let msg = `<b>${title}</b>\n`;
+  msg += `🕐 <b>${getVnTimeHHMMSS()}</b> (Nến 1M ${candle.time}) | F1M: <b>${candle.close.toFixed(1)}</b>\n\n`;
+
+  // Chi tiết biến động
+  msg += `⚡ <b>BẤT THƯỜNG GIÁ VÀ KHỐI LƯỢNG (1 Phút):</b>\n`;
+  msg += `   • Biến động: <b>${trapInfo.dirEmoji} ${trapInfo.moveDir} ${trapInfo.movePts.toFixed(1)} điểm</b> trong vòng 1 phút!\n`;
+  msg += `   • Volume: <b>${candle.volume.toLocaleString()} HĐ</b> (⚠️ ${trapInfo.levelDesc})\n`;
+  msg += `   • Nến: O:${candle.open.toFixed(1)} C:${candle.close.toFixed(1)} | H:${candle.high.toFixed(1)} L:${candle.low.toFixed(1)}\n`;
+  msg += `   • Râu: ↑${candle.upperWick}đ ↓${candle.lowerWick}đ | Thân: ${candle.body}đ\n\n`;
+
+  // Bản chất chiêu trò của lái
+  msg += `🔍 <b>BẢN CHẤT CHIÊU TRÒ CỦA ĐỘI LÁI:</b>\n`;
+  if (isDuShort) {
+    msg += `   👉 <i>Lái cố tình đạp điểm rơi nhanh ≥ 1.5đ trong vùng thanh khoản mỏng (vol không có) nhằm:</i>\n`;
+    msg += `      1️⃣ Dụ trader yếu bóng vía vội vàng <b>SHORT ĐU ĐÁY</b> rồi kéo giật ngược lên giết Short.\n`;
+    msg += `      2️⃣ Rung dọa quét Stoploss ép phe LONG bán tháo non trước khi kéo tiếp.\n\n`;
+  } else if (isDuLong) {
+    msg += `   👉 <i>Lái cố tình kéo ảo lên nhanh ≥ 1.5đ trong vùng thanh khoản mỏng (vol không có) nhằm:</i>\n`;
+    msg += `      1️⃣ Dụ đám đông FOMO <b>LONG ĐU ĐỈNH</b> rồi xả hàng úp bô.\n`;
+    msg += `      2️⃣ Rung dọa quét Stoploss ép phe SHORT cắt lỗ non trước khi đạp tiếp.\n\n`;
+  } else {
+    msg += `   👉 <i>Lái quay tay giật 2 đầu quét sạch Stoploss của cả 2 phe Long/Short trong thanh khoản kiệt quệ!</i>\n\n`;
+  }
+
+  // Khuyến nghị hành động hệ thống
+  msg += `🛡️ <b>HÀNH ĐỘNG HỆ THỐNG & KHUYẾN NGHỊ:</b>\n`;
+  msg += `   ⛔ <b>KHÓA LỆNH: TUYỆT ĐỐI CẤM ĐUA LỆNH ĐU BÁM THEO BẪY NÀY!</b>\n`;
+
+  if (_state.position === 'LONG') {
+    if (isDuShort) {
+      msg += `   👉 <b>ĐANG CẦM LONG:</b> Giữ nguyên vị thế! <b>TUYỆT ĐỐI KHÔNG CẮT LỖ NON / KHÔNG ĐẢO SHORT</b> theo cú đạp không vol này!\n`;
+    } else {
+      msg += `   👉 <b>ĐANG CẦM LONG:</b> Lái kéo ảo vol thấp, canh chốt lời chủ động, KHÔNG bồi thêm Long!\n`;
+    }
+  } else if (_state.position === 'SHORT') {
+    if (isDuLong) {
+      msg += `   👉 <b>ĐANG CẦM SHORT:</b> Giữ nguyên vị thế! <b>TUYỆT ĐỐI KHÔNG CẮT LỖ NON / KHÔNG ĐẢO LONG</b> theo cú kéo không vol này!\n`;
+    } else {
+      msg += `   👉 <b>ĐANG CẦM SHORT:</b> Lái đạp ảo vol thấp, canh chốt lời chủ động, KHÔNG bồi thêm Short!\n`;
+    }
+  } else {
+    msg += `   👉 <b>ĐANG ĐỨNG NGOÀI:</b> Tiếp tục quan sát ngoài thị trường, chờ nến có vol thật xác nhận!\n`;
+  }
+
+  // Chỉ báo
+  msg += `\n📈 <b>Chỉ báo:</b>\n   ${buildIndicatorBlock(indicators)}\n`;
+
+  msg += `\n━━━━━━━━━━━━━━━━━━━━\n`;
+  msg += `<i>🔮 Volume Scalper v5.2 | Phòng Tránh Bẫy Dụ VN30F</i>`;
+
+  await sendDerivativesMessage(msg);
+}
+
+async function sendRealtimeFastTrapWarning(currentPrice, movePts, moveDir, trapType, dirEmoji, level, levelDesc, refVol, indicators) {
+  const isLevel1 = level === 1;
+  const isDuShort = trapType === 'DỤ_SHORT';
+
+  let title = isLevel1
+    ? `🚨🚨 [REALTIME VÀI GIÂY — MỨC 1] BẪY ${trapType} — BƠM/ĐẠP ĐỂU VOL THẤP`
+    : `⚠️ [REALTIME VÀI GIÂY — MỨC 2] BẪY ${trapType} — KÉO/XẢ ẢO THIẾU VOL`;
+
+  let msg = `<b>${title}</b>\n`;
+  msg += `🕐 <b>${getVnTimeHHMMSS()}</b> | F1M: <b>${currentPrice.toFixed(1)}</b>\n\n`;
+
+  msg += `⚡ <b>BIẾN ĐỘNG GIẬT NHANH (Vài giây đến 60s):</b>\n`;
+  msg += `   • Biến động: <b>${dirEmoji} ${moveDir} ${movePts.toFixed(1)} điểm</b> trong vài giây!\n`;
+  msg += `   • Vol nến 1p tham chiếu: <b>${refVol.toLocaleString()} HĐ</b> (⚠️ ${levelDesc})\n\n`;
+
+  msg += `🔍 <b>BẢN CHẤT CHIÊU TRÒ:</b>\n`;
+  if (isDuShort) {
+    msg += `   👉 Lái cố tình đạp điểm giật xuống trong vài giây với volume teo tóp nhằm <b>DỤ ĐU SHORT ĐÁY</b> hoặc dọa quét Stoploss phe Long!\n\n`;
+  } else {
+    msg += `   👉 Lái cố tình kéo điểm giật lên trong vài giây với volume teo tóp nhằm <b>DỤ FOMO LONG ĐỈNH</b> hoặc dọa quét Stoploss phe Short!\n\n`;
+  }
+
+  msg += `🛑 <b>HÀNH ĐỘNG BẢO VỆ:</b>\n`;
+  msg += `   ⛔ <b>KHÓA LỆNH: CẤM TUYỆT ĐỐI ĐU BÁM THEO NHỊP GIẬT NÀY!</b>\n`;
+  if (_state.position === 'LONG') {
+    if (isDuShort) msg += `   👉 <b>ĐANG CẦM LONG:</b> Bình tĩnh giữ lệnh, <b>CẤM BÁN THÁO / CẤM ĐẢO SHORT</b> theo cú đạp không vol này!\n`;
+    else msg += `   👉 <b>ĐANG CẦM LONG:</b> Lái kéo ảo, canh chốt lời chủ động, không bồi thêm Long!\n`;
+  } else if (_state.position === 'SHORT') {
+    if (!isDuShort) msg += `   👉 <b>ĐANG CẦM SHORT:</b> Bình tĩnh giữ lệnh, <b>CẤM CẮT LỖ NON / CẤM ĐẢO LONG</b> theo cú kéo không vol này!\n`;
+    else msg += `   👉 <b>ĐANG CẦM SHORT:</b> Lái đạp ảo, canh chốt lời chủ động, không bồi thêm Short!\n`;
+  } else {
+    msg += `   👉 <b>ĐANG ĐỨNG NGOÀI:</b> Tiếp tục quan sát ngoài thị trường!\n`;
+  }
+
+  if (indicators) {
+    msg += `\n📈 <b>Chỉ báo:</b>\n   ${buildIndicatorBlock(indicators)}\n`;
+  }
+
+  msg += `\n━━━━━━━━━━━━━━━━━━━━\n`;
+  msg += `<i>🔮 Volume Scalper v5.2 | VN Stock Bot</i>`;
+
+  await sendDerivativesMessage(msg);
+}
+
 async function sendAnomalyWarning(candle, indicators, oiData, severity) {
   const isCritical = severity === 'critical';
-  let msg = `${isCritical ? '🚨' : '⚠️'} <b>[VN30F v5.1] ${isCritical ? 'BƠM ĐỂU GÂY NHIỄU' : 'CÂN NHẮC QUAN SÁT'}</b>\n`;
-  msg += `🕐 <b>${getVnTimeHHMMSS()}</b> (Nến ${candle.time}) | ${candle.isGreen ? '🟢' : '🔴'} | F1M: <b>${candle.close.toFixed(1)}</b>\n`;
-  msg += `   Vol: <b>${candle.volume.toLocaleString()} HĐ</b> (thấp!) | Râu ↑${candle.upperWick}đ ↓${candle.lowerWick}đ\n\n`;
-  msg += `📈 <b>Chỉ báo:</b>\n   ${buildIndicatorBlock(indicators)}\n\n`;
-
-  if (_state.position !== 'NONE') {
-    msg += `📋 Đang cầm ${_state.position} @ ${_state.entryPrice.toFixed(1)}\n`;
-    msg += `💡 <i>Quan sát, KHÔNG vội đảo/đóng. Vol quá thấp = Nhiễu!</i>\n`;
-  } else {
-    msg += `💡 <i>KHÔNG có lệnh → Tuyệt đối KHÔNG FOMO nến bơm đểu này!</i>\n`;
-  }
-  msg += `━━━━━━━━━━━━━━━━━━━━\n`;
-  msg += `<i>🔮 Volume Scalper v5.1</i>`;
-  await sendDerivativesMessage(msg);
+  const trapInfo = {
+    trapType: candle.isGreen ? 'DỤ_LONG' : 'DỤ_SHORT',
+    level: isCritical ? 1 : 2,
+    levelDesc: isCritical ? 'MỨC ĐỘ 1: BƠM/ĐẠP ĐỂU CỰC NẶNG (< 1.300 HĐ)' : 'MỨC ĐỘ 2: KÉO/XẢ ẢO THIẾU CẦU/CUNG (< 1.500 HĐ)',
+    moveDir: candle.isGreen ? 'Kéo tăng' : 'Đạp giảm',
+    movePts: Math.max(candle.body, candle.upperWick, candle.lowerWick),
+    dirEmoji: candle.isGreen ? '🟢' : '🔴',
+  };
+  await sendTrapWarning(candle, trapInfo, indicators, oiData);
 }
 
 async function sendBBBlockWarning(candle, indicators, oiData, blockedDir) {
@@ -1654,14 +1896,14 @@ async function pollCycle() {
 // ─── START / STOP / RESET ────────────────────────────────────
 function start() {
   stop();
-  console.log(`   🔮 Volume Scalper v5.2: Started (1M scalper 60s, 5M volume engine, fast tick 5s, entry ${START_TIME}-${STOP_ENTRY_TIME})`);
+  console.log(`   🔮 Volume Scalper v5.3: Started (1M scalper 60s, 5M volume engine, fast tick 5s, Trap Shield v5.3, entry ${START_TIME}-${STOP_ENTRY_TIME})`);
 
   // Poll nến 1p & 5p mỗi 60s
   _state.timer = setInterval(() => {
     pollCycle().catch(e => console.error('   ⚠️ [Scalper] cycle error:', e.message));
   }, POLL_INTERVAL_MS);
 
-  // Fast tick mỗi 5s bắt Flash Crash
+  // Fast tick mỗi 5s bắt Flash Crash & Bẫy Realtime
   _state.fastTimer = setInterval(() => {
     fastTickCycle().catch(e => console.error('   ⚠️ [Scalper] fast tick error:', e.message));
   }, FAST_TICK_INTERVAL_MS);
@@ -1711,7 +1953,11 @@ function reset() {
   _state.last5mContAlertTime = 0;
   _state.last5mBreakoutAlertTime = 0;
   _state.last5mOppositeAlertTime = 0;
-  console.log('   🔄 Volume Scalper v5.2: State reset');
+  _state.trapCooldownUntil = 0;
+  _state.lastTrapLevel1AlertTime = 0;
+  _state.lastTrapLevel2AlertTime = 0;
+  _state.lastFastTrapAlertTime = 0;
+  console.log('   🔄 Volume Scalper v5.3: State reset');
 }
 
 function getState() {
@@ -1728,4 +1974,5 @@ module.exports = {
   processNewCandle,
   processNew5mCandle,
   parse5mCandles,
+  checkDuLongDuShortTrap,
 };
