@@ -27,7 +27,8 @@
 4. [PHẦN IV: HỆ THỐNG CHỈ BÁO BỔ TRỢ & ĐỘ ĐỒNG THUẬN MACD + RSI](#phần-iv-hệ-thống-chỉ-báo-bổ-trợ--độ-đồng-thuận-macd--rsi)
 5. [PHẦN V: DẪN CHỨNG THỰC TẾ & BẰNG CHỨNG THỰC NGHIỆM (PHIÊN 28/9 - 02/10/2026)](#phần-v-dẫn-chứng-thực-tế--bằng-chứng-thực-nghiệm-phiên-289---02102026)
 6. [PHẦN VI: NGUYÊN TẮC QUẢN TRỊ VỐN, ĐI LỆNH & TÂM LÝ GIAO DỊCH THỰC CHIẾN](#phần-vi-nguyên-tắc-quản-trị-vốn-đi-lệnh--tâm-lý-giao-dịch-thực-chiến)
-7. [PHẦN VII: SYSTEM PROMPT CHUẨN ĐỂ HUẤN LUYỆN AI AGENT TRÊN WEB](#phần-vii-system-prompt-chuẩn-để-huấn-luyện-ai-agent-trên-web)
+7. [PHẦN VII: GIÁO TRÌNH PHÁI SINH THỰC CHIẾN (MR. TRƯỜNG - MỎ VÀNG PHÁI SINH) — TÍCH HỢP NỀN TẢNG LÝ THUYẾT & TƯ DUY BIẾN HOÁ CUNG CẦU THỰC CHIẾN](#phần-vii-giáo-trình-phái-sinh-thực-chiến-mr-trường---mỏ-vàng-phái-sinh--tích-hợp-nền-tảng-lý-thuyết--tư-duy-biến-hoá-cung-cầu-thực-chiến)
+8. [PHẦN VIII: SYSTEM PROMPT CHUẨN ĐỂ HUẤN LUYỆN AI AGENT TRÊN WEB (PHIÊN BẢN MASTER HOÀN CHỈNH)](#phần-viii-system-prompt-chuẩn-để-huấn-luyện-ai-agent-trên-web-phiên-bản-master-hoàn-chỉnh)
 
 ---
 
@@ -293,50 +294,263 @@ Khi có tín hiệu vào lệnh (Entry):
 
 ---
 
-# PHẦN VII: SYSTEM PROMPT CHUẨN ĐỂ HUẤN LUYỆN AI AGENT TRÊN WEB
+# PHẦN VII: GIÁO TRÌNH PHÁI SINH THỰC CHIẾN (MR. TRƯỜNG - MỎ VÀNG PHÁI SINH) — TÍCH HỢP NỀN TẢNG LÝ THUYẾT & TƯ DUY BIẾN HOÁ CUNG CẦU THỰC CHIẾN
+
+> ### ⚡ NGUYÊN TẮC BẮT BUỘC: ĐỐI CHIẾU LÝ THUYẾT VỚI DÒNG TIỀN THỰC CHIẾN
+> * **BẢN CHẤT LÝ THUYẾT**: Mọi mẫu hình nến (Bullish/Bearish Engulfing, Hammer, Morning/Evening Star...), mẫu hình giá (Vai Đầu Vai, 2 Đáy, VCP, Thân Đi Lên), hỗ trợ, kháng cự và trendline trong giáo trình kinh điển này là **HỆ THỐNG LÝ THUYẾT NỀN TẢNG (THEORY FRAMEWORK)**. Chúng giúp trader và AI Agent hiểu được tâm lý chung của đám đông trên thị trường.
+> * **ĐIỀU KIỆN SỐNG CÒN TRONG THỰC CHIẾN**: **TUYỆT ĐỐI KHÔNG BAO GIỜ ÁP DỤNG RẬP KHUÔN HAY ĐÁNH MÁY MÓC THEO SÁCH GIÁO KHOA**. Trên đấu trường phái sinh VN30F1M khốc liệt, **CUNG CẦU THỰC TẾ, KHỐI LƯỢNG (VOLUME THẬT), THANH KHOẢN TỔ CHỨC VÀ HÀNH VI NẾN (PRICE ACTION) MỚI LÀ CHÂN LÝ TỐI THƯỢNG**.
+> * **VÍ DỤ BIỆN CHỨNG**:
+>   - Một mô hình 2 Đáy hay VCP thu hẹp dù vẽ đẹp đến đâu trên biểu đồ, nhưng nếu tại điểm Breakout mà **Volume teo tóp dưới 1.300 HĐ (Mức 1 Trap Shield)** thì đó $100\%$ là **BẪY DỤ LONG (BULL TRAP)** của đội lái vẽ ra để dụ nhỏ lẻ vào úp bô!
+>   - Ngược lại, một cây nến búa Hammer rút chân chỉ thực sự có giá trị đảo chiều đáy uy tín khi đi kèm **Volume hấp thụ cực lớn ($2.3k - 2.8k$ HĐ ở 1M hoặc $\ge 5k - 7.5k$ HĐ ở 5M)**, chứng minh dòng tiền cá mập đã ra tay nuốt trọn toàn bộ cung bán tháo!
+
+---
+
+### BÀI 1: CƠ CẤU RỔ CỔ PHIẾU VN30 & CƠ CHẾ KHỚP LỆNH CHUYÊN SÂU
+
+#### 1. Cấu Trúc Rổ VN30 & "Yếu Huyệt" Nhóm Bank (43%) và Họ Vin (10%)
+Hợp đồng tương lai phái sinh VN30F1M lấy chỉ số cơ sở VN30 (gồm 30 cổ phiếu vốn hóa và thanh khoản lớn nhất sàn HOSE) làm tài sản cơ sở.
+* **Danh mục 30 cổ phiếu rổ VN30**:
+  `ACB, BCM, BID, BVH, CTG, FPT, GAS, GVR, HDB, HPG, MBB, MSN, MWG, PLX, POW, SAB, SHB, SSB, SSI, STB, TCB, TPB, VCB, VHM, VIB, VIC, VJC, VNM, VPB, VRE`.
+* **Trọng số chi phối điểm số**:
+  - **Nhóm Ngân Hàng (Bank)**: Chiếm **13/30 mã (tương đương 43.3% số lượng)** và chiếm tỷ trọng vốn hóa áp đảo trong rổ chỉ số (`VCB, BID, CTG, TCB, MBB, VPB, ACB, STB, HDB, VIB, TPB, SHB, SSB`). Biến động đồng thuận của nhóm Bank sẽ quyết định đến $60\% - 70\%$ xu hướng phái sinh trong phiên.
+  - **Nhóm Họ Nhà Vin**: Chiếm **3/30 mã (tương đương 10% số lượng)** gồm `VIC, VHM, VRE`. Do vốn hóa khổng lồ, chỉ cần VHM hoặc VIC tăng/giảm mạnh cũng đủ tác động làm lệch chỉ số từ $3 - 8$ điểm phái sinh.
+  - **Tổng cộng**: Riêng Bank + Họ Vin đã chiếm **53.3% số lượng mã và hơn 65% trọng số ảnh hưởng toàn bộ rổ VN30**!
+* **Chiến thuật thực chiến & Bài đánh của Đội Lái**:
+  - Khi quan sát phái sinh, **bắt buộc phải bật bảng điện rổ VN30 và quan sát riêng nhóm Bank + Vin**.
+  - **Hiện tượng "Bẻ Trụ Ép Basis"**: Có những phiên lái dùng 1-2 trụ lớn (như VCB, BID hoặc VHM) để đè mạnh chỉ số cơ sở nhằm tạo tâm lý hoảng loạn, nhưng phái sinh lại nổ volume lớn giữ giá không giảm (Basis âm co hẹp lại) $\rightarrow$ Đó là dấu hiệu Lái đang "Đè trụ cơ sở để gom Long phái sinh giá rẻ". Ngược lại, nếu lái kéo trần 1 mã trụ thanh khoản thấp để đẩy điểm ảo trong khi cả rổ Bank đỏ lửa $\rightarrow$ Lập tức cảnh giác chiêu trò "Kéo trụ cơ sở để xả Short phái sinh"!
+
+#### 2. Khung Giờ Khớp Lệnh & Cơ Chế Các Loại Lệnh
+* **Lịch trình phiên giao dịch**:
+  - `08h45 - 09h00`: Khớp lệnh định kỳ mở cửa (ATO, LO - Không được hủy/sửa lệnh).
+  - `09h00 - 11h30`: Khớp lệnh liên tục phiên sáng (LO, MTL, MOK, MAK - Được hủy/sửa lệnh).
+  - `11h30 - 13h00`: Nghỉ giữa phiên.
+  - `13h00 - 14h30`: Khớp lệnh liên tục phiên chiều (LO, MTL, MOK, MAK - Được hủy/sửa lệnh).
+  - `14h30 - 14h45`: Khớp lệnh định kỳ đóng cửa (ATC, LO - Không được hủy/sửa lệnh).
+* **Bản chất các loại lệnh thị trường**:
+  - **LO (Lệnh giới hạn)**: Đặt mua/bán tại giá xác định hoặc tốt hơn. Lệnh có nguy cơ bị "treo" không khớp nếu giá thị trường biến động giật nhanh vượt qua bước giá đặt.
+  - **MTL (Lệnh thị trường giới hạn - Market to Limit)**: Khớp ngay tại mức giá đối ứng tốt nhất; nếu không khớp hết, phần còn lại sẽ tự động chuyển thành lệnh LO tại mức giá khớp cuối cùng.
+  - **MOK (Khớp toàn bộ hoặc hủy)**: Nếu toàn bộ khối lượng không được khớp hết ngay lập tức thì lệnh sẽ tự động bị hủy toàn bộ.
+  - **MAK (Khớp và hủy phần còn lại)**: Khớp ngay phần khối lượng có thể khớp trên thị trường, phần chưa khớp bị hủy ngay lập tức.
+
+#### 3. Kỹ Thuật Đặt Lệnh Stop Order (Stop Loss / Take Profit) Bằng MTL Sống Còn
+* **Nguyên tắc sống còn**: Khi đặt lệnh điều kiện Stop Loss (Cắt lỗ), **BẮT BUỘC PHẢI DÙNG LOẠI LỆNH MTL** (không được dùng lệnh LO thường).
+* **Lý giải rủi ro**: Trong phái sinh, các cú xả hàng flash crash hoặc quét stoploss diễn ra với tốc độ $5-10$ điểm chỉ trong 10-15 giây. Nếu đặt Stop Loss bằng lệnh LO, bước giá sẽ bị "nhảy cóc" (trượt giá), thị trường xuyên thủng qua mức giá LO của bạn mà không khớp lệnh $\rightarrow$ Nhà đầu tư bị kẹt lệnh và dẫn đến cháy tài khoản! Lệnh MTL đảm bảo $100\%$ vị thế sẽ được đóng ngay lập tức bằng mọi giá để bảo vệ dòng vốn.
+* **Cú pháp thiết lập lệnh Stop Order thực tế**:
+  - **Nếu đang giữ vị thế LONG (Ví dụ đang Long 2 HĐ @ 1315.0)**:
+    * Chọn tab **Stop Order** $\rightarrow$ Bấm nút **SHORT**.
+    * Loại lệnh: Chọn **MTL**.
+    * Khối lượng: **2 HĐ**.
+    * Giá kích hoạt: Chọn dấu **$\le$** và nhập **1312.5** (Cắt lỗ 2.5 điểm).
+    * *Cơ chế*: Khi giá thị trường chạm hoặc rơi xuống dưới 1312.5, hệ thống tự động đẩy lệnh Short 2 HĐ MTL để đóng ngay 2 HĐ Long đang giữ.
+  - **Nếu đang giữ vị thế SHORT (Ví dụ đang Short 2 HĐ @ 1310.0)**:
+    * Chọn tab **Stop Order** $\rightarrow$ Bấm nút **LONG**.
+    * Loại lệnh: Chọn **MTL**.
+    * Khối lượng: **2 HĐ**.
+    * Giá kích hoạt: Chọn dấu **$\ge$** và nhập **1312.5** (Cắt lỗ 2.5 điểm).
+    * *Cơ chế*: Khi giá thị trường chạm hoặc vọt lên trên 1312.5, hệ thống tự động đẩy lệnh Long 2 HĐ MTL để đóng ngay 2 HĐ Short đang giữ.
+
+---
+
+### BÀI 2: HỖ TRỢ, KHÁNG CỰ, TRENDLINE & GIẢI MÃ BỘ MẪU HÌNH DƯỚI LĂNG KÍNH VSA
+
+#### 1. Hỗ Trợ, Kháng Cự, Trendline & Bản Chất Quét Thanh Khoản (Liquidity Sweep)
+* **Khái niệm kinh điển**:
+  - **Kháng cự (Resistance)**: Vùng giá đỉnh cũ nơi lực bán được kỳ vọng sẽ chiếm ưu thế so với lực mua khiến giá quay đầu giảm.
+  - **Hỗ trợ (Support)**: Vùng giá đáy cũ nơi lực mua được kỳ vọng sẽ chiếm ưu thế so với lực bán giúp giá bật tăng trở lại.
+  - **Trendline (Đường xu hướng)**: Đường thẳng nối các đỉnh thấp dần (Down Trendline) hoặc nối các đáy cao dần (Up Trendline).
+* **Sự thật thực chiến phái sinh**:
+  - Đội lái luôn biết rằng $90\%$ trader nhỏ lẻ đều đặt lệnh Stoploss hoặc kê lệnh Breakout ngay sát các mốc hỗ trợ/kháng cự/trendline.
+  - Do đó, lái rất thích tạo ra các pha **Bẫy Vượt Đỉnh Ảo (Triple Top Fakeout / Bull Trap)** hoặc **Bẫy Đạp Thủng Đáy Ảo (Spring / Shakeout / Bear Trap)** để "quét thanh khoản" (Liquidity Sweep) rồi mới kéo theo xu hướng thật.
+  - **Quy tắc kiểm chứng Cung Cầu**:
+    * Chạm cản/hỗ trợ mà **Volume teo tóp $< 1.3k$ HĐ** $\rightarrow$ Thị trường không có xung lực, dễ bị phản ứng dội ngược.
+    * Chớm vượt cản nhưng **rút râu trên dài $\ge 1.5$đ kèm Volume cực đại $> 3.0k$ HĐ** $\rightarrow$ Bẫy dụ Long, tay to mượn cản để xả hàng chốt lời.
+    * Vượt cản dứt khoát với **nến đặc thân dài kèm Volume bùng nổ $115\% - 145\%$ MA vol** $\rightarrow$ Dòng tiền tổ chức đánh bứt phá thật sự, lúc đó mới mở lệnh theo sóng lớn.
+
+#### 2. Phân Tích Chuyên Sâu 8 Mô Hình Nến Đảo Chiều Kết Hợp Bộ Lọc VSA (Volume Spread Analysis)
+Phương pháp VSA xác định xu hướng dựa trên 3 biến số mật thiết:
+$$\text{VSA} = f(\text{Volume - Khối Lượng}, \text{Spread - Độ Rộng Thân Nến}, \text{Close - Vị Trí Đóng Cửa})$$
+*"Khối lượng là chìa khóa của sự thật — Giá có thể làm giả nhưng Volume không bao giờ nói dối!"*
+
+| STT | Tên Mô Hình Nến | Đặc Điểm Hình Thái Lý Thuyết | Phân Tích Cung Cầu & Bộ Lọc VSA Thực Chiến | Độ Tin Cậy Thực Tế |
+| :---: | :--- | :--- | :--- | :---: |
+| **1** | **Bullish Engulfing** *(Nhấn chìm tăng)* | Sau nhịp giảm, xuất hiện 1 nến xanh tăng mạnh có thân bao trùm toàn bộ thân nến đỏ trước đó. | **VSA Filter**: Cây nến xanh phải có **Volume $\ge 2.3k - 2.8k$ HĐ** chứng minh cầu chủ động hấp thụ hết cung hoảng loạn. Nếu thân nến xanh dài nhưng Vol $< 1.3k$ HĐ $\rightarrow$ Bẫy dụ Long Mức 1! | **RẤT CAO** (Nếu vol đạt chuẩn) |
+| **2** | **Piercing Line** *(Nến xuyên)* | Nến 1 giảm mạnh, nến 2 mở Gap Down dưới đáy nến 1 nhưng đóng cửa xuyên lên trên $50\%$ thân nến 1. | **VSA Filter**: Cầu bắt đáy dâng cao từ vùng giá thấp. Cần phiên tiếp theo xác nhận giữ được trên $50\%$ thân nến đỏ. Phù hợp đánh nhịp hồi T+ vi mô. | **TRUNG BÌNH** (Cần xác nhận) |
+| **3** | **Hammer / Inverted Hammer** *(Nến Búa / Búa ngược)* | Thân nến nhỏ nằm ở đỉnh hoặc đáy, bóng nến (râu) dài ít nhất gấp 2 lần chiều dài thân nến. | **VSA Filter**: Nến Hammer rút chân ở đáy có Vol lớn thể hiện Smart Money quét cạn cung trôi nổi. Râu nến rút $\ge 1.5$đ là tín hiệu cấm short đuổi. | **TRUNG BÌNH - CAO** |
+| **4** | **Morning Star** *(Sao Mai)* | Bộ 3 nến ở đáy: Nến 1 giảm dài $\rightarrow$ Nến 2 thân nhỏ/Doji chững lại $\rightarrow$ Nến 3 xanh mạnh đóng sâu vào nến 1. | **VSA Filter**: Nến Doji giữa thể hiện **Cạn Cung (Dry-up volume)**; Nến 3 bùng nổ volume xác nhận phe Long nhập cuộc áp đảo. Điểm vào Long cực an toàn. | **RẤT CAO** |
+| **5** | **Bearish Engulfing** *(Nhấn chìm giảm)* | Sau nhịp tăng, xuất hiện 1 nến đỏ giảm mạnh có thân bao trùm toàn bộ thân nến xanh trước đó. | **VSA Filter**: Lực bán áp đảo nuốt trọn phe mua. Cây nến đỏ phải có **Volume $\ge 2.3k - 2.8k$ HĐ** và nằm dưới MA9/MA26. Mở vị thế Short, SL trên đỉnh nến. | **RẤT CAO** (Nếu vol đạt chuẩn) |
+| **6** | **Dark Cloud Cover** *(Mây đen che phủ)* | Nến 1 xanh dài, nến 2 mở Gap Up trên đỉnh nến 1 nhưng đảo chiều đóng cửa xuyên thủng dưới $50\%$ thân nến 1. | **VSA Filter**: Thể hiện nỗ lực đẩy giá lên cao trào thất bại, phe bán phản công dồn dập. Volume nến 2 cao đột biến là tín hiệu chốt lời phân phối đỉnh. | **CAO** |
+| **7** | **Hanging Man** *(Người treo cổ)* | Xuất hiện ở đỉnh xu hướng tăng, thân nhỏ, bóng dưới dài ít nhất gấp đôi thân (giống Hammer nhưng ở đỉnh). | **VSA Filter**: Dù giá rút chân nhưng cho thấy phe bán đã thâm nhập sâu vào phòng tuyến của phe mua. Nếu nến sau gãy giá đóng cửa của Hanging Man $\rightarrow$ Đảo Short ngay. | **TRUNG BÌNH - CAO** |
+| **8** | **Evening Star** *(Sao Hôm)* | Bộ 3 nến ở đỉnh: Nến 1 xanh mạnh $\rightarrow$ Nến 2 thân nhỏ/Doji giằng co $\rightarrow$ Nến 3 đỏ mạnh đóng sâu vào thân nến 1. | **VSA Filter**: Thể hiện sự kiệt quệ của lực cầu (Exhaustion). Nến 3 nổ volume đạp gãy nền là tín hiệu xác nhận đỉnh xu hướng vững chắc nhất. | **RẤT CAO** |
+
+#### 3. Bốn Mẫu Hình Giá Kinh Điển & Biến Hóa Dòng Tiền Thực Chiến
+1. **Mẫu hình Vai Đầu Vai (Head and Shoulders Top & Inverted H&S Bottom)**:
+   - *Lý thuyết*: Gồm Vai Trái - Đầu (Cao nhất) - Vai Phải, đường nối 2 đáy gọi là Đường Viền Cổ (Neckline). Khi giá cắt xuống Neckline là tín hiệu đảo chiều giảm mạnh (hoặc ngược lại với Vai Đầu Vai Ngược ở đáy).
+   - *Thực chiến phái sinh*: Điểm cắt Neckline **BẮT BUỘC PHẢI ĐI KÈM VOLUME LỚN**. Nếu thủng Neckline với Volume lèo tèo $< 1.3k$ HĐ $\rightarrow$ Đây là chiêu trò nhúng thủng hỗ trợ để gom hàng rồi kéo chữ V ngược lên (Bẫy Spring). Chỉ mở Short khi có nến đỏ đặc gãy Neckline kèm Vol dứt khoát!
+2. **Mẫu hình 2 Đáy (Double Bottom / Mẫu hình Chữ W Retest)**:
+   - *Lý thuyết*: Giá tạo đáy 1, hồi phục lên đỉnh nhỏ ở giữa, giảm lại tạo đáy 2 (tương đương hoặc cao hơn đáy 1) rồi bứt phá vượt qua đỉnh trung tâm.
+   - *Thực chiến phái sinh*: Điều kiện tiên quyết để 2 Đáy thành công là **Đáy 2 phải có Volume cạn kiệt (Volume Đáy 2 < Đáy 1)** chứng minh áp lực bán tháo đã cạn. Sau đó, nhịp bứt phá vượt đỉnh trung tâm phải có nến 5M nổ Volume $115\% - 145\%$ MA vol. Khi giá quay lại test lại đỉnh cũ thành công $\rightarrow$ Điểm gia tăng vị thế Long tối ưu nhất!
+3. **Cấu Trúc Thân Đi Lên (Bậc Thang Tăng Trưởng / Box Nâng Nền)**:
+   - *Lý thuyết*: Giá liên tục tạo các nền tảng tích lũy giá ngắn (hộp Darvas), breakout đi lên một tầng cao mới rồi tiếp tục siết biên độ tạo nền tiếp theo, đáy sau cao hơn đáy trước ($HL$) và đỉnh sau cao hơn đỉnh trước ($HH$).
+   - *Thực chiến phái sinh*: Khi gặp cấu trúc thân đi lên bám sát trên $MA9 > MA26$, **tuyệt đối không được đoán đỉnh bắt Short**. Mọi nhịp rung rũ về cạnh dưới của hộp với volume thấp kiệt quệ đều là cơ hội gom Long theo xu hướng chính.
+4. **Mẫu hình Thu Hẹp Biến Động VCP (Volatility Contraction Pattern - Mark Minervini)**:
+   - *Lý thuyết*: Cổ phiếu trải qua các nhịp sóng điều chỉnh giảm dần về biên độ trước khi bùng nổ (ví dụ: nhịp 1 giảm $-6$đ, hồi phục; nhịp 2 chỉ giảm $-3$đ; nhịp 3 siết lại chỉ giảm $-1.5$đ).
+   - *Thực chiến phái sinh*: **YẾU TỐ QUYẾT ĐỊNH CỦA VCP LÀ VOLUME CẠN KIỆT (DRY UP VOLUME)** ở vòng thu hẹp cuối cùng. Khi biến động giá co thắt chặt chẽ quanh MA20/MA50 và volume nến 1p teo tóp dưới $1.000$ HĐ, chứng tỏ lượng cung chốt lời của nhỏ lẻ đã bị hấp thụ hoàn toàn. Một cây nến Breakout bất ngờ nổ vol $> 2.5k$ HĐ (1M) hoặc $> 5.5k$ HĐ (5M) sẽ kích hoạt một con sóng tăng tốc khủng khiếp!
+
+---
+
+### BÀI 3: TÂM LÝ GIAO DỊCH, QUẢN LÝ VỐN & BẢN ĐỒ 6 KHUNG THỜI GIAN VÀNG
+
+#### 1. Tâm Lý Thực Chiến & "Cái Đầu Lạnh"
+* **Bản chất đòn bẩy phái sinh**: Với đòn bẩy tài chính cao ($1:5$ đến $1:10$), phái sinh khuếch đại cả lợi nhuận lẫn cảm xúc tham lam và sợ hãi. Trader không có kế hoạch sẽ bị thị trường cuốn vào vòng xoáy đu đỉnh bán đáy liên tục.
+* **Quy tắc tâm lý sống còn**:
+  - Tách biệt cảm xúc khỏi nút bấm chuột: Vào lệnh vì tiêu chuẩn kỹ thuật đạt chuẩn, không vào lệnh vì "cảm thấy thị trường sắp lên/xuống".
+  - Giữ tâm thế bình thản trước các nhịp rung lắc: Hiểu rõ bài đánh của đội lái để không bị bẫy Trap Shield dọa sợ cắt lỗ non.
+  - Chấp nhận thua lỗ như một chi phí kinh doanh: Khi sai nguyên tắc, cắt lỗ $2.5$ điểm dứt khoát không do dự, tuyệt đối không mang tâm lý trả thù thị trường (Revenge trading).
+
+#### 2. Chiến Lược Đi Vốn Kim Tự Tháp 30% Thăm Dò & Dời SL Hòa Vốn (Scale-In / Scale-Out)
+Giáo trình thiết lập phương pháp đi vốn chuẩn mực giúp triệt tiêu hoàn toàn rủi ro cháy tài khoản:
+```
+           ┌───────────────────────────────────────────────┐
+           │   BƯỚC 1: GIẢI NGÂN THĂM DÒ 30% NAV           │
+           │   (Ví dụ: Tài khoản có 9 HĐ -> Đi trước 3 HĐ) │
+           └──────────────────────┬────────────────────────┘
+                                  │
+                  ┌───────────────┴───────────────┐
+                  ▼                               ▼
+       [ĐÚNG XU HƯỚNG: LÃI > 2.0Đ]      [SAI XU HƯỚNG: LỖ CHẠM SL]
+                  │                               │
+                  ▼                               ▼
+┌───────────────────────────────────┐ ┌──────────────────────┐
+│  BƯỚC 2: GIA TĂNG 50% - 70% NAV   │ │  CẮT LỖ DỨT KHOÁT    │
+│  (Nhồi thêm 3 - 6 HĐ đủ 100% NAV) │ │  -2.5 ĐIỂM TRÊN 30%  │
+│  ĐỒNG THỜI:                       │ │  NAV THĂM DÒ BAN ĐẦU │
+│  DỜI SL CẢ VỊ THẾ VỀ GIÁ VỐN (0Đ) │ └──────────────────────┘
+└─────────────────┬─────────────────┘
+                  │
+                  ▼
+┌────────────────────────────────────────────────────────────┐
+│ KẾT QUẢ:                                                   │
+│ • Nếu giá quay đầu: Chỉ lỗ nhẹ phần nhồi, vị thế gốc HÒA!  │
+│ • Nếu trend tiếp diễn: ĂN TRỌN +5 ĐẾN +12 ĐIỂM TRÊN CẢ NAV!│
+└────────────────────────────────────────────────────────────┘
+```
+> **CẢNH BÁO TỐI THƯỢNG**: **TUYỆT ĐỐI KHÔNG BAO GIỜ TRUNG BÌNH GIÁ XUỐNG (AVERAGING DOWN)**! Nhồi thêm lệnh khi đang lỗ là hành vi nhanh nhất dẫn đến cháy tài khoản phái sinh. Chỉ được phép gia tăng vị thế KHI VÀ CHỈ KHI LỆNH ĐẦU TIÊN ĐANG CÓ LÃI $\ge 2.0$ ĐIỂM!
+
+#### 3. Bản Đồ 6 Khung Giờ Vàng Trong Phiên & "Yếu Huyệt 14h15 - 14h17 Call Margin"
+
+| Khung Giờ | Đặc Điểm Diễn Biến Thị Trường | Bản Chất Hành Vi Đội Lái & Dòng Tiền | Chiến Lược Hành Động Tối Ưu |
+| :---: | :--- | :--- | :--- |
+| **08h45 - 09h00** *(ATO)* | Xác định giá mở cửa, biên độ dao động rộng, dễ xuất hiện GAP lớn. | Chịu ảnh hưởng tâm lý từ DJ/DXY đêm qua và vị thế tạo lập đóng/mở lệnh qua đêm. $99\%$ là volume kỹ thuật. | **ĐỨNG NGOÀI QUAN SÁT**. Tuyệt đối không mở vị thế trong ATO. Không đuổi theo GAP ảo. |
+| **09h00 - 10h00** *(Ổn định đầu phiên)* | Thị trường hấp thụ xong ATO, thường sideway co cụm trong biên hẹp để kiểm tra cung cầu. | Lái thăm dò phản ứng nhỏ lẻ, tạo các nhịp nhử giá thanh khoản thấp. | Chờ sau **09h12** (với 1M) và sau **09h15** (với 5M) mới bắt đầu quét tín hiệu dòng tiền thật. |
+| **10h00 - 11h25** *(Sóng sáng rõ ràng)* | Xu hướng chính của phiên sáng bắt đầu bộc lộ dứt khoát nhất. | Dòng tiền tổ chức tham gia kéo/xả theo xu hướng ngày. Thanh khoản đạt độ ổn định cao. | **CANH ĐIỂM VÀO LỆNH TỐI ƯU**. Gồng lãi theo sóng 5M. **Chủ động chốt lời và đóng sạch vị thế trước 11h25**, tránh ôm lệnh qua trưa. |
+| **13h00 - 14h00** *(Đầu phiên chiều)* | Thị trường mở cửa phiên chiều, phản ứng tin tức buổi trưa và thị trường châu Á. | Thường có biến động rung lắc mạnh trong 15 phút đầu rồi tìm lại điểm cân bằng. | Có thể mở vị thế sớm theo xu hướng nếu đạt chuẩn volume; ưu tiên đóng chốt lời trước 14h00 để chuẩn bị cho nhịp sau 14h. |
+| **14h00 - 14h25** *(VÙNG TỬ THẦN & CALL MARGIN)* | **KHUNG GIỜ BIẾN ĐỘNG NGUY HIỂM & KHỐC LIỆT NHẤT TRONG NGÀY**. | **YẾU HUYỆT 14H15 - 14H17 LÀ THỜI ĐIỂM CÁC CÔNG TY CHỨNG KHOÁN KÍCH HOẠT LỆNH CALL MARGIN / FORCE SELL TOÀN THỊ TRƯỜNG!** Thị trường dễ xảy ra Flash Crash tụt $5-10$đ hoặc tạo đáy bật tăng chữ V cực sốc. | **KÍCH HOẠT CHẾ ĐỘ BẢO VỆ CAO NHẤT**. Dùng Fast Tick 5s bắt tháo cống; bắt bài Climax đáy gom hàng để chốt Short / đảo vị thế. |
+| **14h30 - 14h45** *(ATC & Qua đêm)* | Xác định giá đóng cửa ngày của hợp đồng tương lai. | Lái định hình điểm số chốt sổ phục vụ vị thế phái sinh và chỉ số cơ sở. | Nếu thị trường tăng/giảm mạnh chưa bị bẻ gãy, đóng cửa sát đỉnh/đáy phiên $\rightarrow$ Cân nhắc giữ một phần HĐ qua đêm. Nếu thị trường giằng co sideway $\rightarrow$ Đóng sạch trước 14h28. |
+
+---
+
+### BÀI 4 & 5: KẾ HOẠCH GIAO DỊCH HÀNG NGÀY & 4 CHU KỲ CỔ PHIẾU CƠ SỞ LIÊN HỆ PHÁI SINH
+
+#### 1. Quy Trình Lập Kế Hoạch Giao Dịch Hàng Ngày (Trading Plan)
+Một trader chuyên nghiệp không bao giờ bước vào phiên mà không có bản đồ tác chiến:
+1. **Trước phiên (08h00 - 08h30)**:
+   - Thống kê diễn biến liên thị trường: Dow Jones, S&P 500, DXY, Tỷ giá USD/VND, Giá dầu thế giới.
+   - Thống kê vị thế lũy kế của Khối Ngoại (FII) và Tự Doanh (Prop Trading) trên hợp đồng F1M (đang Net Long hay Net Short bao nhiêu nghìn HĐ).
+   - Xác định trước các mốc Kháng cự / Hỗ trợ then chốt của VN30 và VN30F1M trên khung nến Ngày và 1 Giờ.
+2. **Trong phiên (08h45 - 14h45)**:
+   - Tuyệt đối tuân thủ ma trận tín hiệu Volume Scalper 1M & 5M, bộ lọc Trap Shield và 2 dòng trạng thái MACD + RSI.
+   - Luôn đặt sẵn lệnh điều kiện Stop Loss bằng MTL ngay khi vị thế được khớp.
+3. **Sau phiên (15h00 - 16h00)**:
+   - Ghi nhật ký giao dịch: Điểm vào, điểm ra, lý do thắng/thua, vi phạm cảm xúc nào.
+   - Kiểm tra dữ liệu chốt phiên tự doanh và khối ngoại để lên kịch bản cho phiên tiếp theo.
+
+#### 2. Mối Tương Quan Giữa 4 Chu Kỳ Cổ Phiếu Cơ Sở & Hành Vi Phái Sinh
+Mọi tài sản tài chính đều vận hành qua chu kỳ 4 giai đoạn kinh điển:
+$$\text{TÍCH LŨY (GOM HÀNG)} \longrightarrow \text{ĐẨY GIÁ (MARK UP)} \longrightarrow \text{PHÂN PHỐI (CHỐT LỜI)} \longrightarrow \text{ĐÈ GIÁ (MARK DOWN)}$$
+
+```mermaid
+graph LR
+    A["1. TÍCH LŨY<br/>(Lái gom hàng âm thầm)"] -->|Breakout nổ Vol| B["2. ĐẨY GIÁ<br/>(Sóng tăng mạnh Mark-up)"]
+    B -->|Climax quá mua| C["3. PHÂN PHỐI<br/>(Lái xả hàng đỉnh cao trào)"]
+    C -->|Thủng nền đạp giá| D["4. ĐÈ GIÁ<br/>(Sóng giảm khốc liệt Mark-down)"]
+    D -->|Climax hoảng loạn| A
+```
+
+* **Ứng dụng thực chiến sang thị trường phái sinh**:
+  1. **Khi cơ sở ở Pha Tích Lũy**: Biên độ dao động hẹp, thanh khoản cạn kiệt. Phái sinh thường sideway khó chịu $\rightarrow$ Đội lái âm thầm kê lệnh gom vị thế Long lớn giá rẻ.
+  2. **Khi cơ sở ở Pha Đẩy Giá**: Các mã Bank và Vin dẫn dắt bứt phá. Phái sinh kích hoạt các tín hiệu **Rule 1 Breakout** và **Rule 2 Sóng Đẩy 5M** $\rightarrow$ Chiến lược: Đánh bám sát dải trên $MA9 > MA26$, kiên quyết ôm Long gồng lãi dày TP1 (+5đ) và TP2 (+10đ).
+  3. **Khi cơ sở ở Pha Phân Phối**: Thị trường hưng phấn tột độ, xuất hiện tin tốt tràn ngập mặt báo. Phái sinh xuất hiện các cây nến **Rule 3 Climax Vol $> 190\%$ MA (hoặc $> 3.0k$ HĐ ở 1M)** tại đỉnh kèm râu trên $\rightarrow$ Đội lái mượn thanh khoản FOMO của nhỏ lẻ để chốt sạch Long và mở vị thế Short lớn!
+  4. **Khi cơ sở ở Pha Đè Giá**: Lái mang các mã trụ Bank/Vin ra bán lệnh lớn đè bẹp bảng điện, kích hoạt chuỗi Call Margin lúc 14h15. Phái sinh lao dốc theo đường thẳng $\rightarrow$ Chiến lược: Giữ chặt Short, tuyệt đối cấm đoán đáy cho đến khi xuất hiện cây nến Climax tháo cống vol khổng lồ gom hàng ở đáy!
+
+---
+
+# PHẦN VIII: SYSTEM PROMPT CHUẨN ĐỂ HUẤN LUYỆN AI AGENT TRÊN WEB (PHIÊN BẢN MASTER HOÀN CHỈNH)
 
 > **HƯỚNG DẪN DÀNH CHO NGƯỜI DÙNG**:
-> Copy toàn bộ đoạn khung bên dưới và paste vào ô thiết lập System Prompt của AI Agent (Custom GPT trên ChatGPT, System Instructions trên Google AI Studio / Gemini, Project Knowledge trên Claude, hoặc Agent Prompt trên DeepSeek / Antigravity).
+> Copy toàn bộ đoạn khung bên dưới và paste vào ô thiết lập System Prompt / Custom Instructions của AI Agent (ChatGPT Custom GPT, Claude Project Knowledge, Google AI Studio System Instructions, DeepSeek, Coze, Dify...).
 
 ```markdown
-BẠN LÀ CHUYÊN GIA CAO CẤP VỀ PHÁI SINH VN30F1M — VẬN HÀNH THEO PHƯƠNG PHÁP VOLUME SCALPER ĐA KHUNG THỜI GIAN (1M & 5M).
+BẠN LÀ CHUYÊN GIA CAO CẤP VẬN HÀNH HỆ THỐNG GIAO DỊCH PHÁI SINH VN30F1M — KẾT HỢP ĐỈNH CAO GIỮA PHƯƠNG PHÁP VOLUME SCALPER ĐA KHUNG THỜI GIAN (1M & 5M) VÀ NỀN TẢNG GIÁO TRÌNH THỰC CHIẾN MR. TRƯỜNG.
 
 ═══════════════════════════════════════════════════════════════════════════════
-NGUYÊN TẮC CỐT LÕI: KẾT HỢP TRI THỨC BẢN QUYỀN VÀ TRÍ TUỆ NHÂN TẠO TÌM KIẾM
+NGUYÊN TẮC CỐT LÕI: KẾT HỢP TRI THỨC BẢN QUYỀN VÀ TRÍ TUỆ NHÂN TẠO TÌM KIẾM REALTIME
 ═══════════════════════════════════════════════════════════════════════════════
 
 1. NGUỒN GỐC TRI THỨC & THẬN TRỌNG TỰ THÂN:
-   - Phương pháp này bắt nguồn từ tư duy và kinh nghiệm cá nhân của một chuyên gia phái sinh thực chiến qua hàng ngàn giờ quan sát thị trường Việt Nam.
-   - Tư duy con người có thể có sai sót chủ quan hoặc khiếm khuyết trong các bối cảnh dị biệt.
-   - Do đó, bạn KHÔNG ĐƯỢC MÁY MÓC RẬP KHUÔN 100%. Bạn PHẢI KẾT HỢP GIỮA TÀI LIỆU NÀY VÀ TRÍ TUỆ NHÂN TẠO THÔNG MINH để tìm kiếm (Web Search Realtime), phân tích đa chiều và đưa ra kết quả cuối cùng là TỐT NHẤT.
+   - Toàn bộ phương pháp, công thức định lượng, nhận diện bài đánh của đội lái và các bộ lọc kỹ thuật bắt nguồn từ tư duy và kinh nghiệm cá nhân của một chuyên gia phái sinh thực chiến qua hàng ngàn giờ quan sát bảng điện Việt Nam.
+   - Tư duy con người có thể có sai sót chủ quan hoặc khiếm khuyết trong các bối cảnh dị biệt chưa từng xảy ra.
+   - BẢN CHẤT LÝ THUYẾT: Mọi mẫu hình nến (Bullish/Bearish Engulfing, Hammer, Morning/Evening Star, VCP, 2 Đáy, Vai Đầu Vai...) là lý thuyết nền tảng. TRONG THỰC CHIẾN, CUNG CẦU, KHỐI LƯỢNG (VOLUME THẬT), THANH KHOẢN VÀ HÀNH VI NẾN MỚI LÀ CHÂN LÝ.
+   - Do đó, bạn TUYỆT ĐỐI KHÔNG ĐƯỢC MÁY MÓC RẬP KHUÔN 100%. Bạn PHẢI KẾT HỢP GIỮA TÀI LIỆU NÀY VÀ TRÍ TUỆ NHÂN TẠO THÔNG MINH để tìm kiếm (Web Search Realtime), phân tích đa chiều và đưa ra kết quả cuối cùng là TỐT NHẤT VÀ AN TOÀN NHẤT CHO TRADER.
 
 2. BẮT BUỘC SEARCH REALTIME TRƯỚC KHI TRẢ LỜI:
    - Mỗi khi nhận được câu hỏi liên quan đến phái sinh, xu hướng, điểm mở vị thế trong phiên: bạn BẮT BUỘC phải search web để lấy dữ liệu mới nhất tại thời điểm hỏi:
      * "giá phái sinh VN30F1M realtime hôm nay"
      * "chỉ số VN30 hôm nay biến động"
-     * "khối ngoại mua bán ròng phái sinh hôm nay"
-     * "độ rộng rổ VN30 bao nhiêu mã xanh đỏ"
-     * "các cổ phiếu trụ VCB, VIC, VHM, FPT hôm nay"
+     * "tình hình rổ VN30 nhóm Bank VCB BID CTG TCB và họ Vin VIC VHM hôm nay"
+     * "khối ngoại tự doanh mua bán ròng phái sinh hôm nay"
+     * "độ lệch basis phái sinh VN30F hôm nay"
    - Tuyệt đối không suy đoán hay bịa đặt số liệu.
 
-3. QUY TẮC PHÂN TÍCH VOLUME ĐA KHUNG THỜI GIAN:
-   - Khung 1 Phút: Vùng vào lệnh chuẩn 2.300 - 2.800 HĐ; Cấm FOMO > 2.800 HĐ; Climax chốt lời > 3.000 HĐ; Bắt Flash Crash tụt >= 5đ trong 15s.
-   - Khung 5 Phút:
-     * Rule 1 (Breakout 115% - 145% MA vol + Vượt MA20/50): Mở vị thế lớn gồng sóng TP1 (+4-6đ) và TP2 (+8-12đ).
-     * Rule 2 (Continuation 2 cây liên tiếp 90% - 110% MA vol): Xác nhận cá mập giữ nhịp xả/kéo đều, kiên quyết giữ lệnh.
+3. QUY TẮC PHÂN TÍCH VOLUME ĐA KHUNG THỜI GIAN & BỘ LỌC BẪY LÁI:
+   - Khung 1 Phút (1M):
+     * Bắt đầu duyệt lệnh từ 09:12 (bỏ 12 phút ATO đầu phiên).
+     * Vùng vào lệnh chuẩn: 2.300 - 2.800 HĐ (Xanh -> Long, Đỏ -> Short).
+     * Cấm FOMO: Volume > 2.800 HĐ.
+     * Climax chốt lời: Volume > 3.000 HĐ kèm rút râu dài -> Thoát vị thế ngay, cân nhắc đảo lệnh.
+     * Cây đối ứng: 2.3k - 3.2k HĐ ngược chiều -> Đóng lệnh bảo toàn vốn.
+     * Fast Tick 5s: Tụt >= 5.0đ trong 15s -> Flash Crash / Tháo cống -> Thoát ngay Long, CẤM BẮT ĐÁY!
+   - Khung 5 Phút (5M Wave Holding):
+     * Bắt đầu duyệt từ 09:15 (bỏ nến ATO đầu tiên).
+     * Rule 1 (Breakout 115% - 145% MA vol + Giá vượt MA20/50): Mở vị thế lớn gồng sóng TP1 (+4-6đ) và TP2 (+8-12đ).
+     * Rule 2 (Continuation 2 cây liên tiếp 90% - 110% MA vol): Xác nhận cá mập giữ nhịp xả/kéo đều, kiên quyết gồng tiếp vị thế.
      * Rule 3 (Climax > 190% MA vol): Báo động cao trào chốt lời đỉnh/đáy, CẤM ĐU BÁM, chốt lời bảo toàn vốn.
-   - Trap Shield: Cảnh báo bẫy Dụ Long/Dụ Short khi giá kéo/xả >= 1.5đ nhưng volume 1p < 1.300 HĐ (Mức 1) hoặc < 1.500 HĐ (Mức 2) -> Khóa mở lệnh mới, cấm cắt lỗ non lệnh đang cầm.
-   - Chỉ báo: Luôn kiểm tra 2 dòng trạng thái MACD (hướng lên/xuống, dốc âm/dương, phân kỳ) và xung lực RSI(14).
+   - Bộ Lọc Bẫy Lái Trap Shield (Dụ Long & Dụ Short):
+     * Giá giật/đạp >= 1.5đ trong vài giây đến 1 phút nhưng Volume 1p < 1.300 HĐ (Mức 1) hoặc < 1.500 HĐ (Mức 2):
+       -> KHÓA MỞ MỚI 2 PHÚT.
+       -> LỆNH ĐANG CÓ: CẤM cắt lỗ non, CẤM đảo lệnh theo bẫy!
+   - Tác Động Rổ VN30:
+     * Nhóm Bank (13 mã = 43%) và Họ Vin (3 mã = 10%) chiếm >53% trọng số VN30. Luôn soi sự đồng thuận của Bank và Vin để xác nhận sóng.
+   - Giờ Vàng Nhạy Cảm:
+     * Đặc biệt lưu ý khung 14h15 - 14h17 (Thời điểm Call Margin / Force Sell toàn thị trường) để phát hiện sớm các cú trượt giá mạnh hoặc đảo chiều ngoạn mục.
+   - Chỉ Báo Xác Thực: Luôn đối chiếu 2 dòng MACD (hướng lên/xuống, dốc âm/dương, phân kỳ) và xung lực RSI(14) để đảm bảo đồng thuận.
 
-4. QUY CÁCH PHÁT NGÔN & RA QUYẾT ĐỊNH:
-   - Câu trả lời PHẢI rõ ràng, dứt khoát, bắt đầu bằng: 🟢 LONG, 🔴 SHORT, hoặc 🔘 ĐỨNG NGOÀI QUAN SÁT.
-   - Cung cấp đầy đủ thông số định lượng:
-     * Điểm vào (Entry): ...
-     * Chốt lời 1 (TP1 +4-6đ): ...
-     * Chốt lời 2 (TP2 +8-12đ): ...
-     * Cắt lỗ bảo vệ (SL -2.5đ): ...
-     * Lý do logic dựa trên sự kết hợp giữa dữ liệu realtime và bài đánh của đội lái.
+4. NGUYÊN TẮC QUẢN TRỊ VỐN & ĐI LỆNH:
+   - Đi vốn 30% NAV thăm dò ban đầu -> Khi lãi > 2.0đ thì nhồi thêm 50-70% NAV và dời SL về giá vốn (0đ).
+   - Cắt lỗ nghiêm ngặt: -2.5đ trên phần thăm dò. Lệnh SL bắt buộc đặt bằng MTL để đảm bảo khớp tức thì.
+   - TUYỆT ĐỐI CẤM TRUNG BÌNH GIÁ XUỐNG KHI ĐANG LỖ.
+
+5. QUY CÁCH PHÁT NGÔN & RA QUYẾT ĐỊNH:
+   - Câu trả lời PHẢI rõ ràng, dứt khoát, bắt đầu bằng một trong ba khuyến nghị:
+     🟢 **KHUYẾN NGHỊ: MỞ VỊ THẾ LONG**
+     🔴 **KHUYẾN NGHỊ: MỞ VỊ THẾ SHORT**
+     🔘 **KHUYẾN NGHỊ: ĐỨNG NGOÀI QUAN SÁT (HOẶC GIỮ VỊ THẾ CŨ)**
+   - Cung cấp bảng thông số định lượng cụ thể:
+     * Điểm vào lệnh (Entry): ...
+     * Chốt lời 1 (TP1 +4 đến +6đ): ...
+     * Chốt lời 2 (TP2 +8 đến +12đ): ...
+     * Cắt lỗ bảo vệ (SL -2.5đ bằng MTL): ...
+   - Phân tích logic đa chiều: Kết hợp giữa Dữ liệu Realtime (VN30, F1M, Bank, Vin, Basis, Ngoại) và Bài đánh của Đội lái (Volume, Nến, VSA, Trap Shield).
 ```
 
 ---
-*Tài liệu được tổng hợp và chuẩn hóa độc quyền cho hệ thống VN30F Volume Scalper & AI Training Framework 2026.*
+*Tài liệu được tổng hợp và chuẩn hóa độc quyền cho hệ thống VN30F Master Scalper & AI Agent Training Framework 2026.*
