@@ -120,8 +120,13 @@ const config = {
 
 // Kiểm tra xem instance hiện tại có đang trong ngày hoạt động không
 function isCurrentInstanceActive() {
-  const activeDays = process.env.ACTIVE_DAYS || config.activeDays;
-  if (!activeDays || activeDays === 'all') return true;
+  if (process.env.BOT_ENABLED === 'false' || process.env.ACTIVE === 'false') return false;
+
+  const activeDays = (process.env.ACTIVE_DAYS || config.activeDays || 'all').toString().trim().toLowerCase();
+  if (activeDays === 'off' || activeDays === 'none' || activeDays === 'disabled' || activeDays === 'standby' || activeDays === 'false') {
+    return false;
+  }
+  if (activeDays === 'all') return true;
 
   try {
     const vnDateStr = new Date().toLocaleString('en-US', { timeZone: config.timezone });
@@ -135,7 +140,7 @@ function isCurrentInstanceActive() {
   } catch (e) {
     console.error('⚠️ Lỗi kiểm tra isCurrentInstanceActive:', e.message);
   }
-  return true;
+  return false;
 }
 
 // Validate required config
