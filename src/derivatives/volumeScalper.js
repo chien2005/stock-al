@@ -1,27 +1,31 @@
 /**
  * ╔═══════════════════════════════════════════════════════════════╗
- * ║   🔮 VN30F v5.1 — Volume Scalping Engine                     ║
+ * ║   🔮 VN30F v6.0 — Senior Trader AI Agent                      ║
  * ╠═══════════════════════════════════════════════════════════════╣
- * ║  • Poll 1p nến đã đóng từ 09:12 → 14:30                      ║
- * ║  • Fast Tick 5s: Bắt Flash Crash / Cá mập úp bô / Force Sell   ║
- * ║  • Xu hướng MA9 & MA26: Sát dải trên → Long, sát dải dưới → Short║
- * ║  • Lọc Trap râu nến, Bollinger Bands (Cấm đuổi đỉnh/đáy)     ║
- * ║  • Cảnh báo Vượt đỉnh 3 lần thất bại (Triple Top Fakeout)      ║
- * ║  • Cấu trúc Đỉnh sau < Đỉnh trước (LH) / > Đỉnh trước (HH)    ║
- * ║  • Chế độ Quiet: Không spam khi thanh khoản < 1.000 HĐ         ║
- * ║  • Báo cáo đầy đủ giây lẻ (HH:mm:ss), NN, Tự doanh, Đám đông  ║
+ * ║  NÂNG CẤP TỪ CHATBOT → AUTO TRADER CHUYÊN NGHIỆP             ║
+ * ║                                                                ║
+ * ║  • Market Context Engine: Basis, NN, Session Intelligence      ║
+ * ║  • Trap Shield v6.0: Phục hồi bộ lọc bẫy lái (Dụ Long/Short) ║
+ * ║  • VSA Pattern Detector: Engulfing, Hammer, Star patterns      ║
+ * ║  • Trade Decision Engine: Multi-factor scoring (Confidence %)  ║
+ * ║  • Pro Notification: Senior Trader style, 3 giây để hiểu       ║
+ * ║  • Session-Aware: 6 khung giờ vàng, Call Margin 14h15 warning  ║
+ * ║  • Volume Scalper 1M/5M + Fast Tick 5s + All v5.x features    ║
  * ╚═══════════════════════════════════════════════════════════════╝
  */
 
 const dataFetcher = require('./dataFetcher');
 const oiEstimator = require('./oiEstimator');
+const marketContext = require('./marketContext');
+const tradeDecision = require('./tradeDecision');
+const proNotifier = require('./proNotifier');
 const { sendDerivativesMessage } = require('../telegramService');
 const { config, isCurrentInstanceActive } = require('../config');
 
 // ─── CONSTANTS ───────────────────────────────────────────────
 const POLL_INTERVAL_MS = 60 * 1000;       // 60 giây (Nến 1p)
 const FAST_TICK_INTERVAL_MS = 5 * 1000;   // 5 giây (Bắt Flash Crash realtime)
-const START_TIME = '09:12';               // Bỏ qua 12 phút đầu phiên (ATO noise)
+const START_TIME = '09:15';               // Bỏ qua 15 phút đầu phiên (ATO noise & thăm dò)
 const STOP_ENTRY_TIME = '14:20';          // Không mở mới sau 14:20
 const END_TIME = '14:30';                 // Dừng poll nến 1p
 
@@ -54,7 +58,11 @@ const WICK_5M_TRAP_MIN = 2.0;              // Râu nến 5p >= 2.0đ = Trap râu
 const WICK_TRAP_MIN = 1.5;                // Râu >= 1.5đ = Trap
 const WICK_ANOMALY_MIN = 2.0;             // Râu >= 2.0đ + vol thấp = Anomaly warning
 
-// (Ghi chú: Đã tạm xóa bỏ bẫy biến động 1-2đ theo yêu cầu để tránh spam notification)
+// Trap Shield v6.0 — PHỤC HỒI bộ lọc bẫy lái (đã bị tắt từ v5.x)
+const TRAP_PRICE_CHANGE_MIN = 1.5;        // Giá giật >= 1.5đ
+const TRAP_VOL_LEVEL1 = 1300;             // Mức 1: Vol < 1.300 = Bơm/Đạp đểu CỰC NGUY HIỂM
+const TRAP_VOL_LEVEL2 = 1500;             // Mức 2: Vol < 1.500 = Kéo/Xả ảo CẢNH GIÁC CAO
+const TRAP_LOCK_DURATION_MS = 2 * 60 * 1000; // Khóa mở lệnh 2 phút sau khi phát hiện bẫy
 
 // Flash Crash thresholds (Cá mập úp bô / Force Sell)
 const FLASH_DROP_FAST_PTS = 5.0;          // Tụt >= 5 điểm trong vòng 15 giây
@@ -81,6 +89,7 @@ const FLASH_COOLDOWN_MS = 90 * 1000;      // 90s giữa 2 cảnh báo Flash Cras
 const TRIPLE_TOP_COOLDOWN_MS = 15 * 60 * 1000; // 15 phút giữa 2 cảnh báo Triple Top
 const SWING_COOLDOWN_MS = 5 * 60 * 1000;  // 5 phút giữa 2 cảnh báo Swing High
 const ALERT_5M_COOLDOWN_MS = 4 * 60 * 1000; // 4 phút cooldown cho alert 5M tương tự
+const TRAP_SHIELD_COOLDOWN_MS = 2 * 60 * 1000; // 2 phút cooldown giữa 2 Trap Shield alert
 
 // ─── STATE ───────────────────────────────────────────────────
 const _state = {
@@ -111,6 +120,11 @@ const _state = {
   last5mContAlertTime: 0,        // Cooldown cảnh báo 5M Continuation
   last5mBreakoutAlertTime: 0,    // Cooldown cảnh báo 5M Breakout
   last5mOppositeAlertTime: 0,    // Cooldown cảnh báo 5M Opposite Exit
+  // Trap Shield v6.0
+  trapLockUntil: 0,              // Timestamp hết khóa entry sau trap
+  lastTrapAlertTime: 0,          // Cooldown trap alert
+  // Market Context v6.0  
+  lastMarketContext: null,       // Cache bối cảnh thị trường gần nhất
 };
 
 // ─── HELPERS ─────────────────────────────────────────────────
@@ -470,6 +484,60 @@ async function processNewCandle(candle, allCandles, oiData) {
   const rsiAnalysis = analyzeRSI(closes);
   const indicators = { ma9, ma26, ma20, ma50, bb, ma9_26Analysis, macdAnalysis, rsiAnalysis };
 
+  // v6.0: Market Context Engine — Bối cảnh thị trường toàn diện
+  let vn30Price = null;
+  try {
+    const vn30Obj = await dataFetcher.fetchRealtimeVN30Price();
+    vn30Price = vn30Obj?.price || null;
+  } catch (e) {}
+  const context = marketContext.buildMarketContext(candle.close, vn30Price, oiData, candle.time);
+  _state.lastMarketContext = context;
+
+  // v6.0: VSA Pattern Detection
+  const vsaPatterns = tradeDecision.detectVSAPatterns(allCandles, {
+    min: VOL_ENTRY_MIN,
+    max: VOL_ENTRY_MAX,
+    trap: TRAP_VOL_LEVEL1,
+  });
+
+  // v6.0: TRAP SHIELD CHECK (Realtime Trap Detection trước mọi quyết định)
+  const prevClose = allCandles.length >= 2 ? allCandles[allCandles.length - 2].close : candle.open;
+  const priceMove = Math.abs(candle.close - candle.open);
+  const jumpMove = Math.abs(candle.close - prevClose);
+  const maxMove = Math.max(priceMove, jumpMove);
+
+  if (maxMove >= TRAP_PRICE_CHANGE_MIN) {
+    if (candle.volume < TRAP_VOL_LEVEL1) {
+      // MỨC 1: BƠM/ĐẠP ĐỂU — CỰC NGUY HIỂM (Vol < 1.300 HĐ)
+      _state.trapLockUntil = now + TRAP_LOCK_DURATION_MS;
+      if (now - _state.lastTrapAlertTime > TRAP_SHIELD_COOLDOWN_MS) {
+        _state.lastTrapAlertTime = now;
+        const trapMsg = proNotifier.formatTrapShieldAlert({
+          level: 1,
+          candle,
+          priceChange: candle.close - prevClose,
+          currentPosition: _state.position,
+          context,
+        });
+        await sendDerivativesMessage(trapMsg);
+      }
+    } else if (candle.volume < TRAP_VOL_LEVEL2) {
+      // MỨC 2: KÉO/XẢ ẢO — CẢNH GIÁC CAO (Vol < 1.500 HĐ)
+      _state.trapLockUntil = now + TRAP_LOCK_DURATION_MS;
+      if (now - _state.lastTrapAlertTime > TRAP_SHIELD_COOLDOWN_MS) {
+        _state.lastTrapAlertTime = now;
+        const trapMsg = proNotifier.formatTrapShieldAlert({
+          level: 2,
+          candle,
+          priceChange: candle.close - prevClose,
+          currentPosition: _state.position,
+          context,
+        });
+        await sendDerivativesMessage(trapMsg);
+      }
+    }
+  }
+
   // Cập nhật floating profit & breakeven
   if (_state.position === 'LONG') {
     const p = candle.high - _state.entryPrice;
@@ -506,7 +574,6 @@ async function processNewCandle(candle, allCandles, oiData) {
 
   // ─── CHECK CẤU TRÚC ĐỈNH SAU VS ĐỈNH TRƯỚC (SWING HIGHS) ─
   await checkSwingHighStructure(candle, allCandles);
-
 
   // ─── CHECK MA CROSSOVER (3 cây liên tiếp) ────────────────
   await checkMACrossover(allCandles, indicators, oiData);
@@ -545,7 +612,18 @@ async function processNewCandle(candle, allCandles, oiData) {
 
       if (canReverseToShort) {
         // ĐẢO LỆNH → SHORT
-        await sendSignalNoti('CLOSE_LONG_REVERSE_SHORT', candle, trade, indicators, oiData);
+        const newPlan = tradeDecision.generateTradePlan(candle.close, 'SHORT', '1M');
+        const exitMsg = proNotifier.formatExitNotification({
+          trade,
+          candle,
+          indicators,
+          context,
+          isReverse: true,
+          newDirection: 'SHORT',
+          newPlan,
+        });
+        await sendDerivativesMessage(exitMsg);
+
         _state.position = 'SHORT';
         _state.entryPrice = candle.close;
         _state.entryTime = candle.time;
@@ -554,7 +632,14 @@ async function processNewCandle(candle, allCandles, oiData) {
         _state.maxProfit = 0;
         _state.breakevenActive = false;
       } else {
-        await sendSignalNoti('CLOSE_LONG', candle, trade, indicators, oiData);
+        const exitMsg = proNotifier.formatExitNotification({
+          trade,
+          candle,
+          indicators,
+          context,
+          isReverse: false,
+        });
+        await sendDerivativesMessage(exitMsg);
         _state.position = 'NONE';
       }
       return;
@@ -591,7 +676,19 @@ async function processNewCandle(candle, allCandles, oiData) {
       }
 
       if (canReverseToLong) {
-        await sendSignalNoti('CLOSE_SHORT_REVERSE_LONG', candle, trade, indicators, oiData);
+        // ĐẢO LỆNH → LONG
+        const newPlan = tradeDecision.generateTradePlan(candle.close, 'LONG', '1M');
+        const exitMsg = proNotifier.formatExitNotification({
+          trade,
+          candle,
+          indicators,
+          context,
+          isReverse: true,
+          newDirection: 'LONG',
+          newPlan,
+        });
+        await sendDerivativesMessage(exitMsg);
+
         _state.position = 'LONG';
         _state.entryPrice = candle.close;
         _state.entryTime = candle.time;
@@ -600,7 +697,14 @@ async function processNewCandle(candle, allCandles, oiData) {
         _state.maxProfit = 0;
         _state.breakevenActive = false;
       } else {
-        await sendSignalNoti('CLOSE_SHORT', candle, trade, indicators, oiData);
+        const exitMsg = proNotifier.formatExitNotification({
+          trade,
+          candle,
+          indicators,
+          context,
+          isReverse: false,
+        });
+        await sendDerivativesMessage(exitMsg);
         _state.position = 'NONE';
       }
       return;
@@ -610,10 +714,23 @@ async function processNewCandle(candle, allCandles, oiData) {
   // ─── 2. KIỂM TRA ENTRY KHI ĐANG NONE ─────────────────────
   if (_state.position === 'NONE' && candle.time >= START_TIME && candle.time <= STOP_ENTRY_TIME) {
 
+    // v6.0: Trap Shield Lock — Cấm mở lệnh nếu đang bị khóa bởi Trap Shield
+    if (now < _state.trapLockUntil) {
+      console.log(`   🛡️ [Trap Shield] Entry LOCKED cho đến ${new Date(_state.trapLockUntil).toLocaleTimeString('vi-VN', { timeZone: config.timezone })}`);
+      return;
+    }
+
+    // v6.0: Session-Aware — Kiểm tra khung giờ có cho phép giao dịch không
+    if (context && context.shouldBlockEntry) {
+      console.log(`   🚧 [Session] Khung giờ ${context.session?.id || 'UNKNOWN'} — Cấm mở vị thế`);
+      return;
+    }
+
     // Cấm FOMO khi nổ vol quá lớn (> 2.800 HĐ)
     if (candle.volume > VOL_FOMO) {
       if (now - _state.lastNotiTime > NOTI_COOLDOWN_MS) {
-        await sendFomoWarning(candle, indicators, oiData);
+        const fomoMsg = proNotifier.formatFomoWarning({ candle, indicators, context });
+        await sendDerivativesMessage(fomoMsg);
         _state.lastNotiTime = now;
       }
       return;
@@ -680,7 +797,31 @@ async function processNewCandle(candle, allCandles, oiData) {
       _state.maxProfit = 0;
       _state.breakevenActive = false;
 
-      await sendSignalNoti('ENTRY', candle, null, indicators, oiData);
+      // v6.0: Tính Confidence % và tạo plan
+      const direction = _state.position;
+      const decision = tradeDecision.calculateConfidence({
+        candle,
+        direction,
+        indicators,
+        vsaPatterns,
+        marketContext: context,
+        volumeThresholds: { min: VOL_ENTRY_MIN, max: VOL_ENTRY_MAX, fomo: VOL_FOMO, climax: VOL_CLIMAX, trap: TRAP_VOL_LEVEL1 },
+      });
+      const plan = tradeDecision.generateTradePlan(candle.close, direction, '1M');
+      const reasons = tradeDecision.buildSeniorReasoning(decision, candle, indicators);
+
+      // v6.0: Pro Notification (Senior Trader Style)
+      const entryMsg = proNotifier.formatEntryNotification({
+        candle,
+        direction,
+        decision,
+        plan,
+        indicators,
+        context,
+        oiData,
+        reasons,
+      });
+      await sendDerivativesMessage(entryMsg);
       _state.lastNotiTime = now;
     }
   }
@@ -876,7 +1017,7 @@ async function checkSwingHighStructure(candle, allCandles) {
         msg += `⛰️ Đỉnh mới: <b>${newPeak.high.toFixed(1)}</b> (${newPeak.time}) < Đỉnh cũ: <b>${_state.lastConfirmedPeak.high.toFixed(1)}</b> (${_state.lastConfirmedPeak.time}) [${diff.toFixed(1)}đ]\n\n`;
         msg += `💡 <i>Phe Bán đang ép đỉnh thấp dần. Cân nhắc chốt LONG / Đứng ngoài / Tìm điểm SHORT!</i>\n`;
         msg += `━━━━━━━━━━━━━━━━━━━━\n`;
-        msg += `<i>🔮 Volume Scalper v5.1</i>`;
+        msg += `<i>🔮 VN30F v6.0 | Senior Trader AI Agent</i>`;
         await sendDerivativesMessage(msg);
       } else if (diff >= 0.5 && _state.position === 'LONG' && now - _state.lastSwingAlertTime > SWING_COOLDOWN_MS) {
         // Đỉnh sau CAO HƠN đỉnh trước (Higher High) -> GIỮ LONG
@@ -886,7 +1027,7 @@ async function checkSwingHighStructure(candle, allCandles) {
         msg += `⛰️ Đỉnh mới: <b>${newPeak.high.toFixed(1)}</b> (${newPeak.time}) > Đỉnh cũ: <b>${_state.lastConfirmedPeak.high.toFixed(1)}</b> (${_state.lastConfirmedPeak.time}) [+${diff.toFixed(1)}đ]\n\n`;
         msg += `💡 <i>Cấu trúc Uptrend tiếp diễn vững chắc → <b>TIẾP TỤC GIỮ VỊ THẾ LONG!</b></i>\n`;
         msg += `━━━━━━━━━━━━━━━━━━━━\n`;
-        msg += `<i>🔮 Volume Scalper v5.1</i>`;
+        msg += `<i>🔮 VN30F v6.0 | Senior Trader AI Agent</i>`;
         await sendDerivativesMessage(msg);
       }
     }
@@ -923,7 +1064,7 @@ async function checkMACrossover(allCandles, indicators, oiData) {
         msg += `💹 F1M: <b>${latestClose.toFixed(1)}</b> | MA50: ${indicators.ma50.toFixed(1)}\n`;
         msg += `━━━━━━━━━━━━━━━━━━━━\n`;
         msg += `💡 <i>Cân nhắc ${crossedAbove ? 'LONG' : 'SHORT'} / Đứng ngoài / Chốt lời</i>\n`;
-        msg += `<i>🔮 Volume Scalper v5.1</i>`;
+        msg += `<i>🔮 VN30F v6.0 | Senior Trader AI Agent</i>`;
         await sendDerivativesMessage(msg);
         _state.lastMA50AlertTime = now;
       }
@@ -943,7 +1084,7 @@ async function checkMACrossover(allCandles, indicators, oiData) {
         msg += `💹 F1M: <b>${latestClose.toFixed(1)}</b> | MA20: ${indicators.ma20.toFixed(1)}\n`;
         msg += `━━━━━━━━━━━━━━━━━━━━\n`;
         msg += `💡 <i>Cân nhắc ${crossedAbove ? 'LONG' : 'SHORT'} / Đứng ngoài / Chốt lời</i>\n`;
-        msg += `<i>🔮 Volume Scalper v5.1</i>`;
+        msg += `<i>🔮 VN30F v6.0 | Senior Trader AI Agent</i>`;
         await sendDerivativesMessage(msg);
         _state.lastMA20AlertTime = now;
       }
@@ -1200,35 +1341,20 @@ async function sendMA9_26BlockWarning(candle, indicators, oiData, blockedDir) {
 }
 
 async function sendFlashCrashWarning(currentPrice, dropPts, dropWindow, fromPrice, isAfter14h, wasLong, indicators) {
-  let msg = `🚨🚨🚨 <b>[CẢNH BÁO KHẨN CẤP] CÁ MẬP ÚP BÔ / FORCE SELL / FLASH CRASH!</b>\n`;
-  msg += `🕐 <b>${getVnTimeHHMMSS()}</b> | F1M: <b>${currentPrice.toFixed(1)}</b>\n\n`;
-
-  msg += `⚡ <b>BIẾN ĐỘNG CỰC ĐỘ:</b>\n`;
-  msg += `   Giá tụt <b>-${dropPts.toFixed(1)} điểm</b> trong vòng <b>${dropWindow}</b>! (Từ ${fromPrice.toFixed(1)} → ${currentPrice.toFixed(1)})\n`;
-  if (isAfter14h) {
-    msg += `   ⚠️ <b>ĐẶC BIỆT NGUY HIỂM SAU 14H00 — Giờ Call Margin & Xả Kho Lái!</b>\n`;
-  }
-
-  if (indicators) {
-    msg += `\n📈 <b>Chỉ báo:</b>\n   ${buildIndicatorBlock(indicators)}\n`;
-  }
-
-  msg += `\n🛡️ <b>HÀNH ĐỘNG HỆ THỐNG:</b>\n`;
-  if (wasLong) {
-    msg += `   🛑 <b>ĐÃ TỰ ĐỘNG THOÁT KHẨN CẤP VỊ THẾ LONG @ ${currentPrice.toFixed(1)}!</b>\n`;
-    msg += `   👉 Bảo toàn vốn, tuyệt đối không gồng lỗ khi lái úp bô tháo cống!\n`;
-  } else {
-    msg += `   ⛔ Đang cầm SHORT hoặc ĐỨNG NGOÀI.\n`;
-    msg += `   👉 <b>TUYỆT ĐỐI CẤM BẮT ĐÁY DAO RƠI!</b> Chờ thị trường ổn định.\n`;
-  }
-
-  msg += `━━━━━━━━━━━━━━━━━━━━\n`;
-  msg += `<i>🔮 Volume Scalper v5.1 | VN Stock Bot</i>`;
-  await sendDerivativesMessage(msg);
+  const flashMsg = proNotifier.formatFlashCrashAlert({
+    currentPrice,
+    dropPts,
+    dropWindow,
+    fromPrice,
+    isAfter14h,
+    wasLong,
+    indicators,
+  });
+  await sendDerivativesMessage(flashMsg);
 }
 
 async function sendTripleTopWarning(candle, tripleTop, indicators, oiData) {
-  let msg = `⚠️ <b>[VN30F v5.1] CẢNH BÁO: VƯỢT ĐỈNH 3 LẦN THẤT BẠI (TRIPLE TOP FAKEOUT)</b>\n`;
+  let msg = `⚠️ <b>[VN30F v6.0] CẢNH BÁO: VƯỢT ĐỈNH 3 LẦN THẤT BẠI (TRIPLE TOP FAKEOUT)</b>\n`;
   msg += `🕐 <b>${getVnTimeHHMMSS()}</b> (Nến ${candle.time}) | F1M: <b>${candle.close.toFixed(1)}</b>\n\n`;
 
   msg += `⛰️ <b>Vùng Kháng Cự 3 Đỉnh:</b>\n`;
@@ -1243,7 +1369,7 @@ async function sendTripleTopWarning(candle, tripleTop, indicators, oiData) {
   msg += `👉 <b>TUYỆT ĐỐI CẤM FOMO LONG ĐỈNH!</b>\n`;
   msg += `👉 Cân nhắc mở SHORT khi xác nhận gãy lại vùng đỉnh ${tripleTop.resistanceLevel.toFixed(1)}.\n`;
   msg += `━━━━━━━━━━━━━━━━━━━━\n`;
-  msg += `<i>🔮 Volume Scalper v5.1</i>`;
+  msg += `<i>🔮 VN30F v6.0 | Senior Trader AI Agent</i>`;
   await sendDerivativesMessage(msg);
 }
 
@@ -1454,7 +1580,14 @@ async function processNew5mCandle(candle5m, all5mCandles, oiData) {
 
     if (now - _state.last5mClimaxAlertTime > ALERT_5M_COOLDOWN_MS) {
       _state.last5mClimaxAlertTime = now;
-      await send5mClimaxWarning(candle5m, dir, indicators5m, oiData);
+      const climaxMsg = proNotifier.formatClimaxAlert({
+        candle: candle5m,
+        timeframe: '5M',
+        volRatio: volRatioAvg,
+        currentPosition: _state.position,
+        indicators: indicators5m,
+      });
+      await sendDerivativesMessage(climaxMsg);
     }
     return; // Cấm tuyệt đối đu bám/bồi vào theo yêu cầu user!
   }
@@ -1482,7 +1615,14 @@ async function processNew5mCandle(candle5m, all5mCandles, oiData) {
 
       if (now - _state.last5mOppositeAlertTime > NOTI_COOLDOWN_MS) {
         _state.last5mOppositeAlertTime = now;
-        await send5mOppositeExit(candle5m, closedPos, trade, indicators5m, oiData);
+        const exitMsg = proNotifier.formatExitNotification({
+          trade,
+          candle: candle5m,
+          indicators: indicators5m,
+          context: _state.lastMarketContext,
+          isReverse: false,
+        });
+        await sendDerivativesMessage(exitMsg);
       }
       return;
     }
@@ -1515,11 +1655,7 @@ async function processNew5mCandle(candle5m, all5mCandles, oiData) {
     console.log(`   🚀 [5M Engine] RULE 1 BREAKOUT 5M: ${candle5m.time} | ${dir} | Vol ${candle5m.volume} (${(volRatioAvg * 100).toFixed(0)}% MA)`);
 
     const entry = candle5m.close;
-    const tp1 = dir === 'LONG' ? entry + 5.0 : entry - 5.0; // +4 đến +6đ
-    const tp2 = dir === 'LONG' ? entry + 10.0 : entry - 10.0; // +8 đến +12đ
-    const sl = dir === 'LONG' ? entry - 2.8 : entry + 2.8;
-
-    const plan = { entry, tp1, tp2, sl, targetPnl1: 5.0, targetPnl2: 10.0 };
+    const plan = tradeDecision.generateTradePlan(entry, dir, '5M');
 
     if (_state.position === 'NONE') {
       _state.position = dir;
@@ -1532,7 +1668,22 @@ async function processNew5mCandle(candle5m, all5mCandles, oiData) {
 
     if (now - _state.last5mBreakoutAlertTime > ALERT_5M_COOLDOWN_MS) {
       _state.last5mBreakoutAlertTime = now;
-      await send5mBreakoutSignal(candle5m, dir, indicators5m, oiData, plan);
+      const decision = tradeDecision.calculateConfidence({
+        candle: candle5m,
+        direction: dir,
+        indicators: indicators5m,
+        marketContext: _state.lastMarketContext,
+      });
+      const breakoutMsg = proNotifier.format5mBreakoutSignal({
+        candle: candle5m,
+        direction: dir,
+        indicators: indicators5m,
+        oiData,
+        plan,
+        decision,
+        context: _state.lastMarketContext,
+      });
+      await sendDerivativesMessage(breakoutMsg);
     }
     return;
   }
@@ -1562,7 +1713,15 @@ async function processNew5mCandle(candle5m, all5mCandles, oiData) {
 
         if (now - _state.last5mContAlertTime > ALERT_5M_COOLDOWN_MS) {
           _state.last5mContAlertTime = now;
-          await send5mContinuationSignal(candle5m, prevCandle5m, dir, indicators5m, oiData, { volRatioAvg, prevRatio });
+          const contMsg = proNotifier.format5mContinuationSignal({
+            candle: candle5m,
+            prevCandle: prevCandle5m,
+            direction: dir,
+            indicators: indicators5m,
+            ratios: { volRatioAvg, prevRatio },
+            context: _state.lastMarketContext,
+          });
+          await sendDerivativesMessage(contMsg);
         }
       }
     }
@@ -1634,7 +1793,7 @@ async function pollCycle() {
 // ─── START / STOP / RESET ────────────────────────────────────
 function start() {
   stop();
-  console.log(`   🔮 Volume Scalper v5.3: Started (1M scalper 60s, 5M volume engine, fast tick 5s, Trap Shield v5.3, entry ${START_TIME}-${STOP_ENTRY_TIME})`);
+  console.log(`   🔮 VN30F v6.0 Senior Trader AI Agent: Started (Market Context, Trap Shield v6.0, VSA patterns, Confidence scoring, Pro notifications, 1M/5M scalper, fast tick 5s, entry ${START_TIME}-${STOP_ENTRY_TIME})`);
 
   // Poll nến 1p & 5p mỗi 60s
   _state.timer = setInterval(() => {

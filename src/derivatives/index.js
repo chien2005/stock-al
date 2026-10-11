@@ -1,10 +1,12 @@
 /**
  * ╔═══════════════════════════════════════════════════════════════╗
- * ║   🔮 VN30F v5.0 — Main Orchestrator                          ║
+ * ║   🔮 VN30F v6.0 — Senior Trader AI Agent Orchestrator         ║
  * ╠═══════════════════════════════════════════════════════════════╣
- * ║  Volume Scalping Engine + AI Forecast + OI Tracker            ║
- * ║  • Volume Scalper: Poll 1p từ 09:12, Entry/Exit/Reverse       ║
- * ║  • AI Forecast: 3 phiên/ngày (9h22, 10h22, 13h50)            ║
+ * ║  Senior Prop Trader AI + Volume Scalper + Market Context      ║
+ * ║  • Volume Scalper v6.0: Trap Shield + VSA + Pro Notifier      ║
+ * ║  • Market Context: 6 Khung Giờ Vàng + Basis + Supply/Demand   ║
+ * ║  • Trade Decision: Confidence Scoring % + Entry/SL/TP Plans   ║
+ * ║  • AI Strategic Forecast: Phán quyết 3 phiên/ngày dứt khoát  ║
  * ║  • OI Tracker: Pre-ATC, Post-ATC, Evening report              ║
  * ╚═══════════════════════════════════════════════════════════════╝
  */
@@ -67,43 +69,52 @@ async function runAIDerivativesJob(session) {
       `${c.time}: ${c.isGreen ? '🟢' : '🔴'} Vol:${c.volume} O:${c.open.toFixed(1)} C:${c.close.toFixed(1)}`
     ).join('\n');
 
+    const marketContext = require('./marketContext');
+    const context = marketContext.buildMarketContext(f1mPrice, vn30PriceVal, oiData);
+    const contextSummary = marketContext.buildContextSummary(context);
+
     const { GoogleGenerativeAI } = require('@google/generative-ai');
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({ model: 'gemini-flash-latest' });
 
-    const prompt = `Bạn là Giám Đốc Quỹ Đầu Tư chuyên VN30F hàng đầu Việt Nam.
+    const prompt = `Bạn là Senior Prop Trader kỳ cựu 15 năm thực chiến thị trường Phái Sinh VN30F Việt Nam (phong cách dứt khoát, kết hợp VSA Wyckoff, Price Action và Đọc Bối Cảnh Lái).
 
-DỮ LIỆU THỰC TẾ VN30F v5.0 (${dataFetcher.vnNow()}):
+DỮ LIỆU REALTIME THỰC CHIẾN VN30F v6.0 (${dataFetcher.vnNow()}):
 
 GIÁ HIỆN TẠI:
 - F1M: ${f1mPrice || 'N/A'} | VN30: ${vn30PriceVal || 'N/A'} | VNINDEX: ${vnindexVal || 'N/A'}
+- Basis: ${context?.basis ? `${context.basis.basis >= 0 ? '+' : ''}${context.basis.basis}đ (${context.basis.description})` : 'N/A'}
 
-VỊ THẾ SCALPER: ${posInfo}
-LỆNH HÔM NAY: ${tradeCount} lệnh | PnL: ${dayPnl >= 0 ? '+' : ''}${dayPnl.toFixed(1)}đ
+BỐI CẢNH PHIÊN:
+${contextSummary || 'N/A'}
 
-OI: ${oiData.totalOI || 'N/A'} | Vol PS: ${oiData.totalVolume || 'N/A'}
-NN: Mua ${oiData.foreignBuy} Bán ${oiData.foreignSell} Net ${oiData.foreignNet}
+VỊ THẾ HIỆN TẠI CỦA ROBOT SCALPER:
+- Vị thế: ${posInfo}
+- Hiệu suất hôm nay: ${tradeCount} lệnh | PnL: ${dayPnl >= 0 ? '+' : ''}${dayPnl.toFixed(1)}đ
 
-10 NẾN GẦN NHẤT:
+DÒNG TIỀN & OI:
+- OI lũy kế: ${oiData.totalOI?.toLocaleString() || 'N/A'} | Tổng Vol: ${oiData.totalVolume?.toLocaleString() || 'N/A'}
+- Khối ngoại: Mua ${oiData.foreignBuy?.toLocaleString()} | Bán ${oiData.foreignSell?.toLocaleString()} | Net: ${oiData.foreignNet >= 0 ? '+' : ''}${oiData.foreignNet?.toLocaleString()} HĐ
+
+10 NẾN 1 PHÚT GẦN NHẤT:
 ${candleSummary || 'N/A'}
 
-YÊU CẦU:
-1. Đưa ra phán quyết LONG/SHORT dứt khoát, có phải bẫy không?
-2. Đánh giá chất lượng cú tăng/giảm hiện tại (thật hay ảo?)
-3. 3 lý do chính bằng tiếng Việt dễ hiểu
-4. Entry, TP (theo cấu trúc), SL (khi nào luận điểm sai)
-5. HTML cho Telegram (<b>, <i>). Ngắn gọn, súc tích.`;
+YÊU CẦU PHÂN TÍCH NHƯ SENIOR TRADER KỲ CỰU:
+1. ĐƯA RA QUYẾT ĐỊNH DỨT KHOÁT: LONG, SHORT, hay ĐỨNG NGOÀI? (Không ba phải, không nói hai chiều, tin cậy bao nhiêu %)
+2. ĐÁNH GIÁ CUNG CẦU & BẪY LÁI: Có tín hiệu Trap Shield, nến rút râu ảo, hay gom/xả hàng không?
+3. TRADE PLAN RÕ RÀNG: Entry chuẩn, Cắt lỗ MTL ở đâu (tối đa 2.5-3đ), Chốt lời TP1 (+4-5đ) và TP2 (+8-10đ).
+4. ĐỊNH DẠNG HTML Telegram (<b>, <i>, bullet points). Súc tích, đọc 5 giây hiểu ngay hành động cần làm.`;
 
     const result = await model.generateContent(prompt);
     let aiText = result.response.text().replace(/```html/gi, '').replace(/```/g, '').trim();
 
-    let msg = `🤖 <b>DỰ BÁO AI v5.0 — ${sessionLabel}</b>\n`;
+    let msg = `🤖 <b>CHIẾN LƯỢC TRADER KỲ CỰU v6.0 — ${sessionLabel}</b>\n`;
     msg += `🕐 <i>${dataFetcher.vnNow()}</i>\n`;
     msg += `━━━━━━━━━━━━━━━━━━━━\n\n`;
     msg += `${aiText}\n\n`;
     msg += `━━━━━━━━━━━━━━━━━━━━\n`;
     msg += `💡 <i>Scalper: ${posInfo} | PnL: ${dayPnl >= 0 ? '+' : ''}${dayPnl.toFixed(1)}đ</i>\n`;
-    msg += `<i>🤖 AI VN30F v5.0 | VN Stock Bot</i>`;
+    msg += `<i>🔮 Senior Trader AI Agent v6.0 | VN Stock Bot</i>`;
 
     await sendDerivativesMessage(msg);
     console.log(`   ✅ AI Derivatives [${session}] hoàn thành`);

@@ -589,21 +589,21 @@ async function main() {
   cron.schedule('0 9 * * 1-5', async () => {
     if (!isCurrentInstanceActive()) return;
     if (!isWeekday()) return;
-    console.log('\n🔮 [Derivatives v5.0] Reset daily state & start Volume Scalper');
+    console.log('\n🔮 [VN30F v6.0] Reset daily state & start Senior Trader AI Scalper');
     try { 
       resetDerivativesState();
       startVolumeScalper();
     } catch (err) { console.error('🔮 [Derivatives Reset] Lỗi:', err.message); }
   }, { scheduled: true, timezone: config.timezone });
 
-  // Volume Scalper v5.0: Poll mỗi 60s từ 09:12, Entry vol 2.3k-2.8k, Exit/Reverse vol đối ứng
-  console.log('   🔮 Derivatives v5.0: Volume Scalper (poll 60s, entry 09:12-14:20, BB+MA filter)');
+  // Senior Trader AI Scalper v6.0: Market Context, Trap Shield v6.0, VSA patterns, Confidence scoring, 1M/5M
+  console.log('   🔮 VN30F v6.0: Senior Trader AI Agent (Context + Trap Shield + VSA + Pro Notifier)');
 
   // ─── SCHEDULE: AI DERIVATIVES FORECAST (9h22, 10h22 & 13h50, T2-T6) ───
   cron.schedule('22 9 * * 1-5', async () => {
     if (!isWeekday()) return;
     if (isDuplicate('aiDerivativesMorning')) return;
-    console.log(`\n🤖 [AI Derivatives Morning v4.0] Cron triggered`);
+    console.log(`\n🤖 [Senior Trader AI Morning v6.0] Cron triggered`);
     try {
       await runAIDerivativesJob('morning');
       jobLastSuccess['aiDerivativesMorning'] = Date.now();
@@ -615,7 +615,7 @@ async function main() {
   cron.schedule('22 10 * * 1-5', async () => {
     if (!isWeekday()) return;
     if (isDuplicate('aiDerivativesMidMorning')) return;
-    console.log(`\n🤖 [AI Derivatives Mid-Morning v4.0] Cron triggered`);
+    console.log(`\n🤖 [Senior Trader AI Mid-Morning v6.0] Cron triggered`);
     try {
       await runAIDerivativesJob('midmorning');
       jobLastSuccess['aiDerivativesMidMorning'] = Date.now();
@@ -627,7 +627,7 @@ async function main() {
   cron.schedule('50 13 * * 1-5', async () => {
     if (!isWeekday()) return;
     if (isDuplicate('aiDerivativesAfternoon')) return;
-    console.log(`\n🤖 [AI Derivatives Afternoon v4.0] Cron triggered`);
+    console.log(`\n🤖 [Senior Trader AI Afternoon v6.0] Cron triggered`);
     try {
       await runAIDerivativesJob('afternoon');
       jobLastSuccess['aiDerivativesAfternoon'] = Date.now();
@@ -866,7 +866,7 @@ async function main() {
   console.log('   🌐 Health:      http://localhost:' + PORT + '/health');
   console.log('   📅 Báo giá/AI: Thứ 2 → Thứ 6 | TTCK+Vàng: Mỗi ngày');
   console.log('   🔒 Dedup lock:  4 phút (chống double message)');
-  console.log('   🔮 Derivatives v5.0: Volume Scalper (poll 60s, entry 09:12-14:20, BB+MA filter)');
+  console.log('   🔮 VN30F v6.0:  Senior Trader AI Agent (Context, Trap Shield v6.0, VSA, Pro Notifier)');
   console.log('   💡 Nhấn Ctrl+C để dừng');
   console.log('─'.repeat(55) + '\n');
 }
