@@ -1,5 +1,5 @@
 {
-  "lastUpdated": "2026-09-22T13:32:28.913Z",
+  "lastUpdated": "2026-10-14T13:05:24.064Z",
   "history": [
     {
       "date": "26/8/2026",
@@ -102,24 +102,10 @@
       "volume": 221675
     },
     {
-      "date": "12/9/2026",
-      "totalOI": 35352,
-      "oiChange": 0,
-      "f1mPrice": 1940,
-      "positionState": "NEUTRAL"
-    },
-    {
       "date": "14/9/2026",
       "totalOI": 33803,
       "oiChange": 0,
       "f1mPrice": 1930.9,
-      "positionState": "NEUTRAL"
-    },
-    {
-      "date": "22/9/2026",
-      "totalOI": 29207,
-      "oiChange": 0,
-      "f1mPrice": 1962.9,
       "positionState": "NEUTRAL"
     },
     {
@@ -155,6 +141,123 @@
       "f1mPrice": 1962.9,
       "vn30Price": 0,
       "basis": 0,
+      "positionState": "NEUTRAL"
+    },
+    {
+      "date": "22/9/2026",
+      "totalOI": 29207,
+      "oiChange": 0,
+      "f1mPrice": 1962.9,
+      "positionState": "NEUTRAL"
+    },
+    {
+      "date": "30/9/2026",
+      "totalOI": 33000,
+      "oiChange": 0,
+      "f1mPrice": 1908.4,
+      "vn30Price": 1906.81,
+      "basis": 1.59,
+      "volume": 220638,
+      "positionState": "NEUTRAL"
+    },
+    {
+      "date": "1/10/2026",
+      "totalOI": 33000,
+      "oiChange": 0,
+      "f1mPrice": 1895,
+      "vn30Price": 1890.57,
+      "basis": 4.43,
+      "volume": 213211,
+      "positionState": "NEUTRAL"
+    },
+    {
+      "date": "2/10/2026",
+      "totalOI": 33000,
+      "oiChange": 0,
+      "f1mPrice": 1885,
+      "vn30Price": 1875.99,
+      "basis": 9.01,
+      "volume": 253004,
+      "positionState": "NEUTRAL"
+    },
+    {
+      "date": "5/10/2026",
+      "totalOI": 33000,
+      "oiChange": 0,
+      "f1mPrice": 1900.1,
+      "vn30Price": 1894.46,
+      "basis": 5.64,
+      "volume": 214672,
+      "positionState": "NEUTRAL"
+    },
+    {
+      "date": "6/10/2026",
+      "totalOI": 33000,
+      "oiChange": 0,
+      "f1mPrice": 1903.5,
+      "vn30Price": 1898.82,
+      "basis": 4.68,
+      "volume": 236785,
+      "positionState": "NEUTRAL"
+    },
+    {
+      "date": "7/10/2026",
+      "totalOI": 33000,
+      "oiChange": 0,
+      "f1mPrice": 1894.4,
+      "vn30Price": 1894.2,
+      "basis": 0.2,
+      "volume": 257552,
+      "positionState": "NEUTRAL"
+    },
+    {
+      "date": "8/10/2026",
+      "totalOI": 38420,
+      "oiChange": 850,
+      "f1mPrice": 1880.2,
+      "vn30Price": 1877,
+      "basis": 3.2,
+      "volume": 243091,
+      "positionState": "SHORT_ACCUMULATION"
+    },
+    {
+      "date": "9/10/2026",
+      "totalOI": 37150,
+      "oiChange": -1270,
+      "f1mPrice": 1877.2,
+      "vn30Price": 1873.43,
+      "basis": 3.77,
+      "volume": 273544,
+      "positionState": "SHORT_COVERING"
+    },
+    {
+      "date": "12/10/2026",
+      "totalOI": 35620,
+      "oiChange": -1530,
+      "f1mPrice": 1874.5,
+      "vn30Price": 1869.38,
+      "basis": 5.12,
+      "volume": 169071,
+      "positionState": "SHORT_COVERING"
+    },
+    {
+      "date": "13/10/2026",
+      "totalOI": 34500,
+      "oiChange": -1120,
+      "f1mPrice": 1867.5,
+      "vn30Price": 1860.99,
+      "basis": 6.51,
+      "volume": 156253,
+      "positionState": "SHORT_COVERING"
+    },
+    {
+      "date": "14/10/2026",
+      "totalOI": 33764,
+      "oiChange": -736,
+      "f1mPrice": 1857,
+      "vn30Price": 1852.44,
+      "basis": 4.56,
+      "volume": 133489,
       "positionState": "NEUTRAL"
     }
   ]

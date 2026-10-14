@@ -1,0 +1,2949 @@
+{
+  "snapshots": [
+    {
+      "timestamp": 1787058846122,
+      "direction": "NO_TRADE",
+      "confidence": 0,
+      "setupQuality": "N/A",
+      "vn30": 1876.1,
+      "f1m": 1874,
+      "basis": -2.1,
+      "regime": "TWO_SIDED_CHOP",
+      "breadthGreen": 15,
+      "breadthRed": 12,
+      "delta": 4598,
+      "cvd": "RISING",
+      "velocity": 0.8,
+      "efficiency": 0.19,
+      "vwap": 1880.45,
+      "poc": 1870,
+      "longScore": 10,
+      "shortScore": 0,
+      "totalScore": 10,
+      "entry": {
+        "zone": [
+          0,
+          0
+        ],
+        "reason": "Không có tín hiệu"
+      },
+      "targets": [],
+      "invalidation": {
+        "price": 0,
+        "condition": "N/A",
+        "type": "NONE"
+      },
+      "savedAt": "2026-08-18T13:14:06.122Z"
+    },
+    {
+      "timestamp": 1787883668664,
+      "direction": "NO_TRADE",
+      "confidence": 0,
+      "setupQuality": "N/A",
+      "vn30": 1975.3,
+      "f1m": 1975.6,
+      "basis": 0.3,
+      "regime": "LIQUIDITY_VACUUM",
+      "breadthGreen": 12,
+      "breadthRed": 14,
+      "delta": -2552,
+      "cvd": "FLAT",
+      "velocity": 0.18,
+      "efficiency": 0.05,
+      "vwap": 1976.26,
+      "poc": 1976,
+      "longScore": 0,
+      "shortScore": 24,
+      "totalScore": 24,
+      "entry": {
+        "zone": [
+          0,
+          0
+        ],
+        "reason": "Không có tín hiệu"
+      },
+      "targets": [],
+      "invalidation": {
+        "price": 0,
+        "condition": "N/A",
+        "type": "NONE"
+      },
+      "savedAt": "2026-08-28T02:21:08.666Z"
+    },
+    {
+      "timestamp": 1787883902294,
+      "direction": "NO_TRADE",
+      "confidence": 0,
+      "setupQuality": "N/A",
+      "vn30": 1979.1,
+      "f1m": 1976.2,
+      "basis": -2.9,
+      "regime": "LIQUIDITY_VACUUM",
+      "breadthGreen": 11,
+      "breadthRed": 15,
+      "delta": -1902,
+      "cvd": "FALLING",
+      "velocity": 0.16,
+      "efficiency": 0.03,
+      "vwap": 1976.17,
+      "poc": 1975,
+      "longScore": 14,
+      "shortScore": 22,
+      "totalScore": 22,
+      "entry": {
+        "zone": [
+          0,
+          0
+        ],
+        "reason": "Không có tín hiệu"
+      },
+      "targets": [],
+      "invalidation": {
+        "price": 0,
+        "condition": "N/A",
+        "type": "NONE"
+      },
+      "savedAt": "2026-08-28T02:25:02.296Z"
+    },
+    {
+      "timestamp": 1787884244640,
+      "direction": "SHORT",
+      "confidence": 92,
+      "setupQuality": "A+",
+      "vn30": 1978.5,
+      "f1m": 1974.8,
+      "basis": -3.7,
+      "regime": "TREND_DOWN",
+      "breadthGreen": 10,
+      "breadthRed": 13,
+      "delta": -3826,
+      "cvd": "FALLING",
+      "velocity": 0.28,
+      "efficiency": 0.28,
+      "vwap": 1976.02,
+      "poc": 1975,
+      "longScore": 0,
+      "shortScore": 68,
+      "totalScore": 68,
+      "entry": {
+        "zone": [
+          1975,
+          1979
+        ],
+        "reason": "Cản trên vùng giá trị (VAH)"
+      },
+      "targets": [
+        {
+          "price": 1973.2,
+          "reason": "Đáy hôm nay",
+          "type": "TP1"
+        },
+        {
+          "price": 1965.6,
+          "reason": "Đáy ngày trước",
+          "type": "TP2"
+        }
+      ],
+      "invalidation": {
+        "price": 1986.5,
+        "condition": "Giá chấp nhận trên 1986.5 + test lại giữ được",
+        "type": "STRUCTURAL"
+      },
+      "savedAt": "2026-08-28T02:30:44.642Z"
+    },
+    {
+      "timestamp": 1787884501999,
+      "direction": "NO_TRADE",
+      "confidence": 0,
+      "setupQuality": "N/A",
+      "vn30": 1979.5,
+      "f1m": 1976.6,
+      "basis": -2.9,
+      "regime": "LIQUIDITY_VACUUM",
+      "breadthGreen": 12,
+      "breadthRed": 11,
+      "delta": -4195,
+      "cvd": "FALLING",
+      "velocity": 0.36,
+      "efficiency": 0.03,
+      "vwap": 1976,
+      "poc": 1975,
+      "longScore": 14,
+      "shortScore": 22,
+      "totalScore": 22,
+      "entry": {
+        "zone": [
+          0,
+          0
+        ],
+        "reason": "Không có tín hiệu"
+      },
+      "targets": [],
+      "invalidation": {
+        "price": 0,
+        "condition": "N/A",
+        "type": "NONE"
+      },
+      "savedAt": "2026-08-28T02:35:02.001Z"
+    },
+    {
+      "timestamp": 1787884802075,
+      "direction": "SHORT",
+      "confidence": 92,
+      "setupQuality": "A+",
+      "vn30": 1975.6,
+      "f1m": 1973.7,
+      "basis": -1.9,
+      "regime": "TREND_DOWN",
+      "breadthGreen": 9,
+      "breadthRed": 18,
+      "delta": -6820,
+      "cvd": "FALLING",
+      "velocity": 0.58,
+      "efficiency": 0.11,
+      "vwap": 1975.84,
+      "poc": 1975,
+      "longScore": 12,
+      "shortScore": 65,
+      "totalScore": 65,
+      "entry": {
+        "zone": [
+          1975,
+          1979
+        ],
+        "reason": "Cản trên vùng giá trị (VAH)"
+      },
+      "targets": [
+        {
+          "price": 1972.3,
+          "reason": "Đáy hôm nay",
+          "type": "TP1"
+        },
+        {
+          "price": 1965.6,
+          "reason": "Đáy ngày trước",
+          "type": "TP2"
+        }
+      ],
+      "invalidation": {
+        "price": 1986.5,
+        "condition": "Giá chấp nhận trên 1986.5 + test lại giữ được",
+        "type": "STRUCTURAL"
+      },
+      "savedAt": "2026-08-28T02:40:02.077Z"
+    },
+    {
+      "timestamp": 1787885103834,
+      "direction": "SHORT",
+      "confidence": 92,
+      "setupQuality": "A+",
+      "vn30": 1975.3,
+      "f1m": 1973.7,
+      "basis": -1.6,
+      "regime": "TREND_DOWN",
+      "breadthGreen": 11,
+      "breadthRed": 15,
+      "delta": -6044,
+      "cvd": "FALLING",
+      "velocity": 0.1,
+      "efficiency": 0.12,
+      "vwap": 1975.54,
+      "poc": 1975,
+      "longScore": 12,
+      "shortScore": 56,
+      "totalScore": 56,
+      "entry": {
+        "zone": [
+          1975,
+          1979
+        ],
+        "reason": "Cản trên vùng giá trị (VAH)"
+      },
+      "targets": [
+        {
+          "price": 1972,
+          "reason": "Đáy hôm nay",
+          "type": "TP1"
+        },
+        {
+          "price": 1965.6,
+          "reason": "Đáy ngày trước",
+          "type": "TP2"
+        }
+      ],
+      "invalidation": {
+        "price": 1986.5,
+        "condition": "Giá chấp nhận trên 1986.5 + test lại giữ được",
+        "type": "STRUCTURAL"
+      },
+      "savedAt": "2026-08-28T02:45:03.835Z"
+    },
+    {
+      "timestamp": 1787885401228,
+      "direction": "SHORT",
+      "confidence": 92,
+      "setupQuality": "A+",
+      "vn30": 1975.5,
+      "f1m": 1972.7,
+      "basis": -2.8,
+      "regime": "TREND_DOWN",
+      "breadthGreen": 11,
+      "breadthRed": 16,
+      "delta": -8261,
+      "cvd": "FLAT",
+      "velocity": 0.2,
+      "efficiency": 0.11,
+      "vwap": 1975.26,
+      "poc": 1975,
+      "longScore": 0,
+      "shortScore": 65,
+      "totalScore": 65,
+      "entry": {
+        "zone": [
+          1975,
+          1979
+        ],
+        "reason": "Cản trên vùng giá trị (VAH)"
+      },
+      "targets": [
+        {
+          "price": 1971.2,
+          "reason": "Đáy hôm nay ⚠️ CẦU ĐANG HẤP THỤ",
+          "type": "TP1"
+        },
+        {
+          "price": 1965.6,
+          "reason": "Đáy ngày trước",
+          "type": "TP2"
+        }
+      ],
+      "invalidation": {
+        "price": 1986.5,
+        "condition": "Giá chấp nhận trên 1986.5 + test lại giữ được",
+        "type": "STRUCTURAL"
+      },
+      "savedAt": "2026-08-28T02:50:01.230Z"
+    },
+    {
+      "timestamp": 1787885701446,
+      "direction": "SHORT",
+      "confidence": 92,
+      "setupQuality": "A+",
+      "vn30": 1975.4,
+      "f1m": 1974,
+      "basis": -1.4,
+      "regime": "TREND_DOWN",
+      "breadthGreen": 11,
+      "breadthRed": 16,
+      "delta": -7189,
+      "cvd": "FALLING",
+      "velocity": 0.24,
+      "efficiency": 0.21,
+      "vwap": 1975.04,
+      "poc": 1975,
+      "longScore": 20,
+      "shortScore": 60,
+      "totalScore": 60,
+      "entry": {
+        "zone": [
+          1975,
+          1979
+        ],
+        "reason": "Cản trên vùng giá trị (VAH)"
+      },
+      "targets": [
+        {
+          "price": 1971,
+          "reason": "Đáy hôm nay",
+          "type": "TP1"
+        },
+        {
+          "price": 1965.6,
+          "reason": "Đáy ngày trước",
+          "type": "TP2"
+        }
+      ],
+      "invalidation": {
+        "price": 1986.5,
+        "condition": "Giá chấp nhận trên 1986.5 + test lại giữ được",
+        "type": "STRUCTURAL"
+      },
+      "savedAt": "2026-08-28T02:55:01.448Z"
+    },
+    {
+      "timestamp": 1787886001601,
+      "direction": "SHORT",
+      "confidence": 92,
+      "setupQuality": "A+",
+      "vn30": 1976.7,
+      "f1m": 1974.4,
+      "basis": -2.3,
+      "regime": "TREND_DOWN",
+      "breadthGreen": 14,
+      "breadthRed": 13,
+      "delta": -6425,
+      "cvd": "RISING",
+      "velocity": 0.16,
+      "efficiency": 0.16,
+      "vwap": 1974.97,
+      "poc": 1975,
+      "longScore": 20,
+      "shortScore": 48,
+      "totalScore": 48,
+      "entry": {
+        "zone": [
+          1975,
+          1979
+        ],
+        "reason": "Cản trên vùng giá trị (VAH)"
+      },
+      "targets": [
+        {
+          "price": 1973,
+          "reason": "Hỗ trợ dưới vùng giá trị (VAL)",
+          "type": "TP1"
+        },
+        {
+          "price": 1971,
+          "reason": "Đáy hôm nay",
+          "type": "TP2"
+        },
+        {
+          "price": 1965.6,
+          "reason": "Đáy ngày trước",
+          "type": "TP3"
+        }
+      ],
+      "invalidation": {
+        "price": 1986.5,
+        "condition": "Giá chấp nhận trên 1986.5 + test lại giữ được",
+        "type": "STRUCTURAL"
+      },
+      "savedAt": "2026-08-28T03:00:01.603Z"
+    },
+    {
+      "timestamp": 1787886302155,
+      "direction": "NO_TRADE",
+      "confidence": 0,
+      "setupQuality": "N/A",
+      "vn30": 1978.4,
+      "f1m": 1975.1,
+      "basis": -3.3,
+      "regime": "LIQUIDITY_VACUUM",
+      "breadthGreen": 16,
+      "breadthRed": 12,
+      "delta": -6346,
+      "cvd": "RISING",
+      "velocity": 0.14,
+      "efficiency": 0.19,
+      "vwap": 1974.99,
+      "poc": 1975,
+      "longScore": 26,
+      "shortScore": 22,
+      "totalScore": 26,
+      "entry": {
+        "zone": [
+          0,
+          0
+        ],
+        "reason": "Không có tín hiệu"
+      },
+      "targets": [],
+      "invalidation": {
+        "price": 0,
+        "condition": "N/A",
+        "type": "NONE"
+      },
+      "savedAt": "2026-08-28T03:05:02.157Z"
+    },
+    {
+      "timestamp": 1787886601991,
+      "direction": "LONG",
+      "confidence": 92,
+      "setupQuality": "A+",
+      "vn30": 1981.4,
+      "f1m": 1978.3,
+      "basis": -3.1,
+      "regime": "TREND_UP",
+      "breadthGreen": 18,
+      "breadthRed": 11,
+      "delta": -3640,
+      "cvd": "RISING",
+      "velocity": 0.48,
+      "efficiency": 0.56,
+      "vwap": 1975.24,
+      "poc": 1975,
+      "longScore": 55,
+      "shortScore": 12,
+      "totalScore": 55,
+      "entry": {
+        "zone": [
+          1971,
+          1975
+        ],
+        "reason": "Hỗ trợ dưới vùng giá trị (VAL)"
+      },
+      "targets": [
+        {
+          "price": 1980.8,
+          "reason": "Đóng cửa hôm trước",
+          "type": "TP1"
+        },
+        {
+          "price": 1983.5,
+          "reason": "Đỉnh ngày trước",
+          "type": "TP2"
+        }
+      ],
+      "invalidation": {
+        "price": 1962.6,
+        "condition": "Giá phá dưới 1962.6 + không hồi lại",
+        "type": "STRUCTURAL"
+      },
+      "savedAt": "2026-08-28T03:10:01.993Z"
+    },
+    {
+      "timestamp": 1787886901084,
+      "direction": "SHORT",
+      "confidence": 72,
+      "setupQuality": "A-",
+      "vn30": 1979,
+      "f1m": 1975.8,
+      "basis": -3.2,
+      "regime": "LIQUIDITY_VACUUM",
+      "breadthGreen": 18,
+      "breadthRed": 11,
+      "delta": -5611,
+      "cvd": "RISING",
+      "velocity": 0.52,
+      "efficiency": 0.22,
+      "vwap": 1975.36,
+      "poc": 1975,
+      "longScore": 18,
+      "shortScore": 30,
+      "totalScore": 30,
+      "entry": {
+        "zone": [
+          1975,
+          1979
+        ],
+        "reason": "Cản trên vùng giá trị (VAH)"
+      },
+      "targets": [
+        {
+          "price": 1973,
+          "reason": "Hỗ trợ dưới vùng giá trị (VAL)",
+          "type": "TP1"
+        },
+        {
+          "price": 1971,
+          "reason": "Đáy hôm nay",
+          "type": "TP2"
+        },
+        {
+          "price": 1965.6,
+          "reason": "Đáy ngày trước",
+          "type": "TP3"
+        }
+      ],
+      "invalidation": {
+        "price": 1986.5,
+        "condition": "Giá chấp nhận trên 1986.5 + test lại giữ được",
+        "type": "STRUCTURAL"
+      },
+      "savedAt": "2026-08-28T03:15:01.085Z"
+    },
+    {
+      "timestamp": 1787887201272,
+      "direction": "SHORT",
+      "confidence": 92,
+      "setupQuality": "A+",
+      "vn30": 1976.6,
+      "f1m": 1974.8,
+      "basis": -1.8,
+      "regime": "TREND_DOWN",
+      "breadthGreen": 13,
+      "breadthRed": 13,
+      "delta": -7547,
+      "cvd": "FALLING",
+      "velocity": 0.18,
+      "efficiency": 0.06,
+      "vwap": 1975.34,
+      "poc": 1975,
+      "longScore": 0,
+      "shortScore": 68,
+      "totalScore": 68,
+      "entry": {
+        "zone": [
+          1975,
+          1979
+        ],
+        "reason": "Cản trên vùng giá trị (VAH)"
+      },
+      "targets": [
+        {
+          "price": 1973,
+          "reason": "Hỗ trợ dưới vùng giá trị (VAL) ⚠️ CẦU ĐANG HẤP THỤ",
+          "type": "TP1"
+        },
+        {
+          "price": 1971,
+          "reason": "Đáy hôm nay",
+          "type": "TP2"
+        },
+        {
+          "price": 1965.6,
+          "reason": "Đáy ngày trước",
+          "type": "TP3"
+        }
+      ],
+      "invalidation": {
+        "price": 1986.5,
+        "condition": "Giá chấp nhận trên 1986.5 + test lại giữ được",
+        "type": "STRUCTURAL"
+      },
+      "savedAt": "2026-08-28T03:20:01.274Z"
+    },
+    {
+      "timestamp": 1787887501294,
+      "direction": "NO_TRADE",
+      "confidence": 0,
+      "setupQuality": "N/A",
+      "vn30": 1978,
+      "f1m": 1976.4,
+      "basis": -1.6,
+      "regime": "LIQUIDITY_VACUUM",
+      "breadthGreen": 15,
+      "breadthRed": 12,
+      "delta": -5050,
+      "cvd": "RISING",
+      "velocity": 0.32,
+      "efficiency": 0.04,
+      "vwap": 1975.4,
+      "poc": 1975,
+      "longScore": 26,
+      "shortScore": 22,
+      "totalScore": 26,
+      "entry": {
+        "zone": [
+          0,
+          0
+        ],
+        "reason": "Không có tín hiệu"
+      },
+      "targets": [],
+      "invalidation": {
+        "price": 0,
+        "condition": "N/A",
+        "type": "NONE"
+      },
+      "savedAt": "2026-08-28T03:25:01.296Z"
+    },
+    {
+      "timestamp": 1787887801284,
+      "direction": "LONG",
+      "confidence": 72,
+      "setupQuality": "A-",
+      "vn30": 1977.8,
+      "f1m": 1975.5,
+      "basis": -2.3,
+      "regime": "LIQUIDITY_VACUUM",
+      "breadthGreen": 14,
+      "breadthRed": 11,
+      "delta": -5485,
+      "cvd": "RISING",
+      "velocity": 0.18,
+      "efficiency": 0.16,
+      "vwap": 1975.41,
+      "poc": 1975,
+      "longScore": 30,
+      "shortScore": 18,
+      "totalScore": 30,
+      "entry": {
+        "zone": [
+          1971,
+          1975
+        ],
+        "reason": "Hỗ trợ dưới vùng giá trị (VAL)"
+      },
+      "targets": [
+        {
+          "price": 1977,
+          "reason": "Cản trên vùng giá trị (VAH)",
+          "type": "TP1"
+        },
+        {
+          "price": 1980.8,
+          "reason": "Đóng cửa hôm trước",
+          "type": "TP2"
+        },
+        {
+          "price": 1983.5,
+          "reason": "Đỉnh ngày trước",
+          "type": "TP3"
+        }
+      ],
+      "invalidation": {
+        "price": 1962.6,
+        "condition": "Giá phá dưới 1962.6 + không hồi lại",
+        "type": "STRUCTURAL"
+      },
+      "savedAt": "2026-08-28T03:30:01.286Z"
+    },
+    {
+      "timestamp": 1787888101450,
+      "direction": "LONG",
+      "confidence": 92,
+      "setupQuality": "A+",
+      "vn30": 1980.7,
+      "f1m": 1977.5,
+      "basis": -3.2,
+      "regime": "TREND_UP",
+      "breadthGreen": 16,
+      "breadthRed": 12,
+      "delta": -4775,
+      "cvd": "FLAT",
+      "velocity": 0.42,
+      "efficiency": 0.18,
+      "vwap": 1975.44,
+      "poc": 1975,
+      "longScore": 55,
+      "shortScore": 10,
+      "totalScore": 55,
+      "entry": {
+        "zone": [
+          1969,
+          1973
+        ],
+        "reason": "Đáy hôm nay"
+      },
+      "targets": [
+        {
+          "price": 1980.8,
+          "reason": "Đóng cửa hôm trước",
+          "type": "TP1"
+        },
+        {
+          "price": 1983.5,
+          "reason": "Đỉnh ngày trước",
+          "type": "TP2"
+        }
+      ],
+      "invalidation": {
+        "price": 1962.6,
+        "condition": "Giá phá dưới 1962.6 + không hồi lại",
+        "type": "STRUCTURAL"
+      },
+      "savedAt": "2026-08-28T03:35:01.452Z"
+    },
+    {
+      "timestamp": 1787888401408,
+      "direction": "NO_TRADE",
+      "confidence": 0,
+      "setupQuality": "N/A",
+      "vn30": 1979.4,
+      "f1m": 1976.8,
+      "basis": -2.6,
+      "regime": "LIQUIDITY_VACUUM",
+      "breadthGreen": 16,
+      "breadthRed": 13,
+      "delta": -4891,
+      "cvd": "RISING",
+      "velocity": 0.14,
+      "efficiency": 0.1,
+      "vwap": 1975.46,
+      "poc": 1975,
+      "longScore": 26,
+      "shortScore": 10,
+      "totalScore": 26,
+      "entry": {
+        "zone": [
+          0,
+          0
+        ],
+        "reason": "Không có tín hiệu"
+      },
+      "targets": [],
+      "invalidation": {
+        "price": 0,
+        "condition": "N/A",
+        "type": "NONE"
+      },
+      "savedAt": "2026-08-28T03:40:01.410Z"
+    },
+    {
+      "timestamp": 1787888701677,
+      "direction": "LONG",
+      "confidence": 92,
+      "setupQuality": "A+",
+      "vn30": 1979.2,
+      "f1m": 1977.9,
+      "basis": -1.3,
+      "regime": "TREND_UP",
+      "breadthGreen": 15,
+      "breadthRed": 12,
+      "delta": -4781,
+      "cvd": "RISING",
+      "velocity": 0.22,
+      "efficiency": 0.13,
+      "vwap": 1975.49,
+      "poc": 1975,
+      "longScore": 55,
+      "shortScore": 0,
+      "totalScore": 55,
+      "entry": {
+        "zone": [
+          1969,
+          1973
+        ],
+        "reason": "Đáy hôm nay"
+      },
+      "targets": [
+        {
+          "price": 1980.8,
+          "reason": "Đóng cửa hôm trước",
+          "type": "TP1"
+        },
+        {
+          "price": 1983.5,
+          "reason": "Đỉnh ngày trước",
+          "type": "TP2"
+        }
+      ],
+      "invalidation": {
+        "price": 1962.6,
+        "condition": "Giá phá dưới 1962.6 + không hồi lại",
+        "type": "STRUCTURAL"
+      },
+      "savedAt": "2026-08-28T03:45:01.679Z"
+    },
+    {
+      "timestamp": 1787889001512,
+      "direction": "LONG",
+      "confidence": 92,
+      "setupQuality": "A+",
+      "vn30": 1981.1,
+      "f1m": 1978.3,
+      "basis": -2.8,
+      "regime": "TREND_UP",
+      "breadthGreen": 16,
+      "breadthRed": 12,
+      "delta": -4868,
+      "cvd": "FLAT",
+      "velocity": 0.08,
+      "efficiency": 0.38,
+      "vwap": 1975.54,
+      "poc": 1975,
+      "longScore": 55,
+      "shortScore": 0,
+      "totalScore": 55,
+      "entry": {
+        "zone": [
+          1969,
+          1973
+        ],
+        "reason": "Đáy hôm nay"
+      },
+      "targets": [
+        {
+          "price": 1980.8,
+          "reason": "Đóng cửa hôm trước",
+          "type": "TP1"
+        },
+        {
+          "price": 1983.5,
+          "reason": "Đỉnh ngày trước",
+          "type": "TP2"
+        }
+      ],
+      "invalidation": {
+        "price": 1962.6,
+        "condition": "Giá phá dưới 1962.6 + không hồi lại",
+        "type": "STRUCTURAL"
+      },
+      "savedAt": "2026-08-28T03:50:01.513Z"
+    },
+    {
+      "timestamp": 1787889301466,
+      "direction": "LONG",
+      "confidence": 89,
+      "setupQuality": "A+",
+      "vn30": 1981.8,
+      "f1m": 1978.4,
+      "basis": -3.4,
+      "regime": "TREND_UP",
+      "breadthGreen": 15,
+      "breadthRed": 13,
+      "delta": -5131,
+      "cvd": "FALLING",
+      "velocity": 0.02,
+      "efficiency": 0.29,
+      "vwap": 1975.61,
+      "poc": 1975,
+      "longScore": 55,
+      "shortScore": 34,
+      "totalScore": 55,
+      "entry": {
+        "zone": [
+          1969,
+          1973
+        ],
+        "reason": "Đáy hôm nay"
+      },
+      "targets": [
+        {
+          "price": 1980.8,
+          "reason": "Đóng cửa hôm trước",
+          "type": "TP1"
+        },
+        {
+          "price": 1983.5,
+          "reason": "Đỉnh ngày trước",
+          "type": "TP2"
+        }
+      ],
+      "invalidation": {
+        "price": 1962.6,
+        "condition": "Giá phá dưới 1962.6 + không hồi lại",
+        "type": "STRUCTURAL"
+      },
+      "savedAt": "2026-08-28T03:55:01.468Z"
+    },
+    {
+      "timestamp": 1787889601443,
+      "direction": "LONG",
+      "confidence": 92,
+      "setupQuality": "A+",
+      "vn30": 1982.9,
+      "f1m": 1980.3,
+      "basis": -2.6,
+      "regime": "TREND_UP",
+      "breadthGreen": 14,
+      "breadthRed": 11,
+      "delta": -5061,
+      "cvd": "RISING",
+      "velocity": 0.38,
+      "efficiency": 0.33,
+      "vwap": 1975.84,
+      "poc": 1975,
+      "longScore": 67,
+      "shortScore": 0,
+      "totalScore": 67,
+      "entry": {
+        "zone": [
+          1971,
+          1975
+        ],
+        "reason": "Hỗ trợ dưới vùng giá trị (VAL)"
+      },
+      "targets": [
+        {
+          "price": 1983.5,
+          "reason": "Đỉnh ngày trước",
+          "type": "TP1"
+        },
+        {
+          "price": 1980.6,
+          "reason": "Đỉnh phiên",
+          "type": "TP2"
+        }
+      ],
+      "invalidation": {
+        "price": 1962.6,
+        "condition": "Giá phá dưới 1962.6 + không hồi lại",
+        "type": "STRUCTURAL"
+      },
+      "savedAt": "2026-08-28T04:00:01.445Z"
+    },
+    {
+      "timestamp": 1787889901596,
+      "direction": "LONG",
+      "confidence": 89,
+      "setupQuality": "A+",
+      "vn30": 1982.2,
+      "f1m": 1979.2,
+      "basis": -3,
+      "regime": "TREND_UP",
+      "breadthGreen": 14,
+      "breadthRed": 12,
+      "delta": -7060,
+      "cvd": "FALLING",
+      "velocity": 0.16,
+      "efficiency": 0.15,
+      "vwap": 1975.93,
+      "poc": 1975,
+      "longScore": 55,
+      "shortScore": 34,
+      "totalScore": 55,
+      "entry": {
+        "zone": [
+          1971,
+          1975
+        ],
+        "reason": "Hỗ trợ dưới vùng giá trị (VAL)"
+      },
+      "targets": [
+        {
+          "price": 1980.8,
+          "reason": "Đóng cửa hôm trước",
+          "type": "TP1"
+        },
+        {
+          "price": 1983.5,
+          "reason": "Đỉnh ngày trước",
+          "type": "TP2"
+        }
+      ],
+      "invalidation": {
+        "price": 1962.6,
+        "condition": "Giá phá dưới 1962.6 + không hồi lại",
+        "type": "STRUCTURAL"
+      },
+      "savedAt": "2026-08-28T04:05:01.598Z"
+    },
+    {
+      "timestamp": 1787890201651,
+      "direction": "LONG",
+      "confidence": 82,
+      "setupQuality": "A+",
+      "vn30": 1980.9,
+      "f1m": 1978,
+      "basis": -2.9,
+      "regime": "TREND_UP",
+      "breadthGreen": 14,
+      "breadthRed": 12,
+      "delta": -7170,
+      "cvd": "FALLING",
+      "velocity": 0.24,
+      "efficiency": 0.01,
+      "vwap": 1975.98,
+      "poc": 1975,
+      "longScore": 47,
+      "shortScore": 30,
+      "totalScore": 47,
+      "entry": {
+        "zone": [
+          1971,
+          1975
+        ],
+        "reason": "Hỗ trợ dưới vùng giá trị (VAL)"
+      },
+      "targets": [
+        {
+          "price": 1980.8,
+          "reason": "Đóng cửa hôm trước",
+          "type": "TP1"
+        },
+        {
+          "price": 1983.5,
+          "reason": "Đỉnh ngày trước",
+          "type": "TP2"
+        }
+      ],
+      "invalidation": {
+        "price": 1962.6,
+        "condition": "Giá phá dưới 1962.6 + không hồi lại",
+        "type": "STRUCTURAL"
+      },
+      "savedAt": "2026-08-28T04:10:01.653Z"
+    },
+    {
+      "timestamp": 1787890501861,
+      "direction": "LONG",
+      "confidence": 72,
+      "setupQuality": "A-",
+      "vn30": 1981.6,
+      "f1m": 1977.6,
+      "basis": -4,
+      "regime": "TREND_UP",
+      "breadthGreen": 11,
+      "breadthRed": 13,
+      "delta": -8899,
+      "cvd": "FALLING",
+      "velocity": 0.08,
+      "efficiency": 0.22,
+      "vwap": 1976.02,
+      "poc": 1976,
+      "longScore": 38,
+      "shortScore": 30,
+      "totalScore": 38,
+      "entry": {
+        "zone": [
+          1972,
+          1976
+        ],
+        "reason": "Hỗ trợ dưới vùng giá trị (VAL)"
+      },
+      "targets": [
+        {
+          "price": 1980.8,
+          "reason": "Đóng cửa hôm trước",
+          "type": "TP1"
+        },
+        {
+          "price": 1983.5,
+          "reason": "Đỉnh ngày trước",
+          "type": "TP2"
+        }
+      ],
+      "invalidation": {
+        "price": 1962.6,
+        "condition": "Giá phá dưới 1962.6 + không hồi lại",
+        "type": "STRUCTURAL"
+      },
+      "savedAt": "2026-08-28T04:15:01.863Z"
+    },
+    {
+      "timestamp": 1787890805046,
+      "direction": "LONG",
+      "confidence": 72,
+      "setupQuality": "A-",
+      "vn30": 1981,
+      "f1m": 1978,
+      "basis": -3,
+      "regime": "TREND_UP",
+      "breadthGreen": 14,
+      "breadthRed": 13,
+      "delta": -8968,
+      "cvd": "FALLING",
+      "velocity": 0.06,
+      "efficiency": 0.21,
+      "vwap": 1976.03,
+      "poc": 1976,
+      "longScore": 38,
+      "shortScore": 30,
+      "totalScore": 38,
+      "entry": {
+        "zone": [
+          1972,
+          1976
+        ],
+        "reason": "Hỗ trợ dưới vùng giá trị (VAL)"
+      },
+      "targets": [
+        {
+          "price": 1980.8,
+          "reason": "Đóng cửa hôm trước",
+          "type": "TP1"
+        },
+        {
+          "price": 1983.5,
+          "reason": "Đỉnh ngày trước",
+          "type": "TP2"
+        }
+      ],
+      "invalidation": {
+        "price": 1962.6,
+        "condition": "Giá phá dưới 1962.6 + không hồi lại",
+        "type": "STRUCTURAL"
+      },
+      "savedAt": "2026-08-28T04:20:05.048Z"
+    },
+    {
+      "timestamp": 1787891102076,
+      "direction": "SHORT",
+      "confidence": 92,
+      "setupQuality": "A+",
+      "vn30": 1980.7,
+      "f1m": 1976.5,
+      "basis": -4.2,
+      "regime": "TREND_DOWN",
+      "breadthGreen": 12,
+      "breadthRed": 12,
+      "delta": -9661,
+      "cvd": "FALLING",
+      "velocity": 0.3,
+      "efficiency": 0.34,
+      "vwap": 1976.05,
+      "poc": 1976,
+      "longScore": 18,
+      "shortScore": 50,
+      "totalScore": 50,
+      "entry": {
+        "zone": [
+          1976,
+          1980
+        ],
+        "reason": "Cản trên vùng giá trị (VAH)"
+      },
+      "targets": [
+        {
+          "price": 1974,
+          "reason": "Hỗ trợ dưới vùng giá trị (VAL)",
+          "type": "TP1"
+        },
+        {
+          "price": 1971,
+          "reason": "Đáy hôm nay",
+          "type": "TP2"
+        },
+        {
+          "price": 1965.6,
+          "reason": "Đáy ngày trước",
+          "type": "TP3"
+        }
+      ],
+      "invalidation": {
+        "price": 1986.5,
+        "condition": "Giá chấp nhận trên 1986.5 + test lại giữ được",
+        "type": "STRUCTURAL"
+      },
+      "savedAt": "2026-08-28T04:25:02.078Z"
+    },
+    {
+      "timestamp": 1787891402164,
+      "direction": "SHORT",
+      "confidence": 92,
+      "setupQuality": "A+",
+      "vn30": 1979.3,
+      "f1m": 1975.7,
+      "basis": -3.6,
+      "regime": "TREND_DOWN",
+      "breadthGreen": 12,
+      "breadthRed": 12,
+      "delta": -10391,
+      "cvd": "FALLING",
+      "velocity": 0.14,
+      "efficiency": 0.24,
+      "vwap": 1976.03,
+      "poc": 1976,
+      "longScore": 0,
+      "shortScore": 56,
+      "totalScore": 56,
+      "entry": {
+        "zone": [
+          1976,
+          1980
+        ],
+        "reason": "Cản trên vùng giá trị (VAH)"
+      },
+      "targets": [
+        {
+          "price": 1974,
+          "reason": "Hỗ trợ dưới vùng giá trị (VAL)",
+          "type": "TP1"
+        },
+        {
+          "price": 1971,
+          "reason": "Đáy hôm nay",
+          "type": "TP2"
+        },
+        {
+          "price": 1965.6,
+          "reason": "Đáy ngày trước",
+          "type": "TP3"
+        }
+      ],
+      "invalidation": {
+        "price": 1986.5,
+        "condition": "Giá chấp nhận trên 1986.5 + test lại giữ được",
+        "type": "STRUCTURAL"
+      },
+      "savedAt": "2026-08-28T04:30:02.166Z"
+    },
+    {
+      "timestamp": 1787896802020,
+      "direction": "SHORT",
+      "confidence": 92,
+      "setupQuality": "A+",
+      "vn30": 1979.3,
+      "f1m": 1975.7,
+      "basis": -3.6,
+      "regime": "TREND_DOWN",
+      "breadthGreen": 14,
+      "breadthRed": 13,
+      "delta": -10391,
+      "cvd": "FALLING",
+      "velocity": 0.14,
+      "efficiency": 0.24,
+      "vwap": 1976.03,
+      "poc": 1976,
+      "longScore": 0,
+      "shortScore": 56,
+      "totalScore": 56,
+      "entry": {
+        "zone": [
+          1976,
+          1980
+        ],
+        "reason": "Cản trên vùng giá trị (VAH)"
+      },
+      "targets": [
+        {
+          "price": 1974,
+          "reason": "Hỗ trợ dưới vùng giá trị (VAL)",
+          "type": "TP1"
+        },
+        {
+          "price": 1971,
+          "reason": "Đáy hôm nay",
+          "type": "TP2"
+        },
+        {
+          "price": 1965.6,
+          "reason": "Đáy ngày trước",
+          "type": "TP3"
+        }
+      ],
+      "invalidation": {
+        "price": 1986.5,
+        "condition": "Giá chấp nhận trên 1986.5 + test lại giữ được",
+        "type": "STRUCTURAL"
+      },
+      "savedAt": "2026-08-28T06:00:02.024Z"
+    },
+    {
+      "timestamp": 1787897102023,
+      "direction": "NO_TRADE",
+      "confidence": 0,
+      "setupQuality": "N/A",
+      "vn30": 1976.8,
+      "f1m": 1976.8,
+      "basis": 0,
+      "regime": "LIQUIDITY_VACUUM",
+      "breadthGreen": 10,
+      "breadthRed": 15,
+      "delta": -8961,
+      "cvd": "RISING",
+      "velocity": 0.22,
+      "efficiency": 0.08,
+      "vwap": 1976.05,
+      "poc": 1976,
+      "longScore": 18,
+      "shortScore": 18,
+      "totalScore": 18,
+      "entry": {
+        "zone": [
+          0,
+          0
+        ],
+        "reason": "Không có tín hiệu"
+      },
+      "targets": [],
+      "invalidation": {
+        "price": 0,
+        "condition": "N/A",
+        "type": "NONE"
+      },
+      "savedAt": "2026-08-28T06:05:02.026Z"
+    },
+    {
+      "timestamp": 1787897401767,
+      "direction": "NO_TRADE",
+      "confidence": 0,
+      "setupQuality": "N/A",
+      "vn30": 1977.9,
+      "f1m": 1976,
+      "basis": -1.9,
+      "regime": "LIQUIDITY_VACUUM",
+      "breadthGreen": 11,
+      "breadthRed": 16,
+      "delta": -9754,
+      "cvd": "FLAT",
+      "velocity": 0.16,
+      "efficiency": 0.13,
+      "vwap": 1976.08,
+      "poc": 1976,
+      "longScore": 0,
+      "shortScore": 24,
+      "totalScore": 24,
+      "entry": {
+        "zone": [
+          0,
+          0
+        ],
+        "reason": "Không có tín hiệu"
+      },
+      "targets": [],
+      "invalidation": {
+        "price": 0,
+        "condition": "N/A",
+        "type": "NONE"
+      },
+      "savedAt": "2026-08-28T06:10:01.769Z"
+    },
+    {
+      "timestamp": 1787897701670,
+      "direction": "LONG",
+      "confidence": 74,
+      "setupQuality": "A",
+      "vn30": 1978.2,
+      "f1m": 1978.2,
+      "basis": 0,
+      "regime": "TREND_UP",
+      "breadthGreen": 12,
+      "breadthRed": 16,
+      "delta": -8793,
+      "cvd": "FALLING",
+      "velocity": 0.44,
+      "efficiency": 0.36,
+      "vwap": 1976.09,
+      "poc": 1976,
+      "longScore": 43,
+      "shortScore": 34,
+      "totalScore": 43,
+      "entry": {
+        "zone": [
+          1972,
+          1976
+        ],
+        "reason": "Hỗ trợ dưới vùng giá trị (VAL)"
+      },
+      "targets": [
+        {
+          "price": 1980.8,
+          "reason": "Đóng cửa hôm trước",
+          "type": "TP1"
+        },
+        {
+          "price": 1983.5,
+          "reason": "Đỉnh ngày trước",
+          "type": "TP2"
+        }
+      ],
+      "invalidation": {
+        "price": 1962.6,
+        "condition": "Giá phá dưới 1962.6 + không hồi lại",
+        "type": "STRUCTURAL"
+      },
+      "savedAt": "2026-08-28T06:15:01.673Z"
+    },
+    {
+      "timestamp": 1787898001223,
+      "direction": "LONG",
+      "confidence": 92,
+      "setupQuality": "A+",
+      "vn30": 1981.9,
+      "f1m": 1980.1,
+      "basis": -1.8,
+      "regime": "TREND_UP",
+      "breadthGreen": 13,
+      "breadthRed": 14,
+      "delta": -6338,
+      "cvd": "RISING",
+      "velocity": 0.38,
+      "efficiency": 0.38,
+      "vwap": 1976.29,
+      "poc": 1976,
+      "longScore": 55,
+      "shortScore": 0,
+      "totalScore": 55,
+      "entry": {
+        "zone": [
+          1972,
+          1976
+        ],
+        "reason": "Hỗ trợ dưới vùng giá trị (VAL)"
+      },
+      "targets": [
+        {
+          "price": 1983.5,
+          "reason": "Đỉnh ngày trước",
+          "type": "TP1"
+        },
+        {
+          "price": 1980.8,
+          "reason": "Đỉnh phiên",
+          "type": "TP2"
+        }
+      ],
+      "invalidation": {
+        "price": 1962.6,
+        "condition": "Giá phá dưới 1962.6 + không hồi lại",
+        "type": "STRUCTURAL"
+      },
+      "savedAt": "2026-08-28T06:20:01.224Z"
+    },
+    {
+      "timestamp": 1787898302018,
+      "direction": "LONG",
+      "confidence": 92,
+      "setupQuality": "A+",
+      "vn30": 1986.5,
+      "f1m": 1989.3,
+      "basis": 2.8,
+      "regime": "TREND_UP",
+      "breadthGreen": 16,
+      "breadthRed": 12,
+      "delta": 5341,
+      "cvd": "RISING",
+      "velocity": 1.84,
+      "efficiency": 0.69,
+      "vwap": 1977.49,
+      "poc": 1976,
+      "longScore": 55,
+      "shortScore": 0,
+      "totalScore": 55,
+      "entry": {
+        "zone": [
+          1972,
+          1976
+        ],
+        "reason": "Hỗ trợ dưới vùng giá trị (VAL)"
+      },
+      "targets": [
+        {
+          "price": 1990,
+          "reason": "Đỉnh phiên",
+          "type": "TP1"
+        },
+        {
+          "price": 1983.5,
+          "reason": "Đỉnh ngày trước",
+          "type": "TP2"
+        }
+      ],
+      "invalidation": {
+        "price": 1962.6,
+        "condition": "Giá phá dưới 1962.6 + không hồi lại",
+        "type": "STRUCTURAL"
+      },
+      "savedAt": "2026-08-28T06:25:02.020Z"
+    },
+    {
+      "timestamp": 1787898601696,
+      "direction": "LONG",
+      "confidence": 92,
+      "setupQuality": "A+",
+      "vn30": 1988.6,
+      "f1m": 1991.8,
+      "basis": 3.2,
+      "regime": "TREND_UP",
+      "breadthGreen": 19,
+      "breadthRed": 7,
+      "delta": 6995,
+      "cvd": "RISING",
+      "velocity": 0.58,
+      "efficiency": 0.77,
+      "vwap": 1978.2,
+      "poc": 1976,
+      "longScore": 55,
+      "shortScore": 0,
+      "totalScore": 55,
+      "entry": {
+        "zone": [
+          1971,
+          1975
+        ],
+        "reason": "Hỗ trợ dưới vùng giá trị (VAL)"
+      },
+      "targets": [
+        {
+          "price": 1993,
+          "reason": "Đỉnh hôm nay",
+          "type": "TP1"
+        },
+        {
+          "price": 1983.5,
+          "reason": "Đỉnh ngày trước",
+          "type": "TP2"
+        }
+      ],
+      "invalidation": {
+        "price": 1962.6,
+        "condition": "Giá phá dưới 1962.6 + không hồi lại",
+        "type": "STRUCTURAL"
+      },
+      "savedAt": "2026-08-28T06:30:01.698Z"
+    },
+    {
+      "timestamp": 1787898901318,
+      "direction": "LONG",
+      "confidence": 92,
+      "setupQuality": "A+",
+      "vn30": 1987.7,
+      "f1m": 1991.7,
+      "basis": 4,
+      "regime": "TREND_UP",
+      "breadthGreen": 17,
+      "breadthRed": 9,
+      "delta": 8207,
+      "cvd": "RISING",
+      "velocity": 0.02,
+      "efficiency": 0.62,
+      "vwap": 1978.91,
+      "poc": 1976,
+      "longScore": 67,
+      "shortScore": 0,
+      "totalScore": 67,
+      "entry": {
+        "zone": [
+          1972.1,
+          1976.1
+        ],
+        "reason": "Đáy ngắn hạn"
+      },
+      "targets": [
+        {
+          "price": 1993.5,
+          "reason": "Đỉnh hôm nay",
+          "type": "TP1"
+        },
+        {
+          "price": 1983.5,
+          "reason": "Đỉnh ngày trước",
+          "type": "TP2"
+        }
+      ],
+      "invalidation": {
+        "price": 1962.6,
+        "condition": "Giá phá dưới 1962.6 + không hồi lại",
+        "type": "STRUCTURAL"
+      },
+      "savedAt": "2026-08-28T06:35:01.320Z"
+    },
+    {
+      "timestamp": 1787899501955,
+      "direction": "LONG",
+      "confidence": 92,
+      "setupQuality": "A+",
+      "vn30": 1988.9,
+      "f1m": 1991.2,
+      "basis": 2.3,
+      "regime": "TREND_UP",
+      "breadthGreen": 17,
+      "breadthRed": 7,
+      "delta": 10233,
+      "cvd": "RISING",
+      "velocity": 0.04,
+      "efficiency": 0.2,
+      "vwap": 1979.69,
+      "poc": 1976,
+      "longScore": 65,
+      "shortScore": 0,
+      "totalScore": 65,
+      "entry": {
+        "zone": [
+          1986.2,
+          1990.2
+        ],
+        "reason": "Đáy ngắn hạn"
+      },
+      "targets": [
+        {
+          "price": 1993.5,
+          "reason": "Đỉnh hôm nay",
+          "type": "TP1"
+        },
+        {
+          "price": 1983.5,
+          "reason": "Đỉnh ngày trước",
+          "type": "TP2"
+        }
+      ],
+      "invalidation": {
+        "price": 1962.6,
+        "condition": "Giá phá dưới 1962.6 + không hồi lại",
+        "type": "STRUCTURAL"
+      },
+      "savedAt": "2026-08-28T06:45:01.957Z"
+    },
+    {
+      "timestamp": 1787899801671,
+      "direction": "LONG",
+      "confidence": 92,
+      "setupQuality": "A+",
+      "vn30": 1990,
+      "f1m": 1991.8,
+      "basis": 1.8,
+      "regime": "TREND_UP",
+      "breadthGreen": 16,
+      "breadthRed": 8,
+      "delta": 11317,
+      "cvd": "RISING",
+      "velocity": 0.12,
+      "efficiency": 0.05,
+      "vwap": 1979.98,
+      "poc": 1976,
+      "longScore": 65,
+      "shortScore": 0,
+      "totalScore": 65,
+      "entry": {
+        "zone": [
+          1986.2,
+          1990.2
+        ],
+        "reason": "Đáy ngắn hạn"
+      },
+      "targets": [
+        {
+          "price": 1993.5,
+          "reason": "Đỉnh hôm nay",
+          "type": "TP1"
+        },
+        {
+          "price": 1983.5,
+          "reason": "Đỉnh ngày trước",
+          "type": "TP2"
+        }
+      ],
+      "invalidation": {
+        "price": 1962.6,
+        "condition": "Giá phá dưới 1962.6 + không hồi lại",
+        "type": "STRUCTURAL"
+      },
+      "savedAt": "2026-08-28T06:50:01.672Z"
+    },
+    {
+      "timestamp": 1787900101387,
+      "direction": "LONG",
+      "confidence": 92,
+      "setupQuality": "A+",
+      "vn30": 1990.5,
+      "f1m": 1992.8,
+      "basis": 2.3,
+      "regime": "TREND_UP",
+      "breadthGreen": 16,
+      "breadthRed": 8,
+      "delta": 14300,
+      "cvd": "RISING",
+      "velocity": 0.2,
+      "efficiency": 0.11,
+      "vwap": 1980.4,
+      "poc": 1976,
+      "longScore": 65,
+      "shortScore": 0,
+      "totalScore": 65,
+      "entry": {
+        "zone": [
+          1986.2,
+          1990.2
+        ],
+        "reason": "Đáy ngắn hạn"
+      },
+      "targets": [
+        {
+          "price": 1994.9,
+          "reason": "Đỉnh hôm nay",
+          "type": "TP1"
+        },
+        {
+          "price": 1983.5,
+          "reason": "Đỉnh ngày trước",
+          "type": "TP2"
+        }
+      ],
+      "invalidation": {
+        "price": 1962.6,
+        "condition": "Giá phá dưới 1962.6 + không hồi lại",
+        "type": "STRUCTURAL"
+      },
+      "savedAt": "2026-08-28T06:55:01.388Z"
+    },
+    {
+      "timestamp": 1787900402427,
+      "direction": "LONG",
+      "confidence": 92,
+      "setupQuality": "A+",
+      "vn30": 1989.9,
+      "f1m": 1991,
+      "basis": 1.1,
+      "regime": "TREND_UP",
+      "breadthGreen": 17,
+      "breadthRed": 9,
+      "delta": 13970,
+      "cvd": "RISING",
+      "velocity": 0.18,
+      "efficiency": 0.12,
+      "vwap": 1980.71,
+      "poc": 1976,
+      "longScore": 69,
+      "shortScore": 8,
+      "totalScore": 69,
+      "entry": {
+        "zone": [
+          1986.2,
+          1990.2
+        ],
+        "reason": "Đáy ngắn hạn"
+      },
+      "targets": [
+        {
+          "price": 1993.3,
+          "reason": "Đỉnh ngắn hạn",
+          "type": "TP1"
+        },
+        {
+          "price": 1994.9,
+          "reason": "Đỉnh hôm nay",
+          "type": "TP2"
+        }
+      ],
+      "invalidation": {
+        "price": 1962.6,
+        "condition": "Giá phá dưới 1962.6 + không hồi lại",
+        "type": "STRUCTURAL"
+      },
+      "savedAt": "2026-08-28T07:00:02.430Z"
+    },
+    {
+      "timestamp": 1787900701713,
+      "direction": "LONG",
+      "confidence": 92,
+      "setupQuality": "A+",
+      "vn30": 1989.4,
+      "f1m": 1991,
+      "basis": 1.6,
+      "regime": "TREND_UP",
+      "breadthGreen": 18,
+      "breadthRed": 9,
+      "delta": 13511,
+      "cvd": "RISING",
+      "velocity": 0.14,
+      "efficiency": 0.08,
+      "vwap": 1980.98,
+      "poc": 1976,
+      "longScore": 69,
+      "shortScore": 8,
+      "totalScore": 69,
+      "entry": {
+        "zone": [
+          1986.2,
+          1990.2
+        ],
+        "reason": "Đáy ngắn hạn"
+      },
+      "targets": [
+        {
+          "price": 1993.3,
+          "reason": "Đỉnh ngắn hạn",
+          "type": "TP1"
+        },
+        {
+          "price": 1994.9,
+          "reason": "Đỉnh hôm nay",
+          "type": "TP2"
+        }
+      ],
+      "invalidation": {
+        "price": 1962.6,
+        "condition": "Giá phá dưới 1962.6 + không hồi lại",
+        "type": "STRUCTURAL"
+      },
+      "savedAt": "2026-08-28T07:05:01.714Z"
+    },
+    {
+      "timestamp": 1787901001204,
+      "direction": "LONG",
+      "confidence": 88,
+      "setupQuality": "A+",
+      "vn30": 1989.7,
+      "f1m": 1990.5,
+      "basis": 0.8,
+      "regime": "TREND_UP",
+      "breadthGreen": 18,
+      "breadthRed": 7,
+      "delta": 13637,
+      "cvd": "FALLING",
+      "velocity": 0.1,
+      "efficiency": 0.09,
+      "vwap": 1981.09,
+      "poc": 1976,
+      "longScore": 45,
+      "shortScore": 20,
+      "totalScore": 45,
+      "entry": {
+        "zone": [
+          1986.2,
+          1990.2
+        ],
+        "reason": "Đáy ngắn hạn"
+      },
+      "targets": [
+        {
+          "price": 1993.3,
+          "reason": "Đỉnh ngắn hạn",
+          "type": "TP1"
+        },
+        {
+          "price": 1994.9,
+          "reason": "Đỉnh hôm nay",
+          "type": "TP2"
+        }
+      ],
+      "invalidation": {
+        "price": 1962.6,
+        "condition": "Giá phá dưới 1962.6 + không hồi lại",
+        "type": "STRUCTURAL"
+      },
+      "savedAt": "2026-08-28T07:10:01.206Z"
+    },
+    {
+      "timestamp": 1787901301878,
+      "direction": "LONG",
+      "confidence": 92,
+      "setupQuality": "A+",
+      "vn30": 1989.7,
+      "f1m": 1992.3,
+      "basis": 2.6,
+      "regime": "TREND_UP",
+      "breadthGreen": 19,
+      "breadthRed": 9,
+      "delta": 15185,
+      "cvd": "RISING",
+      "velocity": 0.46,
+      "efficiency": 0.03,
+      "vwap": 1981.3,
+      "poc": 1976,
+      "longScore": 65,
+      "shortScore": 0,
+      "totalScore": 65,
+      "entry": {
+        "zone": [
+          1987.2,
+          1991.2
+        ],
+        "reason": "Đáy ngắn hạn"
+      },
+      "targets": [
+        {
+          "price": 1994.9,
+          "reason": "Đỉnh hôm nay",
+          "type": "TP1"
+        },
+        {
+          "price": 1983.5,
+          "reason": "Đỉnh ngày trước",
+          "type": "TP2"
+        }
+      ],
+      "invalidation": {
+        "price": 1962.6,
+        "condition": "Giá phá dưới 1962.6 + không hồi lại",
+        "type": "STRUCTURAL"
+      },
+      "savedAt": "2026-08-28T07:15:01.880Z"
+    },
+    {
+      "timestamp": 1787901601417,
+      "direction": "SHORT",
+      "confidence": 92,
+      "setupQuality": "A+",
+      "vn30": 1982.7,
+      "f1m": 1981.7,
+      "basis": -1,
+      "regime": "TREND_DOWN",
+      "breadthGreen": 12,
+      "breadthRed": 14,
+      "delta": 4115,
+      "cvd": "FALLING",
+      "velocity": 2.1,
+      "efficiency": 0.45,
+      "vwap": 1981.41,
+      "poc": 1976,
+      "longScore": 6,
+      "shortScore": 76,
+      "totalScore": 76,
+      "entry": {
+        "zone": [
+          1981.5,
+          1985.5
+        ],
+        "reason": "Đỉnh ngày trước"
+      },
+      "targets": [
+        {
+          "price": 1976,
+          "reason": "Vùng khớp nhiều nhất (POC)",
+          "type": "TP1"
+        },
+        {
+          "price": 1972,
+          "reason": "Hỗ trợ dưới vùng giá trị (VAL)",
+          "type": "TP2"
+        },
+        {
+          "price": 1965.6,
+          "reason": "Đáy ngày trước",
+          "type": "TP3"
+        }
+      ],
+      "invalidation": {
+        "price": 1997.9,
+        "condition": "Giá chấp nhận trên 1997.9 + test lại giữ được",
+        "type": "STRUCTURAL"
+      },
+      "savedAt": "2026-08-28T07:20:01.419Z"
+    },
+    {
+      "timestamp": 1787902201850,
+      "direction": "SHORT",
+      "confidence": 81,
+      "setupQuality": "A",
+      "vn30": 1985.1,
+      "f1m": 1983.9,
+      "basis": -1.2,
+      "regime": "TREND_DOWN",
+      "breadthGreen": 12,
+      "breadthRed": 11,
+      "delta": 5108,
+      "cvd": "RISING",
+      "velocity": 0.4,
+      "efficiency": 0.28,
+      "vwap": 1981.62,
+      "poc": 1976,
+      "longScore": 39,
+      "shortScore": 52,
+      "totalScore": 52,
+      "entry": {
+        "zone": [
+          1981.5,
+          1985.5
+        ],
+        "reason": "Đỉnh ngày trước"
+      },
+      "targets": [
+        {
+          "price": 1981.6,
+          "reason": "Giá trung bình phiên (VWAP)",
+          "type": "TP1"
+        },
+        {
+          "price": 1976,
+          "reason": "Vùng khớp nhiều nhất (POC)",
+          "type": "TP2"
+        },
+        {
+          "price": 1972,
+          "reason": "Hỗ trợ dưới vùng giá trị (VAL)",
+          "type": "TP3"
+        },
+        {
+          "price": 1965.6,
+          "reason": "Đáy ngày trước",
+          "type": "TP4"
+        }
+      ],
+      "invalidation": {
+        "price": 1997.9,
+        "condition": "Giá chấp nhận trên 1997.9 + test lại giữ được",
+        "type": "STRUCTURAL"
+      },
+      "savedAt": "2026-08-28T07:30:01.852Z"
+    },
+    {
+      "timestamp": 1788526987954,
+      "direction": "NO_TRADE",
+      "confidence": 0,
+      "setupQuality": "N/A",
+      "vn30": 1984.9,
+      "f1m": 1985.6,
+      "basis": 0.7,
+      "regime": "TREND_UP",
+      "breadthGreen": 18,
+      "breadthRed": 7,
+      "delta": 13262,
+      "cvd": "FALLING",
+      "velocity": 0.8,
+      "efficiency": 0.17,
+      "vwap": 1976.87,
+      "poc": 1976,
+      "longScore": 35,
+      "shortScore": 32,
+      "totalScore": 35,
+      "entry": {
+        "zone": [
+          0,
+          0
+        ],
+        "reason": "Không có tín hiệu"
+      },
+      "targets": [],
+      "invalidation": {
+        "price": 0,
+        "condition": "N/A",
+        "type": "NONE"
+      },
+      "savedAt": "2026-09-04T13:03:07.957Z"
+    },
+    {
+      "timestamp": 1788532698242,
+      "direction": "NO_TRADE",
+      "confidence": 0,
+      "setupQuality": "N/A",
+      "vn30": 1984.9,
+      "f1m": 1985.6,
+      "basis": 0.7,
+      "regime": "TREND_UP",
+      "breadthGreen": 18,
+      "breadthRed": 7,
+      "delta": 13262,
+      "cvd": "FALLING",
+      "velocity": 0.8,
+      "efficiency": 0.17,
+      "vwap": 1976.87,
+      "poc": 1976,
+      "longScore": 35,
+      "shortScore": 32,
+      "totalScore": 35,
+      "entry": {
+        "zone": [
+          0,
+          0
+        ],
+        "reason": "Không có tín hiệu"
+      },
+      "targets": [],
+      "invalidation": {
+        "price": 0,
+        "condition": "N/A",
+        "type": "NONE"
+      },
+      "savedAt": "2026-09-04T14:38:18.242Z"
+    },
+    {
+      "timestamp": 1788535872411,
+      "direction": "NO_TRADE",
+      "confidence": 0,
+      "setupQuality": "N/A",
+      "vn30": 1984.9,
+      "f1m": 1985.6,
+      "basis": 0.7,
+      "regime": "TREND_UP",
+      "breadthGreen": 18,
+      "breadthRed": 7,
+      "delta": 13262,
+      "cvd": "FALLING",
+      "velocity": 0.8,
+      "efficiency": 0.17,
+      "vwap": 1976.87,
+      "poc": 1976,
+      "longScore": 38,
+      "shortScore": 32,
+      "totalScore": 38,
+      "entry": {
+        "zone": [
+          0,
+          0
+        ],
+        "reason": "Không có tín hiệu"
+      },
+      "targets": [],
+      "invalidation": {
+        "price": 0,
+        "condition": "N/A",
+        "type": "NONE"
+      },
+      "savedAt": "2026-09-04T15:31:12.413Z"
+    },
+    {
+      "timestamp": 1789093852625,
+      "direction": "NO_TRADE",
+      "confidence": 0,
+      "setupQuality": "N/A",
+      "vn30": 1964.1,
+      "f1m": 1959.7,
+      "basis": -4.4,
+      "regime": "TREND_DOWN",
+      "breadthGreen": 4,
+      "breadthRed": 26,
+      "delta": -343,
+      "cvd": "FLAT",
+      "velocity": 0.32,
+      "efficiency": 0.03,
+      "vwap": 1961.52,
+      "poc": 1960,
+      "longScore": 0,
+      "shortScore": 46,
+      "totalScore": 46,
+      "entry": {
+        "zone": [
+          0,
+          0
+        ],
+        "reason": "Không có tín hiệu"
+      },
+      "targets": [],
+      "invalidation": {
+        "price": 0,
+        "condition": "N/A",
+        "type": "NONE"
+      },
+      "savedAt": "2026-09-11T02:30:52.641Z"
+    },
+    {
+      "timestamp": 1789093950801,
+      "direction": "NO_TRADE",
+      "confidence": 0,
+      "setupQuality": "N/A",
+      "vn30": 1962.7,
+      "f1m": 1959,
+      "basis": -3.7,
+      "regime": "TREND_DOWN",
+      "breadthGreen": 4,
+      "breadthRed": 25,
+      "delta": 112,
+      "cvd": "FALLING",
+      "velocity": 0.38,
+      "efficiency": 0.11,
+      "vwap": 1961.48,
+      "poc": 1960,
+      "longScore": 0,
+      "shortScore": 67,
+      "totalScore": 67,
+      "entry": {
+        "zone": [
+          0,
+          0
+        ],
+        "reason": "Không có tín hiệu"
+      },
+      "targets": [],
+      "invalidation": {
+        "price": 0,
+        "condition": "N/A",
+        "type": "NONE"
+      },
+      "savedAt": "2026-09-11T02:32:30.803Z"
+    },
+    {
+      "timestamp": 1789095169303,
+      "direction": "NO_TRADE",
+      "confidence": 0,
+      "setupQuality": "N/A",
+      "vn30": 1961.5,
+      "f1m": 1956,
+      "basis": -5.5,
+      "regime": "TREND_DOWN",
+      "breadthGreen": 5,
+      "breadthRed": 25,
+      "delta": -3964,
+      "cvd": "FALLING",
+      "velocity": 0.66,
+      "efficiency": 0.37,
+      "vwap": 1960.9,
+      "poc": 1960,
+      "longScore": 0,
+      "shortScore": 89,
+      "totalScore": 89,
+      "entry": {
+        "zone": [
+          0,
+          0
+        ],
+        "reason": "Không có tín hiệu"
+      },
+      "targets": [],
+      "invalidation": {
+        "price": 0,
+        "condition": "N/A",
+        "type": "NONE"
+      },
+      "savedAt": "2026-09-11T02:52:49.304Z"
+    },
+    {
+      "timestamp": 1789095609585,
+      "direction": "NO_TRADE",
+      "confidence": 0,
+      "setupQuality": "N/A",
+      "vn30": 1957,
+      "f1m": 1951.8,
+      "basis": -5.2,
+      "regime": "TREND_DOWN",
+      "breadthGreen": 4,
+      "breadthRed": 25,
+      "delta": -11390,
+      "cvd": "FALLING",
+      "velocity": 0.38,
+      "efficiency": 0.6,
+      "vwap": 1959.34,
+      "poc": 1960,
+      "longScore": 0,
+      "shortScore": 77,
+      "totalScore": 77,
+      "entry": {
+        "zone": [
+          0,
+          0
+        ],
+        "reason": "Không có tín hiệu"
+      },
+      "targets": [],
+      "invalidation": {
+        "price": 0,
+        "condition": "N/A",
+        "type": "NONE"
+      },
+      "savedAt": "2026-09-11T03:00:09.586Z"
+    },
+    {
+      "timestamp": 1789096089504,
+      "direction": "SHORT",
+      "confidence": 95,
+      "setupQuality": "A+",
+      "vn30": 1953.4,
+      "f1m": 1947,
+      "basis": -6.4,
+      "regime": "TREND_DOWN",
+      "breadthGreen": 4,
+      "breadthRed": 26,
+      "delta": -17993,
+      "cvd": "FALLING",
+      "velocity": 0.94,
+      "efficiency": 0.67,
+      "vwap": 1957.99,
+      "poc": 1960,
+      "longScore": 0,
+      "shortScore": 77,
+      "totalScore": 77,
+      "entry": {
+        "zone": [
+          1960.5,
+          1964.5
+        ],
+        "reason": "Đỉnh ngắn hạn"
+      },
+      "targets": [
+        {
+          "price": 1947.2,
+          "reason": "Đáy phiên",
+          "type": "TP1"
+        },
+        {
+          "price": 1957,
+          "reason": "Đáy ngày trước",
+          "type": "TP2"
+        }
+      ],
+      "invalidation": {
+        "price": 1991.5,
+        "condition": "Giá chấp nhận trên 1991.5 + test lại giữ được",
+        "type": "STRUCTURAL"
+      },
+      "savedAt": "2026-09-11T03:08:09.506Z"
+    },
+    {
+      "timestamp": 1789097590576,
+      "direction": "NO_TRADE",
+      "confidence": 0,
+      "setupQuality": "N/A",
+      "vn30": 1955.9,
+      "f1m": 1951.2,
+      "basis": -4.7,
+      "regime": "TREND_DOWN",
+      "breadthGreen": 4,
+      "breadthRed": 26,
+      "delta": -12675,
+      "cvd": "RISING",
+      "velocity": 0.24,
+      "efficiency": 0.23,
+      "vwap": 1956.38,
+      "poc": 1960,
+      "longScore": 20,
+      "shortScore": 57,
+      "totalScore": 57,
+      "entry": {
+        "zone": [
+          0,
+          0
+        ],
+        "reason": "Không có tín hiệu"
+      },
+      "targets": [],
+      "invalidation": {
+        "price": 0,
+        "condition": "N/A",
+        "type": "NONE"
+      },
+      "savedAt": "2026-09-11T03:33:10.578Z"
+    },
+    {
+      "timestamp": 1789099991216,
+      "direction": "NO_TRADE",
+      "confidence": 0,
+      "setupQuality": "N/A",
+      "vn30": 1954.1,
+      "f1m": 1948.9,
+      "basis": -5.2,
+      "regime": "TREND_DOWN",
+      "breadthGreen": 4,
+      "breadthRed": 26,
+      "delta": -11299,
+      "cvd": "FALLING",
+      "velocity": 0.62,
+      "efficiency": 0.29,
+      "vwap": 1955.49,
+      "poc": 1960,
+      "longScore": 0,
+      "shortScore": 65,
+      "totalScore": 65,
+      "entry": {
+        "zone": [
+          0,
+          0
+        ],
+        "reason": "Không có tín hiệu"
+      },
+      "targets": [],
+      "invalidation": {
+        "price": 0,
+        "condition": "N/A",
+        "type": "NONE"
+      },
+      "savedAt": "2026-09-11T04:13:11.218Z"
+    },
+    {
+      "timestamp": 1789106852652,
+      "direction": "NO_TRADE",
+      "confidence": 0,
+      "setupQuality": "N/A",
+      "vn30": 1952.2,
+      "f1m": 1953,
+      "basis": 0.8,
+      "regime": "TREND_DOWN",
+      "breadthGreen": 3,
+      "breadthRed": 27,
+      "delta": -8222,
+      "cvd": "RISING",
+      "velocity": 0.26,
+      "efficiency": 0.23,
+      "vwap": 1954.97,
+      "poc": 1951,
+      "longScore": 20,
+      "shortScore": 48,
+      "totalScore": 48,
+      "entry": {
+        "zone": [
+          0,
+          0
+        ],
+        "reason": "Không có tín hiệu"
+      },
+      "targets": [],
+      "invalidation": {
+        "price": 0,
+        "condition": "N/A",
+        "type": "NONE"
+      },
+      "savedAt": "2026-09-11T06:07:32.653Z"
+    },
+    {
+      "timestamp": 1789107613196,
+      "direction": "NO_TRADE",
+      "confidence": 0,
+      "setupQuality": "N/A",
+      "vn30": 1952.2,
+      "f1m": 1955,
+      "basis": 2.8,
+      "regime": "TREND_DOWN",
+      "breadthGreen": 3,
+      "breadthRed": 26,
+      "delta": -6042,
+      "cvd": "RISING",
+      "velocity": 0.54,
+      "efficiency": 0.25,
+      "vwap": 1954.83,
+      "poc": 1951,
+      "longScore": 26,
+      "shortScore": 44,
+      "totalScore": 44,
+      "entry": {
+        "zone": [
+          0,
+          0
+        ],
+        "reason": "Không có tín hiệu"
+      },
+      "targets": [],
+      "invalidation": {
+        "price": 0,
+        "condition": "N/A",
+        "type": "NONE"
+      },
+      "savedAt": "2026-09-11T06:20:13.198Z"
+    },
+    {
+      "timestamp": 1789109253240,
+      "direction": "LONG",
+      "confidence": 95,
+      "setupQuality": "A+",
+      "vn30": 1954.1,
+      "f1m": 1957,
+      "basis": 2.9,
+      "regime": "TREND_UP",
+      "breadthGreen": 3,
+      "breadthRed": 25,
+      "delta": -1048,
+      "cvd": "RISING",
+      "velocity": 0.44,
+      "efficiency": 0.29,
+      "vwap": 1954.74,
+      "poc": 1952,
+      "longScore": 55,
+      "shortScore": 0,
+      "totalScore": 55,
+      "entry": {
+        "zone": [
+          1955,
+          1959
+        ],
+        "reason": "Đáy ngày trước"
+      },
+      "targets": [
+        {
+          "price": 1965.4,
+          "reason": "Đỉnh hôm nay",
+          "type": "TP1"
+        },
+        {
+          "price": 1975.5,
+          "reason": "Đóng cửa hôm trước",
+          "type": "TP2"
+        },
+        {
+          "price": 1988.5,
+          "reason": "Đỉnh ngày trước",
+          "type": "TP3"
+        }
+      ],
+      "invalidation": {
+        "price": 1944,
+        "condition": "Giá phá dưới 1944.0 + không hồi lại",
+        "type": "STRUCTURAL"
+      },
+      "savedAt": "2026-09-11T06:47:33.242Z"
+    },
+    {
+      "timestamp": 1789109793436,
+      "direction": "NO_TRADE",
+      "confidence": 0,
+      "setupQuality": "N/A",
+      "vn30": 1955.3,
+      "f1m": 1952.7,
+      "basis": -2.6,
+      "regime": "TREND_DOWN",
+      "breadthGreen": 4,
+      "breadthRed": 24,
+      "delta": 1428,
+      "cvd": "RISING",
+      "velocity": 0.62,
+      "efficiency": 0.08,
+      "vwap": 1954.8,
+      "poc": 1952,
+      "longScore": 24,
+      "shortScore": 46,
+      "totalScore": 46,
+      "entry": {
+        "zone": [
+          0,
+          0
+        ],
+        "reason": "Không có tín hiệu"
+      },
+      "targets": [],
+      "invalidation": {
+        "price": 0,
+        "condition": "N/A",
+        "type": "NONE"
+      },
+      "savedAt": "2026-09-11T06:56:33.438Z"
+    },
+    {
+      "timestamp": 1789110053555,
+      "direction": "NO_TRADE",
+      "confidence": 0,
+      "setupQuality": "N/A",
+      "vn30": 1953.5,
+      "f1m": 1948.5,
+      "basis": -5,
+      "regime": "TREND_DOWN",
+      "breadthGreen": 3,
+      "breadthRed": 26,
+      "delta": -5824,
+      "cvd": "FALLING",
+      "velocity": 1.24,
+      "efficiency": 0.32,
+      "vwap": 1954.55,
+      "poc": 1952,
+      "longScore": 0,
+      "shortScore": 67,
+      "totalScore": 67,
+      "entry": {
+        "zone": [
+          0,
+          0
+        ],
+        "reason": "Không có tín hiệu"
+      },
+      "targets": [],
+      "invalidation": {
+        "price": 0,
+        "condition": "N/A",
+        "type": "NONE"
+      },
+      "savedAt": "2026-09-11T07:00:53.557Z"
+    },
+    {
+      "timestamp": 1789110593957,
+      "direction": "SHORT",
+      "confidence": 95,
+      "setupQuality": "A+",
+      "vn30": 1949.8,
+      "f1m": 1945.6,
+      "basis": -4.2,
+      "regime": "TREND_DOWN",
+      "breadthGreen": 3,
+      "breadthRed": 26,
+      "delta": -11782,
+      "cvd": "FALLING",
+      "velocity": 1.1,
+      "efficiency": 0.47,
+      "vwap": 1954.2,
+      "poc": 1952,
+      "longScore": 0,
+      "shortScore": 79,
+      "totalScore": 79,
+      "entry": {
+        "zone": [
+          1963.4,
+          1967.4
+        ],
+        "reason": "Đỉnh hôm nay"
+      },
+      "targets": [
+        {
+          "price": 1946,
+          "reason": "Đáy phiên",
+          "type": "TP1"
+        },
+        {
+          "price": 1957,
+          "reason": "Đáy ngày trước",
+          "type": "TP2"
+        }
+      ],
+      "invalidation": {
+        "price": 1991.5,
+        "condition": "Giá chấp nhận trên 1991.5 + test lại giữ được",
+        "type": "STRUCTURAL"
+      },
+      "savedAt": "2026-09-11T07:09:53.959Z"
+    },
+    {
+      "timestamp": 1789111133940,
+      "direction": "NO_TRADE",
+      "confidence": 0,
+      "setupQuality": "N/A",
+      "vn30": 1946.4,
+      "f1m": 1948.6,
+      "basis": 2.2,
+      "regime": "TREND_DOWN",
+      "breadthGreen": 2,
+      "breadthRed": 28,
+      "delta": -7765,
+      "cvd": "RISING",
+      "velocity": 0.32,
+      "efficiency": 0.1,
+      "vwap": 1953.59,
+      "poc": 1952,
+      "longScore": 59,
+      "shortScore": 59,
+      "totalScore": 59,
+      "entry": {
+        "zone": [
+          0,
+          0
+        ],
+        "reason": "Không có tín hiệu"
+      },
+      "targets": [],
+      "invalidation": {
+        "price": 0,
+        "condition": "N/A",
+        "type": "NONE"
+      },
+      "savedAt": "2026-09-11T07:18:53.943Z"
+    },
+    {
+      "timestamp": 1789111434059,
+      "direction": "NO_TRADE",
+      "confidence": 0,
+      "setupQuality": "N/A",
+      "vn30": 1944.2,
+      "f1m": 1944.3,
+      "basis": 0.1,
+      "regime": "TREND_DOWN",
+      "breadthGreen": 2,
+      "breadthRed": 28,
+      "delta": -12388,
+      "cvd": "FALLING",
+      "velocity": 0.88,
+      "efficiency": 0.35,
+      "vwap": 1953.36,
+      "poc": 1952,
+      "longScore": 12,
+      "shortScore": 79,
+      "totalScore": 79,
+      "entry": {
+        "zone": [
+          0,
+          0
+        ],
+        "reason": "Không có tín hiệu"
+      },
+      "targets": [],
+      "invalidation": {
+        "price": 0,
+        "condition": "N/A",
+        "type": "NONE"
+      },
+      "savedAt": "2026-09-11T07:23:54.061Z"
+    },
+    {
+      "timestamp": 1789111834255,
+      "direction": "NO_TRADE",
+      "confidence": 0,
+      "setupQuality": "N/A",
+      "vn30": 1940.7,
+      "f1m": 1947,
+      "basis": 6.3,
+      "regime": "TREND_DOWN",
+      "breadthGreen": 2,
+      "breadthRed": 28,
+      "delta": -16820,
+      "cvd": "FALLING",
+      "velocity": 0.46,
+      "efficiency": 0.27,
+      "vwap": 1952.95,
+      "poc": 1952,
+      "longScore": 0,
+      "shortScore": 89,
+      "totalScore": 89,
+      "entry": {
+        "zone": [
+          0,
+          0
+        ],
+        "reason": "Không có tín hiệu"
+      },
+      "targets": [],
+      "invalidation": {
+        "price": 0,
+        "condition": "N/A",
+        "type": "NONE"
+      },
+      "savedAt": "2026-09-11T07:30:34.258Z"
+    },
+    {
+      "timestamp": 1789112134344,
+      "direction": "NO_TRADE",
+      "confidence": 0,
+      "setupQuality": "N/A",
+      "vn30": 1940.7,
+      "f1m": 1941.2,
+      "basis": 0.5,
+      "regime": "TREND_DOWN",
+      "breadthGreen": 2,
+      "breadthRed": 27,
+      "delta": -16820,
+      "cvd": "FALLING",
+      "velocity": 0.46,
+      "efficiency": 0.27,
+      "vwap": 1952.95,
+      "poc": 1952,
+      "longScore": 0,
+      "shortScore": 89,
+      "totalScore": 89,
+      "entry": {
+        "zone": [
+          0,
+          0
+        ],
+        "reason": "Không có tín hiệu"
+      },
+      "targets": [],
+      "invalidation": {
+        "price": 0,
+        "condition": "N/A",
+        "type": "NONE"
+      },
+      "savedAt": "2026-09-11T07:35:34.346Z"
+    },
+    {
+      "timestamp": 1789112929166,
+      "direction": "SHORT",
+      "confidence": 95,
+      "setupQuality": "A+",
+      "vn30": 1940.7,
+      "f1m": 1940,
+      "basis": -0.7,
+      "regime": "TREND_DOWN",
+      "breadthGreen": 2,
+      "breadthRed": 28,
+      "delta": -24056,
+      "cvd": "FALLING",
+      "velocity": 0.94,
+      "efficiency": 0.37,
+      "vwap": 1952.52,
+      "poc": 1952,
+      "longScore": 0,
+      "shortScore": 89,
+      "totalScore": 89,
+      "entry": {
+        "zone": [
+          1963.4,
+          1967.4
+        ],
+        "reason": "Đỉnh hôm nay"
+      },
+      "targets": [
+        {
+          "price": 1940,
+          "reason": "Đáy phiên",
+          "type": "TP1"
+        },
+        {
+          "price": 1957,
+          "reason": "Đáy ngày trước",
+          "type": "TP2"
+        }
+      ],
+      "invalidation": {
+        "price": 1991.5,
+        "condition": "Giá chấp nhận trên 1991.5 + test lại giữ được",
+        "type": "STRUCTURAL"
+      },
+      "savedAt": "2026-09-11T07:48:49.168Z"
+    },
+    {
+      "timestamp": 1789388439412,
+      "direction": "NO_TRADE",
+      "confidence": 0,
+      "setupQuality": "N/A",
+      "vn30": 1928.6,
+      "f1m": 1930.9,
+      "basis": 2.3,
+      "regime": "RANGE",
+      "breadthGreen": 13,
+      "breadthRed": 13,
+      "delta": 8254,
+      "cvd": "RISING",
+      "velocity": 1.08,
+      "efficiency": 0.6,
+      "vwap": 1932.09,
+      "poc": 1938,
+      "longScore": 64,
+      "shortScore": 21,
+      "totalScore": 64,
+      "entry": {
+        "zone": [
+          0,
+          0
+        ],
+        "reason": "Không có tín hiệu"
+      },
+      "targets": [],
+      "invalidation": {
+        "price": 0,
+        "condition": "N/A",
+        "type": "NONE"
+      },
+      "savedAt": "2026-09-14T12:20:39.428Z"
+    },
+    {
+      "timestamp": 1789388464208,
+      "direction": "NO_TRADE",
+      "confidence": 0,
+      "setupQuality": "N/A",
+      "vn30": 1928.6,
+      "f1m": 1930.9,
+      "basis": 2.3,
+      "regime": "RANGE",
+      "breadthGreen": 13,
+      "breadthRed": 13,
+      "delta": 8254,
+      "cvd": "RISING",
+      "velocity": 1.08,
+      "efficiency": 0.6,
+      "vwap": 1932.09,
+      "poc": 1938,
+      "longScore": 64,
+      "shortScore": 21,
+      "totalScore": 64,
+      "entry": {
+        "zone": [
+          0,
+          0
+        ],
+        "reason": "Không có tín hiệu"
+      },
+      "targets": [],
+      "invalidation": {
+        "price": 0,
+        "condition": "N/A",
+        "type": "NONE"
+      },
+      "savedAt": "2026-09-14T12:21:04.209Z"
+    },
+    {
+      "timestamp": 1790083686232,
+      "direction": "NO_TRADE",
+      "confidence": 0,
+      "setupQuality": "N/A",
+      "vn30": 1965.4,
+      "f1m": 1962.9,
+      "basis": -2.5,
+      "regime": "TREND_DOWN",
+      "breadthGreen": 16,
+      "breadthRed": 9,
+      "delta": 23126,
+      "cvd": "RISING",
+      "velocity": 0.18,
+      "efficiency": 0.25,
+      "vwap": 1958.24,
+      "poc": 1959,
+      "longScore": 57,
+      "shortScore": 32,
+      "totalScore": 57,
+      "entry": {
+        "zone": [
+          0,
+          0
+        ],
+        "reason": "Không có tín hiệu"
+      },
+      "targets": [],
+      "invalidation": {
+        "price": 0,
+        "condition": "N/A",
+        "type": "NONE"
+      },
+      "savedAt": "2026-09-22T13:28:06.248Z"
+    },
+    {
+      "timestamp": 1790083949818,
+      "direction": "NO_TRADE",
+      "confidence": 0,
+      "setupQuality": "N/A",
+      "vn30": 1965.4,
+      "f1m": 1962.9,
+      "basis": -2.5,
+      "regime": "TREND_DOWN",
+      "breadthGreen": 16,
+      "breadthRed": 9,
+      "delta": 23126,
+      "cvd": "RISING",
+      "velocity": 0.18,
+      "efficiency": 0.25,
+      "vwap": 1958.24,
+      "poc": 1959,
+      "longScore": 57,
+      "shortScore": 32,
+      "totalScore": 57,
+      "entry": {
+        "zone": [
+          0,
+          0
+        ],
+        "reason": "Không có tín hiệu"
+      },
+      "targets": [],
+      "invalidation": {
+        "price": 0,
+        "condition": "N/A",
+        "type": "NONE"
+      },
+      "savedAt": "2026-09-22T13:32:29.820Z"
+    }
+  ]
+}

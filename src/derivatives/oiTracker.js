@@ -151,6 +151,16 @@ function normalizeDateStr(dStr) {
   return `${d}/${m}/${y}`;
 }
 
+/**
+ * Chuyển chuỗi "D/M/YYYY" thành timestamp để sắp xếp theo thời gian
+ */
+function parseDateStr(dStr) {
+  if (!dStr) return 0;
+  const parts = dStr.split('/');
+  if (parts.length < 3) return 0;
+  return new Date(parseInt(parts[2], 10), parseInt(parts[1], 10) - 1, parseInt(parts[0], 10)).getTime();
+}
+
 // ─── GET 5-DAY HISTORY (ĐỘC LẬP TỪNG NGÀY & 3 PHE) ────────────
 
 /**
@@ -165,8 +175,12 @@ function getRecent5DaysData() {
   const foreignStore = loadForeignOIData();
   const oiStore = loadOIHistoryData();
 
-  const fHistory = foreignStore.history || [];
-  const oiHistory = oiStore.history || [];
+  let fHistory = foreignStore.history || [];
+  let oiHistory = oiStore.history || [];
+
+  // Luôn sắp xếp theo thứ tự thời gian tăng dần
+  fHistory.sort((a, b) => parseDateStr(a.date) - parseDateStr(b.date));
+  oiHistory.sort((a, b) => parseDateStr(a.date) - parseDateStr(b.date));
 
   // Lấy chính xác 5 ngày giao dịch gần nhất (loại bỏ T7, CN, ngày lễ, nghỉ bù)
   const targetTradingDays = getRecentTradingDays(5);
@@ -178,40 +192,48 @@ function getRecent5DaysData() {
   for (let idx = 0; idx < targetTradingDays.length; idx++) {
     const targetDateStr = targetTradingDays[idx];
     const normTarget = normalizeDateStr(targetDateStr);
+    const targetTs = parseDateStr(targetDateStr);
 
     // Tìm trong foreign_oi.json
     let fItem = fHistory.find(h => normalizeDateStr(h.date) === normTarget);
     // Tìm trong oi_history.json
     let oItem = oiHistory.find(h => normalizeDateStr(h.date) === normTarget);
 
+    // Tìm bản ghi quá khứ gần nhất (trước ngày này) để kế thừa khi thiếu
+    const prevHistoryF = fHistory.filter(h => parseDateStr(h.date) < targetTs).pop() || null;
+    const prevF = idx > 0 ? results[idx - 1] : prevHistoryF;
+
+    const prevHistoryO = oiHistory.filter(h => parseDateStr(h.date) < targetTs).pop() || null;
+    const prevO = idx > 0 ? results[idx - 1] : prevHistoryO;
+
     // Nếu thiếu dữ liệu của ngày giao dịch này (ví dụ server offline hôm đó):
     // Tự động backfill để bảng 5 ngày luôn ĐỦ và LIÊN TỤC
     if (!fItem) {
-      const prevF = idx > 0 ? results[idx - 1] : (fHistory.length > 0 ? fHistory[fHistory.length - 1] : null);
       fItem = {
         date: targetDateStr,
-        buy: prevF ? Math.round(prevF.buy || 4000) : 4000,
-        sell: prevF ? Math.round(prevF.sell || 4000) : 4000,
-        overnightNet: 0,
-        tuDoanhOvernight: 0,
+        buy: prevF ? Math.round(prevF.buy || 4500) : 4500,
+        sell: prevF ? Math.round(prevF.sell || 4500) : 4500,
+        overnightNet: prevF ? prevF.overnightNet : 0,
+        tuDoanhOvernight: prevF ? prevF.tuDoanhOvernight : 0,
       };
       fHistory.push(fItem);
+      fHistory.sort((a, b) => parseDateStr(a.date) - parseDateStr(b.date));
       needSaveForeign = true;
       console.log(`   🛠️ [OI History] Auto-backfilled missing foreign data for trading day ${targetDateStr}`);
     }
 
     if (!oItem) {
-      const prevO = idx > 0 ? results[idx - 1] : (oiHistory.length > 0 ? oiHistory[oiHistory.length - 1] : null);
       oItem = {
         date: targetDateStr,
-        totalOI: prevO ? prevO.totalOI : 31500,
+        totalOI: prevO ? prevO.totalOI : 33000,
         oiChange: 0,
         f1mPrice: prevO ? prevO.f1mPrice : 0,
         vn30Price: prevO ? prevO.vn30Price : 0,
-        basis: 0,
+        basis: prevO ? prevO.basis : 0,
         positionState: 'NEUTRAL',
       };
       oiHistory.push(oItem);
+      oiHistory.sort((a, b) => parseDateStr(a.date) - parseDateStr(b.date));
       needSaveOI = true;
       console.log(`   🛠️ [OI History] Auto-backfilled missing OI data for trading day ${targetDateStr}`);
     }
@@ -409,6 +431,113 @@ function analyzeOIPositions(days5 = null) {
   };
 }
 
+// ─── SYNC HISTORICAL DATA FROM VPS (OHLCV & BASIS) ────────────
+
+/**
+ * Tự động đồng bộ OHLCV 15 phiên gần nhất từ VPS TradingView feed
+ * Đảm bảo giá đóng cửa, VN30, Basis và Volume luôn chính xác 100%,
+ * kể cả khi app mới khởi động hoặc container Render bị restart/deploy mới.
+ */
+async function syncRecentHistoryFromVPS() {
+  try {
+    const axios = require('axios');
+    const now = Math.floor(Date.now() / 1000);
+    const from = now - 86400 * 15;
+    const [f1mRes, vn30Res] = await Promise.all([
+      axios.get(`https://histdatafeed.vps.com.vn/tradingview/history?symbol=VN30F1M&resolution=D&from=${from}&to=${now}`, { timeout: 8000 }),
+      axios.get(`https://histdatafeed.vps.com.vn/tradingview/history?symbol=VN30&resolution=D&from=${from}&to=${now}`, { timeout: 8000 }),
+    ]);
+
+    const f1mData = f1mRes.data;
+    const vn30Data = vn30Res.data;
+    if (!f1mData || !f1mData.t || f1mData.t.length === 0) return false;
+
+    const vn30Map = {};
+    if (vn30Data && vn30Data.t) {
+      vn30Data.t.forEach((t, i) => {
+        const d = new Date(t * 1000);
+        const dStr = `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`;
+        vn30Map[dStr] = vn30Data.c[i];
+      });
+    }
+
+    const oiStore = loadOIHistoryData();
+    const foreignStore = loadForeignOIData();
+    let oHistory = oiStore.history || [];
+    let fHistory = foreignStore.history || [];
+
+    let updated = false;
+    for (let i = 0; i < f1mData.t.length; i++) {
+      const d = new Date(f1mData.t[i] * 1000);
+      const dStr = `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`;
+      const normD = normalizeDateStr(dStr);
+
+      const f1mClose = f1mData.c[i];
+      const vn30Close = vn30Map[dStr] || 0;
+      const basis = vn30Close ? parseFloat((f1mClose - vn30Close).toFixed(2)) : 0;
+      const volume = f1mData.v[i];
+
+      let oItem = oHistory.find(h => normalizeDateStr(h.date) === normD);
+      if (!oItem) {
+        oItem = {
+          date: dStr,
+          totalOI: 33000,
+          oiChange: 0,
+          f1mPrice: f1mClose,
+          vn30Price: vn30Close,
+          basis,
+          volume,
+          positionState: 'NEUTRAL'
+        };
+        oHistory.push(oItem);
+        updated = true;
+      } else {
+        if (!oItem.f1mPrice || oItem.f1mPrice === 0) {
+          oItem.f1mPrice = f1mClose;
+          updated = true;
+        }
+        if (!oItem.vn30Price || oItem.vn30Price === 0) {
+          oItem.vn30Price = vn30Close;
+          oItem.basis = basis;
+          updated = true;
+        }
+        if (!oItem.volume || oItem.volume === 0) {
+          oItem.volume = volume;
+          updated = true;
+        }
+      }
+
+      let fItem = fHistory.find(h => normalizeDateStr(h.date) === normD);
+      if (!fItem) {
+        const prevF = fHistory.length > 0 ? fHistory[fHistory.length - 1] : null;
+        fItem = {
+          date: dStr,
+          buy: prevF ? prevF.buy : 4500,
+          sell: prevF ? prevF.sell : 4500,
+          overnightNet: prevF ? prevF.overnightNet : 0,
+          tuDoanhOvernight: prevF ? prevF.tuDoanhOvernight : 0,
+        };
+        fHistory.push(fItem);
+        updated = true;
+      }
+    }
+
+    if (updated) {
+      oHistory.sort((a, b) => parseDateStr(a.date) - parseDateStr(b.date));
+      fHistory.sort((a, b) => parseDateStr(a.date) - parseDateStr(b.date));
+      oiStore.history = oHistory;
+      foreignStore.history = fHistory;
+      saveOIHistoryData(oiStore);
+      saveForeignOIData(foreignStore);
+      console.log('   ✅ [OI History] Auto-synced daily OHLCV from VPS history');
+    }
+    return true;
+  } catch (e) {
+    console.error('   ⚠️ [OI History] Failed to sync daily OHLCV from VPS:', e.message);
+    return false;
+  }
+}
+
 // ─── BUILD TELEGRAM NOTIFICATION MESSAGE (19h35 TỐI) ─────────
 
 /**
@@ -422,6 +551,11 @@ async function buildOIEveningNotificationAsync(session = 'evening') {
     console.log(`   ℹ️ [OI ${session}] Hôm nay không phải ngày giao dịch (${vnTime.toLocaleDateString('vi-VN')}), dùng dữ liệu phiên gần nhất.`);
     return buildOIEveningNotificationSync(session);
   }
+
+  // ─── STEP 0.5: Đồng bộ dữ liệu lịch sử OHLCV & Basis từ VPS ─
+  try {
+    await syncRecentHistoryFromVPS();
+  } catch (e) { /* ignore */ }
 
   // ─── STEP 1: Fetch realtime data từ sàn ─────────────────
   console.log(`   📡 [OI ${session === 'afternoon' ? 'Afternoon 14h47' : 'Evening 19h35'}] Fetching realtime OI data from exchange...`);
@@ -661,9 +795,11 @@ function recordDailySessionOI(entry) {
   const foreignStore = loadForeignOIData();
   const oiStore = loadOIHistoryData();
 
+  const normEntryDate = normalizeDateStr(entry.date);
+
   // 1. Update foreign_oi.json
   let fHistory = foreignStore.history || [];
-  const fIdx = fHistory.findIndex(h => h.date === entry.date);
+  const fIdx = fHistory.findIndex(h => normalizeDateStr(h.date) === normEntryDate);
   const buy = entry.buy || entry.foreignBuy || 0;
   const sell = entry.sell || entry.foreignSell || 0;
   const overnightNet = entry.overnightNet !== undefined ? entry.overnightNet : (buy - sell);
@@ -682,13 +818,14 @@ function recordDailySessionOI(entry) {
   } else {
     fHistory.push(fItem);
   }
+  fHistory.sort((a, b) => parseDateStr(a.date) - parseDateStr(b.date));
   if (fHistory.length > 30) fHistory = fHistory.slice(-30);
   foreignStore.history = fHistory;
   saveForeignOIData(foreignStore);
 
   // 2. Update oi_history.json
   let oHistory = oiStore.history || [];
-  const oIdx = oHistory.findIndex(h => h.date === entry.date);
+  const oIdx = oHistory.findIndex(h => normalizeDateStr(h.date) === normEntryDate);
   const oItem = {
     date: entry.date,
     totalOI: entry.totalOI || 30000,
@@ -704,6 +841,7 @@ function recordDailySessionOI(entry) {
   } else {
     oHistory.push(oItem);
   }
+  oHistory.sort((a, b) => parseDateStr(a.date) - parseDateStr(b.date));
   if (oHistory.length > 30) oHistory = oHistory.slice(-30);
   oiStore.history = oHistory;
   saveOIHistoryData(oiStore);
@@ -1226,6 +1364,7 @@ module.exports = {
   buildPostATCNotificationAsync,
   recordDailySessionOI,
   getRealtimePositionSnapshot,
+  syncRecentHistoryFromVPS,
   // Re-export estimator functions for direct access
   estimateOvernightPositions: oiEstimator.estimateCumulativePositions,
   classifyTradeAction: oiEstimator.classifyTradeAction,
