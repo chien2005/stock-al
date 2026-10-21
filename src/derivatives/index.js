@@ -1,6 +1,6 @@
 /**
  * ╔═══════════════════════════════════════════════════════════════╗
- * ║   🔮 VN30F v6.0 — Senior Trader AI Agent Orchestrator         ║
+ * ║   🔮 VN30F v7.0 — Senior Trader AI Agent Orchestrator         ║
  * ╠═══════════════════════════════════════════════════════════════╣
  * ║  Senior Prop Trader AI + Volume Scalper + Market Context      ║
  * ║  • Volume Scalper v6.0: Trap Shield + VSA + Pro Notifier      ║
@@ -8,6 +8,8 @@
  * ║  • Trade Decision: Confidence Scoring % + Entry/SL/TP Plans   ║
  * ║  • AI Strategic Forecast: Phán quyết 3 phiên/ngày dứt khoát  ║
  * ║  • OI Tracker: Pre-ATC, Post-ATC, Evening report              ║
+ * ║  • Evening Plan v7.0: Chiến lược phiên tiếp theo (19h50)     ║
+ * ║  • Intraday Signal v7.0: 15p/noti realtime trong phiên       ║
  * ╚═══════════════════════════════════════════════════════════════╝
  */
 
@@ -18,6 +20,8 @@ const { sendDerivativesMessage } = require('../telegramService');
 const dataFetcher = require('./dataFetcher');
 const oiTracker = require('./oiTracker');
 const volumeScalper = require('./volumeScalper');
+const eveningPlanEngine = require('./eveningPlanEngine');
+const intradaySignalEngine = require('./intradaySignalEngine');
 
 // ─── AI DERIVATIVES JOB ─────────────────────────────────────
 async function runAIDerivativesJob(session) {
@@ -184,7 +188,8 @@ async function runPostATCJob() {
 function resetDerivativesState() {
   volumeScalper.reset();
   dataFetcher.resetDailyCache();
-  console.log('   🔄 Derivatives state reset v5.0');
+  intradaySignalEngine.resetIntradayState();
+  console.log('   🔄 Derivatives state reset v7.0');
 }
 
 // ─── VOLUME SCALPER CONTROLS ─────────────────────────────────
@@ -194,6 +199,18 @@ function startVolumeScalper() {
 
 function stopVolumeScalper() {
   volumeScalper.stop();
+}
+
+// ─── EVENING PLAN JOB (19h50) ────────────────────────────────
+async function runEveningPlanJob() {
+  if (!isCurrentInstanceActive()) return;
+  return eveningPlanEngine.runEveningPlanJob();
+}
+
+// ─── INTRADAY SIGNAL JOB (15p/lần trong phiên) ──────────────
+async function runIntradaySignalJob() {
+  if (!isCurrentInstanceActive()) return;
+  return intradaySignalEngine.runIntradaySignal();
 }
 
 // ─── EXPORTS ─────────────────────────────────────────────────
@@ -207,6 +224,11 @@ module.exports = {
   runDerivativesOIJob,
   runPreATCJob,
   runPostATCJob,
+  // Evening Plan v7.0
+  runEveningPlanJob,
+  // Intraday Signal v7.0
+  runIntradaySignalJob,
+  resetIntradayState: intradaySignalEngine.resetIntradayState,
   // Tracker references
   oiTracker,
   buildOIEveningNotification: oiTracker.buildOIEveningNotification,
@@ -217,5 +239,6 @@ module.exports = {
   fetchOHLCV: dataFetcher.fetchOHLCV,
   getDerivativesState: () => ({
     scalper: volumeScalper.getState(),
+    intradaySignal: intradaySignalEngine.getState(),
   }),
 };

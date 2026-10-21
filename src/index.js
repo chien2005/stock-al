@@ -1,7 +1,7 @@
 /**
  * ╔═══════════════════════════════════════════════════════════════╗
  * ║                                                               ║
- * ║     🇻🇳  VN STOCK BOT v2.0.0  📊                            ║
+ * ║     🇻🇳  VN STOCK BOT v2.5.0  📊                            ║
  * ║     Multi-AI Team + Global Market System                      ║
  * ║                                                               ║
  * ║     📊 Báo giá: 10:00 | 13:00 | 15:01  (T2-T6)              ║
@@ -9,6 +9,8 @@
  * ║     🌍 TTCK Quốc tế + Vàng: 21:00    (Mỗi ngày)           ║
  * ║     📅 Weekly: 8:30                    (Thứ 2)              ║
  * ║     💬 Interactive Bot: 24/7 (chat hỏi AI)                  ║
+ * ║     🌙 Evening Plan: 19:50 (T2-CN, chiến lược ngày tiếp)    ║
+ * ║     ⚡ Intraday Signal: 15p/noti (9:15-11:30, 13:00-14:25)  ║
  * ║                                                               ║
  * ║     🤖 AI 1: Trigger + Báo giá  (Gemini 2.5 Flash - Key 1)    ║
  * ║     📊 AI 2: Chuyên gia        (Gemini 2.5 Pro   - Key 2)    ║
@@ -33,7 +35,7 @@ const { startBotHandler, stopBotHandler } = require('./botHandler');
 const { startAlertMonitor, stopAlertMonitor, resetDailyData, flushBigTradeBuffer } = require('./alertService');
 const { runSmartMoneyReport } = require('./smartMoneyReport');
 const { runWhaleTrackerReport } = require('./whaleTracker');
-const { runAIDerivativesJob, runDerivativesOIJob, runPreATCJob, runPostATCJob, resetDerivativesState, startVolumeScalper, stopVolumeScalper } = require('./derivatives');
+const { runAIDerivativesJob, runDerivativesOIJob, runPreATCJob, runPostATCJob, resetDerivativesState, startVolumeScalper, stopVolumeScalper, runEveningPlanJob, runIntradaySignalJob, resetIntradayState } = require('./derivatives');
 
 // ─── Thời điểm khởi động (cho health check) ─────────────
 const startedAt = new Date();
@@ -423,8 +425,10 @@ async function main() {
         await sendDerivativesMessage(
           `🔮 <b>VN Stock Bot v${config.version} đã kết nối! (Nhóm Phái Sinh VN30F)</b>\n` +
           `🕐 ${startupTime}\n` +
-          `📊 Chế độ: <b>Tín hiệu Phái Sinh v4.3 (Bản Đồ Giá & 8 Lớp Phân Tích)</b>\n` +
+          `📊 Chế độ: <b>Tín hiệu Phái Sinh v7.0 (Multi-TF & Intraday Signal)</b>\n` +
           `📅 Ngày hoạt động: <b>${config.activeDays}</b> (ACTIVE)\n` +
+          `⚡ <b>MỚI:</b> Intraday Signal 15p/noti (09:15-11:30, 13:00-14:25)\n` +
+          `🌙 <b>MỚI:</b> Evening Plan 19:50 (chiến lược ngày tiếp theo)\n` +
           `⏰ Tín hiệu: 9h05 - 14h45 (bắn khi biến động ≥4đ, realtime)\n` +
           `🤖 AI Phái sinh: 9h22 | 10h22 | 13h50\n` +
           `⚡ Pre-ATC (Vào ATC hay không?): 14h29\n` +
@@ -707,6 +711,71 @@ async function main() {
   }, { scheduled: true, timezone: config.timezone });
   console.log('   📊 Derivatives OI & Tay To Tracker: 19:35 (T2-T6)');
 
+  // ─── SCHEDULE: EVENING PLAN — CHIẾN LƯỢC PHIÊN TIẾP THEO (19h50, T2-CN) ───
+  // Bắn noti chiến lược cho ngày tiếp theo: Multi-TF S/R, Smart Money, OI, Trend Prediction
+  // T2-CN (0,1,2,3,4 = CN-T5) — chỉ chạy ngày có giao dịch hoặc ngày trước ngày giao dịch
+  cron.schedule('50 19 * * 0-4', async () => {
+    if (!isCurrentInstanceActive()) return;
+    if (isDuplicate('eveningPlan_1950')) return;
+    const now = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
+    console.log(`\n🌙 [Evening Plan 19h50] Cron triggered: ${now}`);
+    try {
+      await runEveningPlanJob();
+      jobLastSuccess['eveningPlan_1950'] = Date.now();
+    } catch (err) {
+      console.error('🌙 [Evening Plan 19h50] Lỗi:', err.message);
+      jobLastError['eveningPlan_1950'] = { time: Date.now(), message: err.message };
+    }
+  }, { scheduled: true, timezone: config.timezone });
+  console.log('   🌙 Evening Plan (Chiến lược phiên tiếp): 19:50 (T2-CN)');
+
+  // ─── SCHEDULE: INTRADAY SIGNAL — TÍN HIỆU REALTIME 15P/NOTI ───────────
+  // Sáng: 9:15 → 11:30 (mỗi 15 phút = 10 noti)
+  // Chiều: 13:00 → 14:25 (mỗi 15 phút = 6 noti)
+  const intradayMorningSchedules = [
+    { cron: '15 9 * * 1-5',  label: '09:15' },
+    { cron: '30 9 * * 1-5',  label: '09:30' },
+    { cron: '45 9 * * 1-5',  label: '09:45' },
+    { cron: '0 10 * * 1-5',  label: '10:00' },
+    { cron: '15 10 * * 1-5', label: '10:15' },
+    { cron: '30 10 * * 1-5', label: '10:30' },
+    { cron: '45 10 * * 1-5', label: '10:45' },
+    { cron: '0 11 * * 1-5',  label: '11:00' },
+    { cron: '15 11 * * 1-5', label: '11:15' },
+    { cron: '30 11 * * 1-5', label: '11:30' },
+  ];
+  const intradayAfternoonSchedules = [
+    { cron: '0 13 * * 1-5',  label: '13:00' },
+    { cron: '15 13 * * 1-5', label: '13:15' },
+    { cron: '30 13 * * 1-5', label: '13:30' },
+    { cron: '45 13 * * 1-5', label: '13:45' },
+    { cron: '0 14 * * 1-5',  label: '14:00' },
+    { cron: '15 14 * * 1-5', label: '14:15' },
+    { cron: '25 14 * * 1-5', label: '14:25' },
+  ];
+
+  for (const schedule of [...intradayMorningSchedules, ...intradayAfternoonSchedules]) {
+    cron.schedule(schedule.cron, async () => {
+      if (!isCurrentInstanceActive()) return;
+      if (!isWeekday()) return;
+      console.log(`\n⚡ [Intraday Signal ${schedule.label}] Cron triggered`);
+      try {
+        await runIntradaySignalJob();
+        jobLastSuccess[`intradaySignal_${schedule.label}`] = Date.now();
+      } catch (err) {
+        console.error(`⚡ [Intraday Signal ${schedule.label}] Lỗi:`, err.message);
+      }
+    }, { scheduled: true, timezone: config.timezone });
+  }
+  console.log('   ⚡ Intraday Signal: 15p/noti | Sáng 09:15→11:30 (10 noti) | Chiều 13:00→14:25 (7 noti)');
+
+  // Reset intraday signal state mỗi sáng 9:00
+  cron.schedule('0 9 * * 1-5', () => {
+    if (!isCurrentInstanceActive()) return;
+    resetIntradayState();
+    console.log('   🔄 Intraday Signal state reset');
+  }, { scheduled: true, timezone: config.timezone });
+
   // ─── HEARTBEAT: Gửi "đang sống" mỗi ngày 9:00 T2-T6 ───────
   // DISABLED: Bỏ tin nhắn heartbeat hàng ngày theo yêu cầu của user
   /*
@@ -866,7 +935,9 @@ async function main() {
   console.log('   🌐 Health:      http://localhost:' + PORT + '/health');
   console.log('   📅 Báo giá/AI: Thứ 2 → Thứ 6 | TTCK+Vàng: Mỗi ngày');
   console.log('   🔒 Dedup lock:  4 phút (chống double message)');
-  console.log('   🔮 VN30F v6.0:  Senior Trader AI Agent (Context, Trap Shield v6.0, VSA, Pro Notifier)');
+  console.log('   🔮 VN30F v7.0:  Senior Trader AI Agent (Context, Trap Shield v6.0, VSA, Pro Notifier)');
+  console.log('   🌙 Evening Plan: 19:50 (T2-CN, chiến lược ngày tiếp theo)');
+  console.log('   ⚡ Intraday Signal: 15p/noti | Sáng 09:15→11:30 | Chiều 13:00→14:25');
   console.log('   💡 Nhấn Ctrl+C để dừng');
   console.log('─'.repeat(55) + '\n');
 }
