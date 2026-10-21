@@ -427,7 +427,7 @@ async function main() {
           `🕐 ${startupTime}\n` +
           `📊 Chế độ: <b>Tín hiệu Phái Sinh v7.0 (Multi-TF & Intraday Signal)</b>\n` +
           `📅 Ngày hoạt động: <b>${config.activeDays}</b> (ACTIVE)\n` +
-          `⚡ <b>MỚI:</b> Intraday Signal 15p/noti (09:15-11:30, 13:00-14:25)\n` +
+          `⚡ <b>MỚI:</b> Intraday Signal: 15p/lần (Sáng 09:15-11:30 & Chiều 13:00-13:45), <b>5p/lần (13:45-14:25)</b>\n` +
           `🌙 <b>MỚI:</b> Evening Plan 19:50 (chiến lược ngày tiếp theo)\n` +
           `⏰ Tín hiệu: 9h05 - 14h45 (bắn khi biến động ≥4đ, realtime)\n` +
           `🤖 AI Phái sinh: 9h22 | 10h22 | 13h50\n` +
@@ -748,9 +748,15 @@ async function main() {
     { cron: '0 13 * * 1-5',  label: '13:00' },
     { cron: '15 13 * * 1-5', label: '13:15' },
     { cron: '30 13 * * 1-5', label: '13:30' },
+    // 13h45 → 14h25: Giờ vàng cao trào trước ATC, bắn 5p/lần bám sát thị trường
     { cron: '45 13 * * 1-5', label: '13:45' },
+    { cron: '50 13 * * 1-5', label: '13:50' },
+    { cron: '55 13 * * 1-5', label: '13:55' },
     { cron: '0 14 * * 1-5',  label: '14:00' },
+    { cron: '5 14 * * 1-5',  label: '14:05' },
+    { cron: '10 14 * * 1-5', label: '14:10' },
     { cron: '15 14 * * 1-5', label: '14:15' },
+    { cron: '20 14 * * 1-5', label: '14:20' },
     { cron: '25 14 * * 1-5', label: '14:25' },
   ];
 
@@ -767,7 +773,7 @@ async function main() {
       }
     }, { scheduled: true, timezone: config.timezone });
   }
-  console.log('   ⚡ Intraday Signal: 15p/noti | Sáng 09:15→11:30 (10 noti) | Chiều 13:00→14:25 (7 noti)');
+  console.log('   ⚡ Intraday Signal: Sáng 09:15→11:30 (15p/lần) | Chiều 13:00→13:45 (15p/lần) | 13:45→14:25 (5p/lần)');
 
   // Reset intraday signal state mỗi sáng 9:00
   cron.schedule('0 9 * * 1-5', () => {

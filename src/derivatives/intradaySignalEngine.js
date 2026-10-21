@@ -3,9 +3,10 @@
  * ║   ⚡ VN30F v7.0 — Intraday Signal Engine (15p/noti)           ║
  * ╠═══════════════════════════════════════════════════════════════╣
  * ║  Tín hiệu LONG/SHORT/ĐỨNG NGOÀI realtime trong phiên         ║
- * ║  Bắn noti đều đặn 15 phút 1 lần:                             ║
- * ║  • Sáng: 9h15 → 11h30 (10 noti)                              ║
- * ║  • Chiều: 13h00 → 14h25 (6 noti)                             ║
+ * ║  Bắn noti đều đặn trong phiên:                                ║
+ * ║  • Sáng: 9h15 → 11h30 (15p/noti = 10 noti)                    ║
+ * ║  • Chiều: 13h00 → 13h45 (15p/noti = 3 noti)                   ║
+ * ║  • Giờ vàng: 13h45 → 14h25 (5p/noti = 9 noti trước ATC)       ║
  * ║                                                                ║
  * ║  PHÂN TÍCH MỖI NOTI:                                          ║
  * ║  • Khung 1H: Xác định xu hướng chính phiên                   ║
