@@ -49,6 +49,7 @@ const dataFetcher = require('./dataFetcher');
 const marketStructure = require('./marketStructure');
 const marketContext = require('./marketContext');
 const oiEstimator = require('./oiEstimator');
+const pillarMonitor = require('./pillarMonitor');
 const { fetchMarketLiquidity } = require('../stockService');
 const { sendDerivativesMessage } = require('../telegramService');
 
@@ -536,7 +537,7 @@ function analyze5mTimeframe(m5Data, m15Signal) {
  * 11. ĐÓNG LONG ĐẢO SHORT
  * + ĐÓNG BẢO TOÀN VỊ THẾ KHI BẤT LỢI
  */
-function makeAITraderDecision(h1, m15, m5, structure, liquidity, smartMoney, contextInfo) {
+function makeAITraderDecision(h1, m15, m5, structure, liquidity, smartMoney, contextInfo, pillarAnalysis = null) {
   // Đồng bộ state hiện tại
   _state = loadAIPositionState();
 
@@ -584,6 +585,23 @@ function makeAITraderDecision(h1, m15, m5, structure, liquidity, smartMoney, con
     } else if (smartMoney.smartMoneyNet <= -800) {
       bearScore += 10;
       reasons.push(`Smart Money (NN+TD) xả ròng ${smartMoney.smartMoneyNet.toLocaleString('vi-VN')} HĐ (${smartMoney.smartMoneyPct}%)`);
+    }
+  }
+
+  // 7 Trụ điều tiết (VIC, VPL, VHM, MCH, VCB, GAS, VJC)
+  if (pillarAnalysis) {
+    if (pillarAnalysis.consensus === 'LONG' || pillarAnalysis.consensus === 'STRONG_LONG') {
+      bullScore += 12;
+      reasons.push(`🏛️ 7 Trụ: ${pillarAnalysis.consensusLabel} (${pillarAnalysis.bullishCount}/7 xanh)`);
+    } else if (pillarAnalysis.consensus === 'SHORT' || pillarAnalysis.consensus === 'STRONG_SHORT') {
+      bearScore += 12;
+      reasons.push(`🏛️ 7 Trụ: ${pillarAnalysis.consensusLabel} (${pillarAnalysis.bearishCount}/7 đỏ)`);
+    }
+
+    if (pillarAnalysis.manipulationWarnings && pillarAnalysis.manipulationWarnings.length > 0) {
+      for (const w of pillarAnalysis.manipulationWarnings) {
+        warnings.push(w);
+      }
     }
   }
 
@@ -1057,7 +1075,7 @@ function makeAITraderDecision(h1, m15, m5, structure, liquidity, smartMoney, con
 }
 
 // ─── FORMAT INTRADAY SIGNAL MESSAGE ──────────────────────────
-function formatIntradaySignal(result, h1, m15, m5, structure, liquidity, smartMoney, contextInfo) {
+function formatIntradaySignal(result, h1, m15, m5, structure, liquidity, smartMoney, contextInfo, pillarAnalysis = null) {
   const { title, advice, bullScore, bearScore, reasons, warnings, tradePlan, state } = result;
 
   let msg = `🤖 <b>AI TRADER: ${title}</b>\n`;
@@ -1082,13 +1100,18 @@ function formatIntradaySignal(result, h1, m15, m5, structure, liquidity, smartMo
   if (structure.swingLowDesc) msg += `     • ${structure.swingLowDesc}\n`;
   msg += `\n`;
 
-  // 3. Thanh khoản thị trường & Tốc độ
+  // 3. 7 Trụ điều tiết trọng yếu
+  if (pillarAnalysis && pillarAnalysis.pillars) {
+    msg += pillarMonitor.formatPillarsForNotification(pillarAnalysis) + '\n';
+  }
+
+  // 4. Thanh khoản thị trường & Tốc độ
   msg += `💧 <b>THANH KHOẢN THỊ TRƯỜNG:</b>\n`;
   msg += `  • Khớp hiện tại: <b>${liquidity.totalVal.toLocaleString('vi-VN')} tỷ</b> (Tốc độ: <b>${liquidity.speed} tỷ/phút</b>)\n`;
   msg += `  • Dự phóng cả ngày: <b>~${liquidity.projectedTotal.toLocaleString('vi-VN')} tỷ</b>\n`;
   msg += `  • Chiến lược: <i>${liquidity.modeLabel}</i>\n\n`;
 
-  // 4. Smart Money (NN & Tự Doanh)
+  // 5. Smart Money (NN & Tự Doanh)
   if (smartMoney) {
     const smSign = smartMoney.smartMoneyNet >= 0 ? `+${smartMoney.smartMoneyNet.toLocaleString('vi-VN')}` : smartMoney.smartMoneyNet.toLocaleString('vi-VN');
     const nnSign = smartMoney.foreignNet >= 0 ? `+${smartMoney.foreignNet.toLocaleString('vi-VN')}` : smartMoney.foreignNet.toLocaleString('vi-VN');
@@ -1102,7 +1125,7 @@ function formatIntradaySignal(result, h1, m15, m5, structure, liquidity, smartMo
     msg += `  • 👥 Đám đông đối ứng: <b>${crowdSign} HĐ</b>\n\n`;
   }
 
-  // 5. Kế hoạch lệnh (Trade Plan)
+  // 6. Kế hoạch lệnh (Trade Plan)
   if (tradePlan) {
     msg += `🎯 <b>KẾ HOẠCH LỆNH (TRADE PLAN):</b>\n`;
     msg += `  📍 Entry: <b>${tradePlan.entry}</b> ${state.entryTime ? `(Khớp lúc ${state.entryTime})` : ''}\n`;
@@ -1117,7 +1140,7 @@ function formatIntradaySignal(result, h1, m15, m5, structure, liquidity, smartMo
     msg += `  🎯 TP1: <b>${tradePlan.tp1}</b> | TP2: <b>${tradePlan.tp2}</b>\n\n`;
   }
 
-  // 6. Lý do & Khuyến nghị hành động
+  // 7. Lý do & Khuyến nghị hành động
   msg += `📋 <b>HÀNH ĐỘNG CỦA SENIOR TRADER:</b>\n`;
   msg += `  👉 <b>${advice}</b>\n`;
   if (reasons.length > 0) {
@@ -1150,7 +1173,7 @@ async function runIntradaySignal() {
 
   try {
     // Fetch dữ liệu song song
-    const [hourlyData, m15Data, m5Data, oiData, futuresPrice, vn30Price, liquidityInfo] = await Promise.all([
+    const [hourlyData, m15Data, m5Data, oiData, futuresPrice, vn30Price, liquidityInfo, pillarAnalysis] = await Promise.all([
       dataFetcher.fetchOHLCV('VN30F1M', '60', 5),
       dataFetcher.fetchOHLCV('VN30F1M', '15', 3),
       dataFetcher.fetchOHLCV('VN30F1M', '5', 2),
@@ -1158,6 +1181,7 @@ async function runIntradaySignal() {
       dataFetcher.fetchRealtimeFuturesPrice(),
       dataFetcher.fetchRealtimeVN30Price(),
       calculateMarketLiquiditySpeed(),
+      pillarMonitor.analyzePillars().catch(() => null),
     ]);
 
     // Phân tích kỹ thuật đa khung
@@ -1211,7 +1235,8 @@ async function runIntradaySignal() {
       structureInfo,
       liquidityInfo,
       smartMoneyInfo,
-      contextInfo
+      contextInfo,
+      pillarAnalysis
     );
 
     // Format & send tin nhắn
@@ -1223,7 +1248,8 @@ async function runIntradaySignal() {
       structureInfo,
       liquidityInfo,
       smartMoneyInfo,
-      contextInfo
+      contextInfo,
+      pillarAnalysis
     );
 
     await sendDerivativesMessage(msg);

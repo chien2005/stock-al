@@ -22,6 +22,7 @@ const oiTracker = require('./oiTracker');
 const volumeScalper = require('./volumeScalper');
 const eveningPlanEngine = require('./eveningPlanEngine');
 const intradaySignalEngine = require('./intradaySignalEngine');
+const pillarMonitor = require('./pillarMonitor');
 
 // ─── AI DERIVATIVES JOB ─────────────────────────────────────
 async function runAIDerivativesJob(session) {
@@ -258,6 +259,7 @@ module.exports = {
   buildPostATCNotificationAsync: oiTracker.buildPostATCNotificationAsync,
   // Compatibility
   fetchOHLCV: dataFetcher.fetchOHLCV,
+  pillarMonitor,
   getDerivativesState: () => ({
     scalper: volumeScalper.getState(),
     intradaySignal: intradaySignalEngine.getState(),

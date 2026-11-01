@@ -19,6 +19,10 @@ const oiEstimator = require('./oiEstimator');
 const marketContext = require('./marketContext');
 const tradeDecision = require('./tradeDecision');
 const proNotifier = require('./proNotifier');
+const marketStructure = require('./marketStructure');
+const flowEngine = require('./flowEngine');
+const pillarMonitor = require('./pillarMonitor');
+const intradaySignalEngine = require('./intradaySignalEngine');
 const { sendDerivativesMessage } = require('../telegramService');
 const { config, isCurrentInstanceActive } = require('../config');
 
@@ -29,18 +33,66 @@ const START_TIME = '09:15';               // Bỏ qua 15 phút đầu phiên (AT
 const STOP_ENTRY_TIME = '14:20';          // Không mở mới sau 14:20
 const END_TIME = '14:30';                 // Dừng poll nến 1p
 
-// Volume thresholds (1-Minute)
-const VOL_ENTRY_MIN = 2300;               // Vol tối thiểu để vào lệnh
-const VOL_ENTRY_MAX = 2800;               // Vol tối đa vào lệnh (trên = FOMO)
+// Base Volume thresholds (Fallback khi chưa có data thanh khoản realtime)
+const VOL_ENTRY_MIN = 2000;               // Vol tối thiểu cơ sở
+const VOL_ENTRY_MAX = 2800;               // Vol tối đa cơ sở
 const VOL_FOMO = 2800;                    // Cấm FOMO trên mức này
-const VOL_CLIMAX = 3000;                  // Nổ vol Climax chốt lời
-const VOL_EXIT_OPPOSITE_MIN = 2300;       // Vol đối ứng tối thiểu để exit/đảo
+const VOL_CLIMAX = 3200;                  // Nổ vol Climax chốt lời
+const VOL_EXIT_OPPOSITE_MIN = 2000;       // Vol đối ứng tối thiểu để exit/đảo
 const VOL_EXIT_OPPOSITE_MAX = 3200;       // Vol đối ứng tối đa để đảo (trên = chỉ chốt)
 const VOL_HOLD_MAX = 1800;                // Xanh đỏ đan xen dưới mức này = giữ lệnh
 const VOL_QUIET_THRESHOLD = 1000;         // Dưới 1.000 HĐ và không có biến động = Im lặng
 const VOL_ANOMALY_LOW = 1300;             // Cảnh báo "bơm đểu" nếu dưới mức này
 const VOL_ANOMALY_MED = 1500;             // Cảnh báo "cân nhắc quan sát"
 const VOL_CONSECUTIVE_EXIT_RATIO = 0.9;   // 2-3 cây đối ứng cộng lại >= 90%
+
+// Dynamic Volume Thresholds theo môi trường thanh khoản & Vol MA20
+function getDynamicVolThresholds(liquidityInfo, volMA20 = 2000) {
+  const isLow = liquidityInfo ? liquidityInfo.isLowLiquidity : true;
+  const safeMA = Math.max(1200, volMA20 || 2000);
+
+  if (isLow) {
+    // Môi trường thanh khoản thấp (< 16k tỷ): Ưu tiên biên chuẩn nhỏ, chống bẫy vol ảo
+    return {
+      min: Math.max(1500, Math.round(safeMA * 1.10)),
+      max: Math.max(2500, Math.round(safeMA * 1.85)),
+      fomo: Math.max(2500, Math.round(safeMA * 2.05)),
+      climax: Math.max(2800, Math.round(safeMA * 2.35)),
+      trap: Math.max(900, Math.round(safeMA * 0.65)),
+      exitOppositeMin: Math.max(1500, Math.round(safeMA * 1.10)),
+      exitOppositeMax: Math.max(2700, Math.round(safeMA * 1.95)),
+    };
+  } else {
+    // Môi trường thanh khoản cao (>= 16k tỷ): Biên độ dòng tiền dồi dào
+    return {
+      min: Math.max(2200, Math.round(safeMA * 1.18)),
+      max: Math.max(3400, Math.round(safeMA * 1.90)),
+      fomo: Math.max(3400, Math.round(safeMA * 2.10)),
+      climax: Math.max(3900, Math.round(safeMA * 2.45)),
+      trap: Math.max(1300, Math.round(safeMA * 0.70)),
+      exitOppositeMin: Math.max(2200, Math.round(safeMA * 1.18)),
+      exitOppositeMax: Math.max(3600, Math.round(safeMA * 2.10)),
+    };
+  }
+}
+
+// Tính Average True Range (ATR)
+function calcATR(candles, period = 14) {
+  if (!candles || candles.length < 2) return 2.0;
+  const trs = [];
+  for (let i = 1; i < candles.length; i++) {
+    const cur = candles[i];
+    const prev = candles[i - 1];
+    const tr = Math.max(
+      cur.high - cur.low,
+      Math.abs(cur.high - prev.close),
+      Math.abs(cur.low - prev.close)
+    );
+    trs.push(tr);
+  }
+  const slice = trs.slice(-period);
+  return slice.length > 0 ? parseFloat((slice.reduce((s, v) => s + v, 0) / slice.length).toFixed(1)) : 2.0;
+}
 
 // Volume thresholds (5-Minute — v5.2)
 const START_5M_TIME = '09:15';             // Bỏ qua nến 5p đầu ATO (09:00-09:10)
@@ -125,6 +177,12 @@ const _state = {
   lastTrapAlertTime: 0,          // Cooldown trap alert
   // Market Context v6.0  
   lastMarketContext: null,       // Cache bối cảnh thị trường gần nhất
+  // Hybrid v7.0
+  currentPlan: null,             // Kế hoạch giao dịch hiện tại { entry, sl, tp1, tp2, rr1, rr2 }
+  lastPillarAlertTime: 0,        // Cooldown cảnh báo thao túng trụ
+  lastPillarAnalysis: null,      // Cache trạng thái 7 trụ gần nhất
+  lastMarketStructure: null,     // Cache Price Map (VWAP/POC/VAH/VAL)
+  lastLiquidityInfo: null,       // Cache tốc độ & dự phóng thanh khoản
 };
 
 // ─── HELPERS ─────────────────────────────────────────────────
@@ -468,12 +526,12 @@ function parse5mCandles(rawData) {
   return candles;
 }
 
-// ─── CORE: XỬ LÝ NẾN MỚI ────────────────────────────────────
-async function processNewCandle(candle, allCandles, oiData) {
+// ─── CORE: XỬ LÝ NẾN MỚI (HYBRID 5-LAYER DECISION ENGINE) ───
+async function processNewCandle(candle, allCandles, oiData, extraData = {}) {
   const now = Date.now();
   const closes = allCandles.map(c => c.close);
 
-  // Tính các chỉ báo kỹ thuật
+  // 1. Tính các chỉ báo kỹ thuật cơ bản
   const ma9 = calcSMA(closes, MA9_PERIOD);
   const ma26 = calcSMA(closes, MA26_PERIOD);
   const ma20 = calcSMA(closes, MA20_PERIOD);
@@ -482,9 +540,68 @@ async function processNewCandle(candle, allCandles, oiData) {
   const ma9_26Analysis = getMA9_26Analysis(candle, ma9, ma26);
   const macdAnalysis = analyzeMACD(closes);
   const rsiAnalysis = analyzeRSI(closes);
-  const indicators = { ma9, ma26, ma20, ma50, bb, ma9_26Analysis, macdAnalysis, rsiAnalysis };
+  const atr = calcATR(allCandles, 14);
+  const indicators = { ma9, ma26, ma20, ma50, bb, ma9_26Analysis, macdAnalysis, rsiAnalysis, atr };
 
-  // v6.0: Market Context Engine — Bối cảnh thị trường toàn diện
+  // 2. Tính Vol tương đối vs MA20
+  const volMA20 = calcSMA(allCandles.map(c => c.volume), 20) || 2000;
+  const volRatio = volMA20 > 0 ? parseFloat((candle.volume / volMA20).toFixed(2)) : 1.0;
+
+  // 3. Lấy thông tin thanh khoản thị trường & ngưỡng Dynamic Vol
+  const liquidityInfo = extraData.liquidityInfo || _state.lastLiquidityInfo || (await intradaySignalEngine.calculateMarketLiquiditySpeed().catch(() => null));
+  if (liquidityInfo) _state.lastLiquidityInfo = liquidityInfo;
+  const dynamicThresholds = getDynamicVolThresholds(liquidityInfo, volMA20);
+
+  // 4. Lớp 1 & Lớp 2: Xây dựng Market Structure & Key Levels (Price Map)
+  const rawIntraday1m = extraData.rawIntraday1m || null;
+  const rawVN301m = extraData.rawVN30Intraday1m || null;
+  let marketStructureData = _state.lastMarketStructure;
+  if (rawIntraday1m && rawIntraday1m.c && rawIntraday1m.c.length > 5) {
+    try {
+      marketStructureData = marketStructure.buildPriceMap(rawIntraday1m, rawVN301m);
+      _state.lastMarketStructure = marketStructureData;
+    } catch (e) {
+      console.error('   ⚠️ [Scalper] Lỗi buildPriceMap:', e.message);
+    }
+  }
+
+  // 5. Lớp 3: Flow Engine (Delta, CVD, Absorption)
+  let flowCombined = null;
+  if (rawIntraday1m && rawIntraday1m.c && rawIntraday1m.c.length > 5) {
+    try {
+      const flowData = flowEngine.analyzeFlow(rawIntraday1m);
+      const absorption = flowEngine.detectAbsorption(rawIntraday1m);
+      const liquiditySweep = marketStructureData?.levels ? flowEngine.detectLiquiditySweep(rawIntraday1m, marketStructureData.levels) : null;
+      flowCombined = { ...flowData, absorption, liquiditySweep };
+      _state.lastFlow = flowCombined;
+    } catch (e) {
+      console.error('   ⚠️ [Scalper] Lỗi analyzeFlow:', e.message);
+    }
+  }
+
+  // 6. Lớp 5: Giám sát 7 Trụ Điều Tiết (VIC, VPL, VHM, MCH, VCB, GAS, VJC)
+  let pillarAnalysis = extraData.pillarAnalysis || _state.lastPillarAnalysis;
+  try {
+    pillarAnalysis = await pillarMonitor.analyzePillars(_state.position !== 'NONE' ? _state.position : null);
+    _state.lastPillarAnalysis = pillarAnalysis;
+  } catch (e) {
+    console.error('   ⚠️ [Scalper] Lỗi analyzePillars:', e.message);
+  }
+
+  // Cảnh báo riêng khi phát hiện Lái kéo/đạp trụ ảo lộ liễu
+  if (pillarAnalysis && pillarAnalysis.manipulationWarnings && pillarAnalysis.manipulationWarnings.length > 0) {
+    if (now - _state.lastPillarAlertTime > 15 * 60 * 1000) {
+      _state.lastPillarAlertTime = now;
+      const pAlert = proNotifier.formatPillarAlert({
+        pillarAnalysis,
+        currentPrice: candle.close,
+        currentPosition: _state.position,
+      });
+      await sendDerivativesMessage(pAlert);
+    }
+  }
+
+  // 7. Market Context Engine (Bối cảnh phiên, Basis, NN)
   let vn30Price = null;
   try {
     const vn30Obj = await dataFetcher.fetchRealtimeVN30Price();
@@ -493,22 +610,18 @@ async function processNewCandle(candle, allCandles, oiData) {
   const context = marketContext.buildMarketContext(candle.close, vn30Price, oiData, candle.time);
   _state.lastMarketContext = context;
 
-  // v6.0: VSA Pattern Detection
-  const vsaPatterns = tradeDecision.detectVSAPatterns(allCandles, {
-    min: VOL_ENTRY_MIN,
-    max: VOL_ENTRY_MAX,
-    trap: TRAP_VOL_LEVEL1,
-  });
+  // 8. VSA Pattern Detection (theo ngưỡng Dynamic)
+  const vsaPatterns = tradeDecision.detectVSAPatterns(allCandles, dynamicThresholds, volRatio);
 
-  // v6.0: TRAP SHIELD CHECK (Realtime Trap Detection trước mọi quyết định)
+  // 9. TRAP SHIELD CHECK (Phát hiện bẫy giá giật không kèm volume)
   const prevClose = allCandles.length >= 2 ? allCandles[allCandles.length - 2].close : candle.open;
   const priceMove = Math.abs(candle.close - candle.open);
   const jumpMove = Math.abs(candle.close - prevClose);
   const maxMove = Math.max(priceMove, jumpMove);
 
   if (maxMove >= TRAP_PRICE_CHANGE_MIN) {
-    if (candle.volume < TRAP_VOL_LEVEL1) {
-      // MỨC 1: BƠM/ĐẠP ĐỂU — CỰC NGUY HIỂM (Vol < 1.300 HĐ)
+    if (candle.volume < dynamicThresholds.trap) {
+      // MỨC 1: BƠM/ĐẠP ĐỂU — CỰC NGUY HIỂM
       _state.trapLockUntil = now + TRAP_LOCK_DURATION_MS;
       if (now - _state.lastTrapAlertTime > TRAP_SHIELD_COOLDOWN_MS) {
         _state.lastTrapAlertTime = now;
@@ -518,11 +631,12 @@ async function processNewCandle(candle, allCandles, oiData) {
           priceChange: candle.close - prevClose,
           currentPosition: _state.position,
           context,
+          pillarAnalysis,
         });
         await sendDerivativesMessage(trapMsg);
       }
-    } else if (candle.volume < TRAP_VOL_LEVEL2) {
-      // MỨC 2: KÉO/XẢ ẢO — CẢNH GIÁC CAO (Vol < 1.500 HĐ)
+    } else if (candle.volume < VOL_ANOMALY_MED) {
+      // MỨC 2: KÉO/XẢ ẢO — CẢNH GIÁC CAO
       _state.trapLockUntil = now + TRAP_LOCK_DURATION_MS;
       if (now - _state.lastTrapAlertTime > TRAP_SHIELD_COOLDOWN_MS) {
         _state.lastTrapAlertTime = now;
@@ -532,6 +646,7 @@ async function processNewCandle(candle, allCandles, oiData) {
           priceChange: candle.close - prevClose,
           currentPosition: _state.position,
           context,
+          pillarAnalysis,
         });
         await sendDerivativesMessage(trapMsg);
       }
@@ -549,7 +664,7 @@ async function processNewCandle(candle, allCandles, oiData) {
     if (p >= BREAKEVEN_THRESHOLD) _state.breakevenActive = true;
   }
 
-  // ─── CHECK VƯỢT ĐỈNH 3 LẦN THẤT BẠI (TRIPLE TOP FAKEOUT) ──
+  // 10. Check Vượt đỉnh 3 lần thất bại (Triple Top Fakeout)
   const tripleTop = checkTripleTopFakeout(candle, allCandles);
   if (tripleTop) {
     _state.lastTripleTopAlertTime = now;
@@ -567,20 +682,23 @@ async function processNewCandle(candle, allCandles, oiData) {
       };
       _state.tradeLog.push(trade);
       _state.position = 'NONE';
+      _state.currentPlan = null;
     }
     await sendTripleTopWarning(candle, tripleTop, indicators, oiData);
     return;
   }
 
-  // ─── CHECK CẤU TRÚC ĐỈNH SAU VS ĐỈNH TRƯỚC (SWING HIGHS) ─
+  // 11. Check cấu trúc Đỉnh Sau vs Đỉnh Trước (Swing Highs)
   await checkSwingHighStructure(candle, allCandles);
 
-  // ─── CHECK MA CROSSOVER (3 cây liên tiếp) ────────────────
+  // 12. Check MA Crossover
   await checkMACrossover(allCandles, indicators, oiData);
 
-  // ─── 1. KIỂM TRA EXIT KHI ĐANG CÓ VỊ THẾ ────────────────
+  // ═════════════════════════════════════════════════════════════
+  // 13. KIỂM TRA EXIT KHI ĐANG CÓ VỊ THẾ
+  // ═════════════════════════════════════════════════════════════
   if (_state.position === 'LONG') {
-    const exitResult = checkLongExit(candle, allCandles);
+    const exitResult = checkLongExit(candle, allCandles, _state.currentPlan, pillarAnalysis, dynamicThresholds);
     if (exitResult) {
       const pnl = exitResult.exitPrice - _state.entryPrice;
       const trade = {
@@ -595,9 +713,7 @@ async function processNewCandle(candle, allCandles, oiData) {
       };
       _state.tradeLog.push(trade);
 
-      // Bộ lọc Bollinger Bands bảo vệ: Không đảo SHORT nếu giá đã thủng BB Lower
       const isBBLowerBlocked = bb && candle.close < bb.lower;
-      // Bộ lọc MA9/26 bảo vệ: Không đảo SHORT nếu MA9 > MA26 và giá còn trên MA26
       const isMAUptrendBlocked = ma9_26Analysis && ma9_26Analysis.isUptrend && ma26 && candle.close > ma26;
 
       let canReverseToShort = exitResult.shouldReverse && candle.time <= STOP_ENTRY_TIME;
@@ -611,8 +727,11 @@ async function processNewCandle(candle, allCandles, oiData) {
       }
 
       if (canReverseToShort) {
-        // ĐẢO LỆNH → SHORT
-        const newPlan = tradeDecision.generateTradePlan(candle.close, 'SHORT', '1M');
+        const newPlan = tradeDecision.generateTradePlan(candle.close, 'SHORT', '1M', {
+          atr,
+          keyLevels: marketStructureData?.levels,
+          liquidityMode: liquidityInfo?.mode,
+        });
         const exitMsg = proNotifier.formatExitNotification({
           trade,
           candle,
@@ -621,6 +740,7 @@ async function processNewCandle(candle, allCandles, oiData) {
           isReverse: true,
           newDirection: 'SHORT',
           newPlan,
+          pillarAnalysis,
         });
         await sendDerivativesMessage(exitMsg);
 
@@ -631,6 +751,7 @@ async function processNewCandle(candle, allCandles, oiData) {
         _state.entryVol = candle.volume;
         _state.maxProfit = 0;
         _state.breakevenActive = false;
+        _state.currentPlan = newPlan;
       } else {
         const exitMsg = proNotifier.formatExitNotification({
           trade,
@@ -638,14 +759,16 @@ async function processNewCandle(candle, allCandles, oiData) {
           indicators,
           context,
           isReverse: false,
+          pillarAnalysis,
         });
         await sendDerivativesMessage(exitMsg);
         _state.position = 'NONE';
+        _state.currentPlan = null;
       }
       return;
     }
   } else if (_state.position === 'SHORT') {
-    const exitResult = checkShortExit(candle, allCandles);
+    const exitResult = checkShortExit(candle, allCandles, _state.currentPlan, pillarAnalysis, dynamicThresholds);
     if (exitResult) {
       const pnl = _state.entryPrice - exitResult.exitPrice;
       const trade = {
@@ -660,9 +783,7 @@ async function processNewCandle(candle, allCandles, oiData) {
       };
       _state.tradeLog.push(trade);
 
-      // Bộ lọc Bollinger Bands bảo vệ: Không đảo LONG nếu giá đã vượt BB Upper
       const isBBUpperBlocked = bb && candle.close > bb.upper;
-      // Bộ lọc MA9/26 bảo vệ: Không đảo LONG nếu MA9 < MA26 và giá còn dưới MA26
       const isMADowntrendBlocked = ma9_26Analysis && ma9_26Analysis.isDowntrend && ma26 && candle.close < ma26;
 
       let canReverseToLong = exitResult.shouldReverse && candle.time <= STOP_ENTRY_TIME;
@@ -676,8 +797,11 @@ async function processNewCandle(candle, allCandles, oiData) {
       }
 
       if (canReverseToLong) {
-        // ĐẢO LỆNH → LONG
-        const newPlan = tradeDecision.generateTradePlan(candle.close, 'LONG', '1M');
+        const newPlan = tradeDecision.generateTradePlan(candle.close, 'LONG', '1M', {
+          atr,
+          keyLevels: marketStructureData?.levels,
+          liquidityMode: liquidityInfo?.mode,
+        });
         const exitMsg = proNotifier.formatExitNotification({
           trade,
           candle,
@@ -686,6 +810,7 @@ async function processNewCandle(candle, allCandles, oiData) {
           isReverse: true,
           newDirection: 'LONG',
           newPlan,
+          pillarAnalysis,
         });
         await sendDerivativesMessage(exitMsg);
 
@@ -696,6 +821,7 @@ async function processNewCandle(candle, allCandles, oiData) {
         _state.entryVol = candle.volume;
         _state.maxProfit = 0;
         _state.breakevenActive = false;
+        _state.currentPlan = newPlan;
       } else {
         const exitMsg = proNotifier.formatExitNotification({
           trade,
@@ -703,93 +829,134 @@ async function processNewCandle(candle, allCandles, oiData) {
           indicators,
           context,
           isReverse: false,
+          pillarAnalysis,
         });
         await sendDerivativesMessage(exitMsg);
         _state.position = 'NONE';
+        _state.currentPlan = null;
       }
       return;
     }
   }
 
-  // ─── 2. KIỂM TRA ENTRY KHI ĐANG NONE ─────────────────────
+  // ═════════════════════════════════════════════════════════════
+  // 14. KIỂM TRA MỞ VỊ THẾ MỚI (HYBRID 5-LAYER DECISION)
+  // ═════════════════════════════════════════════════════════════
   if (_state.position === 'NONE' && candle.time >= START_TIME && candle.time <= STOP_ENTRY_TIME) {
 
-    // v6.0: Trap Shield Lock — Cấm mở lệnh nếu đang bị khóa bởi Trap Shield
+    // Khóa lệnh bởi Trap Shield
     if (now < _state.trapLockUntil) {
       console.log(`   🛡️ [Trap Shield] Entry LOCKED cho đến ${new Date(_state.trapLockUntil).toLocaleTimeString('vi-VN', { timeZone: config.timezone })}`);
       return;
     }
 
-    // v6.0: Session-Aware — Kiểm tra khung giờ có cho phép giao dịch không
+    // Cấm mở giờ tử thần hoặc ATO
     if (context && context.shouldBlockEntry) {
       console.log(`   🚧 [Session] Khung giờ ${context.session?.id || 'UNKNOWN'} — Cấm mở vị thế`);
       return;
     }
 
-    // Cấm FOMO khi nổ vol quá lớn (> 2.800 HĐ)
-    if (candle.volume > VOL_FOMO) {
+    // Cấm FOMO nổ vol cao trào (> dynamicThresholds.fomo)
+    if (candle.volume > dynamicThresholds.fomo) {
       if (now - _state.lastNotiTime > NOTI_COOLDOWN_MS) {
-        const fomoMsg = proNotifier.formatFomoWarning({ candle, indicators, context });
+        const fomoMsg = proNotifier.formatFomoWarning({
+          candle,
+          indicators,
+          context,
+          liquidityInfo,
+          pillarAnalysis,
+        });
         await sendDerivativesMessage(fomoMsg);
         _state.lastNotiTime = now;
       }
       return;
     }
 
-    // Vùng vào lệnh chuẩn: 2.300 - 2.800 HĐ
-    if (candle.volume >= VOL_ENTRY_MIN && candle.volume <= VOL_ENTRY_MAX) {
-      // A. Lọc trap râu nến
-      if (candle.isGreen && candle.upperWick >= WICK_TRAP_MIN && candle.upperWick > candle.body) {
-        console.log(`   🚫 [Scalper] Lọc Bull Trap ${candle.time}: UpWick ${candle.upperWick}đ > Body ${candle.body}đ`);
+    // Hướng đề xuất từ hành động giá cây nến hiện tại
+    const proposedDirection = candle.isGreen ? 'LONG' : 'SHORT';
+
+    // Nhận diện Setup Playbook
+    const setupInfo = tradeDecision.detectPlaybookSetup({
+      candle,
+      direction: proposedDirection,
+      marketStructureData,
+      flowData: flowCombined,
+      vsaPatterns,
+    });
+
+    // Chấm điểm tin cậy 5 lớp toàn diện
+    const decision = tradeDecision.calculateConfidence({
+      candle,
+      direction: proposedDirection,
+      indicators,
+      vsaPatterns,
+      marketContext: context,
+      volumeThresholds: dynamicThresholds,
+      volRatio,
+      marketStructureData,
+      flowData: flowCombined,
+      pillarAnalysis,
+      setupInfo,
+    });
+
+    // Kiểm tra các bộ lọc an toàn bổ sung
+    // A. Lọc trap râu nến
+    if (candle.isGreen && candle.upperWick >= WICK_TRAP_MIN && candle.upperWick > candle.body) {
+      console.log(`   🚫 [Scalper] Lọc Bull Trap ${candle.time}: UpWick ${candle.upperWick}đ > Body ${candle.body}đ`);
+      return;
+    }
+    if (!candle.isGreen && candle.lowerWick >= WICK_TRAP_MIN && candle.lowerWick > candle.body) {
+      console.log(`   🚫 [Scalper] Lọc Bear Trap ${candle.time}: LowWick ${candle.lowerWick}đ > Body ${candle.body}đ`);
+      return;
+    }
+
+    // B. Lọc Bollinger Bands (Cấm đuổi đỉnh/đáy)
+    if (bb) {
+      if (candle.isGreen && candle.close > bb.upper) {
+        console.log(`   🚫 [Scalper] Chặn LONG ${candle.time}: Giá ${candle.close} > BB Upper ${bb.upper}`);
+        if (now - _state.lastNotiTime > NOTI_COOLDOWN_MS) {
+          await sendBBBlockWarning(candle, indicators, oiData, 'LONG');
+          _state.lastNotiTime = now;
+        }
         return;
       }
-      if (!candle.isGreen && candle.lowerWick >= WICK_TRAP_MIN && candle.lowerWick > candle.body) {
-        console.log(`   🚫 [Scalper] Lọc Bear Trap ${candle.time}: LowWick ${candle.lowerWick}đ > Body ${candle.body}đ`);
+      if (!candle.isGreen && candle.close < bb.lower) {
+        console.log(`   🚫 [Scalper] Chặn SHORT ${candle.time}: Giá ${candle.close} < BB Lower ${bb.lower}`);
+        if (now - _state.lastNotiTime > NOTI_COOLDOWN_MS) {
+          await sendBBBlockWarning(candle, indicators, oiData, 'SHORT');
+          _state.lastNotiTime = now;
+        }
         return;
       }
+    }
 
-      // B. Lọc Bollinger Bands
-      if (bb) {
-        if (candle.isGreen && candle.close > bb.upper) {
-          console.log(`   🚫 [Scalper] Chặn LONG ${candle.time}: Giá ${candle.close} > BB Upper ${bb.upper} → Cấm đuổi đỉnh`);
-          if (now - _state.lastNotiTime > NOTI_COOLDOWN_MS) {
-            await sendBBBlockWarning(candle, indicators, oiData, 'LONG');
-            _state.lastNotiTime = now;
-          }
-          return;
-        }
-        if (!candle.isGreen && candle.close < bb.lower) {
-          console.log(`   🚫 [Scalper] Chặn SHORT ${candle.time}: Giá ${candle.close} < BB Lower ${bb.lower} → Cấm đuổi đáy`);
-          if (now - _state.lastNotiTime > NOTI_COOLDOWN_MS) {
-            await sendBBBlockWarning(candle, indicators, oiData, 'SHORT');
-            _state.lastNotiTime = now;
-          }
-          return;
-        }
+    // C. Lọc MA9 & MA26 Trend
+    if (ma9_26Analysis) {
+      if (candle.isGreen && ma9_26Analysis.isDowntrend && ma26 && candle.close < ma26) {
+        console.log(`   🚫 [Scalper] Chặn LONG ${candle.time}: Ngược xu hướng MA9 < MA26 (Downtrend)`);
+        return;
       }
-
-      // C. Lọc MA9 & MA26 Trend
-      if (ma9_26Analysis) {
-        if (candle.isGreen && ma9_26Analysis.isDowntrend && ma26 && candle.close < ma26) {
-          console.log(`   🚫 [Scalper] Chặn LONG ${candle.time}: Ngược xu hướng MA9 < MA26 (Downtrend)`);
-          if (now - _state.lastNotiTime > NOTI_COOLDOWN_MS) {
-            await sendMA9_26BlockWarning(candle, indicators, oiData, 'LONG');
-            _state.lastNotiTime = now;
-          }
-          return;
-        }
-        if (!candle.isGreen && ma9_26Analysis.isUptrend && ma26 && candle.close > ma26) {
-          console.log(`   🚫 [Scalper] Chặn SHORT ${candle.time}: Ngược xu hướng MA9 > MA26 (Uptrend)`);
-          if (now - _state.lastNotiTime > NOTI_COOLDOWN_MS) {
-            await sendMA9_26BlockWarning(candle, indicators, oiData, 'SHORT');
-            _state.lastNotiTime = now;
-          }
-          return;
-        }
+      if (!candle.isGreen && ma9_26Analysis.isUptrend && ma26 && candle.close > ma26) {
+        console.log(`   🚫 [Scalper] Chặn SHORT ${candle.time}: Ngược xu hướng MA9 > MA26 (Uptrend)`);
+        return;
       }
+    }
 
-      // Mở vị thế
-      _state.position = candle.isGreen ? 'LONG' : 'SHORT';
+    // D. Lọc Đồng thuận Trụ: Không vào Long khi trụ đang đồng thuận Short, và ngược lại
+    if (pillarAnalysis) {
+      if (proposedDirection === 'LONG' && pillarAnalysis.isAlignedWithShort) {
+        console.log(`   🚫 [Scalper] Chặn LONG ${candle.time}: 7 Trụ đang đồng thuận ĐỎ (${pillarAnalysis.bearishCount}/7 mã)`);
+        return;
+      }
+      if (proposedDirection === 'SHORT' && pillarAnalysis.isAlignedWithLong) {
+        console.log(`   🚫 [Scalper] Chặn SHORT ${candle.time}: 7 Trụ đang đồng thuận XANH (${pillarAnalysis.bullishCount}/7 mã)`);
+        return;
+      }
+    }
+
+    // E. ĐIỀU KIỆN QUYẾT ĐỊNH: ĐỦ ĐỘ TIN CẬY 5 LỚP (Confidence >= 60% & shouldTrade = true)
+    if (decision.shouldTrade && decision.confidence >= 60) {
+      _state.position = proposedDirection;
       _state.entryPrice = candle.close;
       _state.entryTime = candle.time;
       _state.entryIdx = allCandles.length - 1;
@@ -797,47 +964,65 @@ async function processNewCandle(candle, allCandles, oiData) {
       _state.maxProfit = 0;
       _state.breakevenActive = false;
 
-      // v6.0: Tính Confidence % và tạo plan
-      const direction = _state.position;
-      const decision = tradeDecision.calculateConfidence({
-        candle,
-        direction,
-        indicators,
-        vsaPatterns,
-        marketContext: context,
-        volumeThresholds: { min: VOL_ENTRY_MIN, max: VOL_ENTRY_MAX, fomo: VOL_FOMO, climax: VOL_CLIMAX, trap: TRAP_VOL_LEVEL1 },
+      // Tạo Kế hoạch Giao dịch Thích ứng
+      const plan = tradeDecision.generateTradePlan(candle.close, proposedDirection, '1M', {
+        atr,
+        keyLevels: marketStructureData?.levels,
+        liquidityMode: liquidityInfo?.mode,
+        setupType: setupInfo.type,
       });
-      const plan = tradeDecision.generateTradePlan(candle.close, direction, '1M');
-      const reasons = tradeDecision.buildSeniorReasoning(decision, candle, indicators);
+      _state.currentPlan = plan;
 
-      // v6.0: Pro Notification (Senior Trader Style)
+      // Gửi Notification 5 Lớp Chuẩn Playbook
       const entryMsg = proNotifier.formatEntryNotification({
         candle,
-        direction,
+        direction: proposedDirection,
         decision,
         plan,
         indicators,
         context,
-        oiData,
-        reasons,
+        marketStructureData,
+        flowData: flowCombined,
+        pillarAnalysis,
+        liquidityInfo,
+        volRatio,
       });
       await sendDerivativesMessage(entryMsg);
       _state.lastNotiTime = now;
+      console.log(`   ✅ [Scalper 1M] MỞ ${proposedDirection} @ ${candle.close} [Setup: ${setupInfo.label}] Confidence: ${decision.confidence}%`);
+    } else {
+      console.log(`   ⏸️ [Scalper 1M] Nến ${candle.time}: Bỏ qua tín hiệu ${proposedDirection} (Confidence: ${decision.confidence}% < 60% hoặc rủi ro)`);
     }
   }
 }
 
 // ─── EXIT CHECK: LONG ────────────────────────────────────────
-function checkLongExit(candle, allCandles) {
+function checkLongExit(candle, allCandles, currentPlan = null, pillarAnalysis = null, dynamicThresholds = null) {
   const idx = allCandles.length - 1;
+  const vt = dynamicThresholds || { exitOppositeMin: 2000, exitOppositeMax: 3200, climax: 3200 };
 
-  // A. Breakeven
+  // 1. Cắt lỗ MTL theo kế hoạch (SL Hit)
+  if (currentPlan && currentPlan.sl && candle.low <= currentPlan.sl) {
+    return { exitPrice: currentPlan.sl, reason: `🛑 Cắt lỗ MTL theo kế hoạch (Chạm mốc SL ${currentPlan.sl.toFixed(1)})`, shouldReverse: false };
+  }
+
+  // 2. Chốt lời TP2 hoàn tất (TP2 Hit)
+  if (currentPlan && currentPlan.tp2 && candle.high >= currentPlan.tp2) {
+    return { exitPrice: currentPlan.tp2, reason: `🎯 Chốt lời hoàn tất TP2 (+${currentPlan.tp2Distance}đ) — Đạt mục tiêu sóng`, shouldReverse: false };
+  }
+
+  // 3. Breakeven bảo toàn vốn (nếu từng chạm TP1 hoặc lãi >= 3đ)
   if (_state.breakevenActive && candle.close <= _state.entryPrice) {
     return { exitPrice: _state.entryPrice, reason: `🛡️ Breakeven hòa vốn (từng lãi +${_state.maxProfit.toFixed(1)}đ)`, shouldReverse: false };
   }
 
-  // B. Cây đối ứng ĐỎ 2.3k - 3.2k → Exit và kiểm tra đảo
-  if (!candle.isGreen && candle.volume >= VOL_EXIT_OPPOSITE_MIN && candle.volume <= VOL_EXIT_OPPOSITE_MAX) {
+  // 4. Kích hoạt Breakeven khi chạm TP1
+  if (currentPlan && currentPlan.tp1 && candle.high >= currentPlan.tp1 && !_state.breakevenActive) {
+    _state.breakevenActive = true;
+  }
+
+  // 5. Cây đối ứng ĐỎ nổ vol đạt chuẩn dynamicThresholds → Exit và kiểm tra đảo
+  if (!candle.isGreen && candle.volume >= vt.exitOppositeMin && candle.volume <= vt.exitOppositeMax) {
     const isBearTrap = candle.lowerWick >= WICK_TRAP_MIN && candle.lowerWick > candle.body;
     return {
       exitPrice: candle.close,
@@ -846,8 +1031,8 @@ function checkLongExit(candle, allCandles) {
     };
   }
 
-  // C. Climax Long > 3k (chốt lời đỉnh cao trào)
-  if (candle.isGreen && candle.volume > VOL_CLIMAX) {
+  // 6. Climax Long (chốt lời đỉnh cao trào)
+  if (candle.isGreen && candle.volume > vt.climax) {
     const hasLongWick = candle.upperWick >= 1.0;
     return {
       exitPrice: candle.close,
@@ -856,7 +1041,16 @@ function checkLongExit(candle, allCandles) {
     };
   }
 
-  // D. Bull trap rút râu trên dài (cùng chiều)
+  // 7. Nhóm 7 trụ điều tiết đảo chiều xả mạnh bất ngờ
+  if (pillarAnalysis && pillarAnalysis.bearishCount >= 5) {
+    return {
+      exitPrice: candle.close,
+      reason: `🏛️ Đóng bảo toàn: 5/7 trụ điều tiết chuyển ĐỎ xả hàng (${pillarAnalysis.consensusLabel})`,
+      shouldReverse: false,
+    };
+  }
+
+  // 8. Bull trap rút râu trên dài (cùng chiều)
   if (candle.isGreen && candle.upperWick >= WICK_TRAP_MIN && candle.upperWick >= candle.body) {
     return {
       exitPrice: candle.close,
@@ -865,7 +1059,7 @@ function checkLongExit(candle, allCandles) {
     };
   }
 
-  // E. 2-3 cây đỏ liên tiếp cộng lại >= 90% vol entry (chỉ khi chưa breakeven)
+  // 9. 2-3 cây đỏ liên tiếp cộng lại >= 90% vol entry (chỉ khi chưa breakeven)
   if (!_state.breakevenActive && idx - _state.entryIdx >= 2 && idx - _state.entryIdx <= 3) {
     let redVolSum = 0;
     for (let k = _state.entryIdx + 1; k <= idx; k++) {
@@ -880,7 +1074,7 @@ function checkLongExit(candle, allCandles) {
     }
   }
 
-  // F. Hết phiên
+  // 10. Hết phiên
   if (candle.time >= '14:28') {
     return { exitPrice: candle.close, reason: `⏰ Hết phiên giao dịch`, shouldReverse: false };
   }
@@ -889,16 +1083,32 @@ function checkLongExit(candle, allCandles) {
 }
 
 // ─── EXIT CHECK: SHORT ───────────────────────────────────────
-function checkShortExit(candle, allCandles) {
+function checkShortExit(candle, allCandles, currentPlan = null, pillarAnalysis = null, dynamicThresholds = null) {
   const idx = allCandles.length - 1;
+  const vt = dynamicThresholds || { exitOppositeMin: 2000, exitOppositeMax: 3200, climax: 3200 };
 
-  // A. Breakeven
+  // 1. Cắt lỗ MTL theo kế hoạch (SL Hit)
+  if (currentPlan && currentPlan.sl && candle.high >= currentPlan.sl) {
+    return { exitPrice: currentPlan.sl, reason: `🛑 Cắt lỗ MTL theo kế hoạch (Chạm mốc SL ${currentPlan.sl.toFixed(1)})`, shouldReverse: false };
+  }
+
+  // 2. Chốt lời TP2 hoàn tất (TP2 Hit)
+  if (currentPlan && currentPlan.tp2 && candle.low <= currentPlan.tp2) {
+    return { exitPrice: currentPlan.tp2, reason: `🎯 Chốt lời hoàn tất TP2 (+${currentPlan.tp2Distance}đ) — Đạt mục tiêu sóng`, shouldReverse: false };
+  }
+
+  // 3. Breakeven bảo toàn vốn (nếu từng chạm TP1 hoặc lãi >= 3đ)
   if (_state.breakevenActive && candle.close >= _state.entryPrice) {
     return { exitPrice: _state.entryPrice, reason: `🛡️ Breakeven hòa vốn (từng lãi +${_state.maxProfit.toFixed(1)}đ)`, shouldReverse: false };
   }
 
-  // B. Cây đối ứng XANH 2.3k - 3.2k → Exit và kiểm tra đảo
-  if (candle.isGreen && candle.volume >= VOL_EXIT_OPPOSITE_MIN && candle.volume <= VOL_EXIT_OPPOSITE_MAX) {
+  // 4. Kích hoạt Breakeven khi chạm TP1
+  if (currentPlan && currentPlan.tp1 && candle.low <= currentPlan.tp1 && !_state.breakevenActive) {
+    _state.breakevenActive = true;
+  }
+
+  // 5. Cây đối ứng XANH nổ vol đạt chuẩn dynamicThresholds → Exit và kiểm tra đảo
+  if (candle.isGreen && candle.volume >= vt.exitOppositeMin && candle.volume <= vt.exitOppositeMax) {
     const isBullTrap = candle.upperWick >= WICK_TRAP_MIN && candle.upperWick > candle.body;
     return {
       exitPrice: candle.close,
@@ -907,8 +1117,8 @@ function checkShortExit(candle, allCandles) {
     };
   }
 
-  // C. Climax Short > 3k
-  if (!candle.isGreen && candle.volume > VOL_CLIMAX) {
+  // 6. Climax Short (chốt lời đáy bán tháo)
+  if (!candle.isGreen && candle.volume > vt.climax) {
     const hasLongWick = candle.lowerWick >= 1.0;
     return {
       exitPrice: candle.close,
@@ -917,7 +1127,16 @@ function checkShortExit(candle, allCandles) {
     };
   }
 
-  // D. Nến đỏ rút râu dưới nhanh (bear trap cùng chiều)
+  // 7. Nhóm 7 trụ điều tiết đảo chiều kéo xanh mạnh bất ngờ
+  if (pillarAnalysis && pillarAnalysis.bullishCount >= 5) {
+    return {
+      exitPrice: candle.close,
+      reason: `🏛️ Đóng bảo toàn: 5/7 trụ điều tiết chuyển XANH kéo chỉ số (${pillarAnalysis.consensusLabel})`,
+      shouldReverse: false,
+    };
+  }
+
+  // 8. Nến đỏ rút râu dưới nhanh (bear trap cùng chiều)
   if (!candle.isGreen && candle.lowerWick >= WICK_TRAP_MIN && candle.lowerWick >= candle.body) {
     return {
       exitPrice: candle.close,
@@ -926,7 +1145,7 @@ function checkShortExit(candle, allCandles) {
     };
   }
 
-  // E. 2-3 cây xanh liên tiếp cộng lại >= 90%
+  // 9. 2-3 cây xanh liên tiếp cộng lại >= 90% vol entry
   if (!_state.breakevenActive && idx - _state.entryIdx >= 2 && idx - _state.entryIdx <= 3) {
     let greenVolSum = 0;
     for (let k = _state.entryIdx + 1; k <= idx; k++) {
@@ -941,7 +1160,7 @@ function checkShortExit(candle, allCandles) {
     }
   }
 
-  // F. Hết phiên
+  // 10. Hết phiên
   if (candle.time >= '14:28') {
     return { exitPrice: candle.close, reason: `⏰ Hết phiên giao dịch`, shouldReverse: false };
   }
@@ -1737,10 +1956,13 @@ async function pollCycle() {
   if (currentTime < START_TIME || currentTime > END_TIME) return;
 
   try {
-    const [rawIntraday1m, rawIntraday5m, oiData] = await Promise.all([
+    const [rawIntraday1m, rawIntraday5m, oiData, rawVN301m, pillarAnalysis, liquidityInfo] = await Promise.all([
       dataFetcher.fetchIntraday1m('VN30F1M'),
       dataFetcher.fetchIntraday5m('VN30F1M'),
       dataFetcher.fetchDerivativesOIData(),
+      dataFetcher.fetchVN30Intraday1m().catch(() => null),
+      pillarMonitor.analyzePillars(_state.position !== 'NONE' ? _state.position : null).catch(() => null),
+      intradaySignalEngine.calculateMarketLiquiditySpeed().catch(() => null),
     ]);
 
     const nowSec = Math.floor(Date.now() / 1000);
@@ -1757,7 +1979,12 @@ async function pollCycle() {
             console.log(`   🔮 [Scalper 1M] Nến mới: ${target1m.time} (${getVnTimeHHMMSS()}) | ${target1m.isGreen ? 'XANH' : 'ĐỎ'} | Vol:${target1m.volume} | C:${target1m.close.toFixed(1)}`);
             _state.processedCandles = closed1m;
             _state.lastProcessedTimestamp = target1m.timestamp;
-            await processNewCandle(target1m, closed1m, oiData);
+            await processNewCandle(target1m, closed1m, oiData, {
+              rawIntraday1m,
+              rawVN30Intraday1m: rawVN301m,
+              pillarAnalysis,
+              liquidityInfo,
+            });
           }
         }
       }
@@ -1793,7 +2020,7 @@ async function pollCycle() {
 // ─── START / STOP / RESET ────────────────────────────────────
 function start() {
   stop();
-  console.log(`   🔮 VN30F v6.0 Senior Trader AI Agent: Started (Market Context, Trap Shield v6.0, VSA patterns, Confidence scoring, Pro notifications, 1M/5M scalper, fast tick 5s, entry ${START_TIME}-${STOP_ENTRY_TIME})`);
+  console.log(`   🔮 VN30F v7.0 Senior Trader AI Agent: Started (Market Structure, Key Levels, Flow Engine, 7 Pillars Monitor, Dynamic Vol Thresholds, Hybrid 5-Layer Confidence, 1M/5M scalper, fast tick 5s, entry ${START_TIME}-${STOP_ENTRY_TIME})`);
 
   // Poll nến 1p & 5p mỗi 60s
   _state.timer = setInterval(() => {
@@ -1850,7 +2077,12 @@ function reset() {
   _state.last5mContAlertTime = 0;
   _state.last5mBreakoutAlertTime = 0;
   _state.last5mOppositeAlertTime = 0;
-  console.log('   🔄 Volume Scalper v5.3: State reset');
+  _state.currentPlan = null;
+  _state.lastPillarAlertTime = 0;
+  _state.lastPillarAnalysis = null;
+  _state.lastMarketStructure = null;
+  _state.lastLiquidityInfo = null;
+  console.log('   🔄 Volume Scalper v7.0: State reset');
 }
 
 function getState() {

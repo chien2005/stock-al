@@ -1,20 +1,31 @@
 /**
  * ╔═══════════════════════════════════════════════════════════════╗
- * ║   📱 VN30F v6.0 — Pro Notification Formatter                  ║
+ * ║   📱 VN30F v7.0 — Pro 5-Layer Notification Formatter          ║
  * ╠═══════════════════════════════════════════════════════════════╣
- * ║  Format notification như senior trader ngồi cạnh bạn:         ║
- * ║  • Dòng 1: Khuyến nghị DỨT KHOÁT + Confidence               ║
- * ║  • Dòng 2: Entry / SL / TP1 / TP2                            ║
- * ║  • Dòng 3-4: "Tại sao?" — logic ngắn gọn                    ║
- * ║  • Dòng 5: Bối cảnh / Cảnh báo đặc biệt                     ║
- * ║                                                                ║
- * ║  MỤC TIÊU: 3 giây để hiểu, không cần đọc lại                ║
+ * ║  Chuẩn phong cách Senior Prop Trader & Playbook VN30F Hybrid: ║
+ * ║  3 GIÂY ĐỂ HIỂU HÀNH ĐỘNG CẦN LÀM, KHÔNG LÝ THUYẾT SUÔNG:     ║
+ * ║                                                               ║
+ * ║  • Header: Khuyến nghị dứt khoát + Tên Setup + Độ tin cậy %  ║
+ * ║  • Plan giao dịch: Entry, SL (MTL), TP1 (50%), TP2           ║
+ * ║  • 01. Cấu Trúc Thị Trường (Thị trường đang ở đâu?)          ║
+ * ║  • 02. Vùng Giá Quan Trọng (Giá đang ở vị trí nào?)          ║
+ * ║  • 03. Hành Động Giá & Dòng Tiền (Điều gì đang xảy ra?)       ║
+ * ║  • 04. Khối Lượng Tương Đối (Vol đạt hay bẫy thanh khoản?)   ║
+ * ║  • 05. Giám Sát 7 Trụ Điều Tiết (Có bẫy kéo trụ ảo không?)   ║
  * ╚═══════════════════════════════════════════════════════════════╝
  */
 
-const marketContext = require('./marketContext');
+const { formatPillarsForNotification, TRACKED_PILLARS } = require('./pillarMonitor');
 
 // ─── HELPERS ─────────────────────────────────────────────────
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
 function getVnTimeHHMMSS() {
   const { config } = require('../config');
   const d = new Date(new Date().toLocaleString('en-US', { timeZone: config.timezone }));
@@ -24,100 +35,176 @@ function getVnTimeHHMMSS() {
   return `${hh}:${mm}:${ss}`;
 }
 
-// ─── ENTRY NOTIFICATION (Senior Trader Style) ───────────────
+// ─── 1. ENTRY NOTIFICATION (5-LAYER HYBRID) ──────────────────
 /**
- * Notification mở vị thế mới — phong cách senior trader
+ * Notification mở vị thế chuẩn 5 lớp Hybrid Playbook
  */
 function formatEntryNotification(params) {
   const {
     candle,
-    direction,      // 'LONG' or 'SHORT'
-    decision,       // from calculateConfidence()
-    plan,           // from generateTradePlan()
+    direction,            // 'LONG' or 'SHORT'
+    decision,             // from calculateConfidence()
+    plan,                 // from generateTradePlan()
     indicators,
-    context,        // from buildMarketContext()
-    oiData,
-    reasons,        // from buildSeniorReasoning()
+    context,              // from buildMarketContext()
+    marketStructureData,  // from marketStructure.buildPriceMap()
+    flowData,             // from flowEngine.analyzeFlow()
+    pillarAnalysis,       // from pillarMonitor.analyzePillars()
+    liquidityInfo,        // from intradaySignalEngine.calculateMarketLiquiditySpeed()
+    volRatio,
   } = params;
 
   const isLong = direction === 'LONG';
   const emoji = isLong ? '🟢' : '🔴';
-  const confEmoji = decision.confidence >= 80 ? '🔥' : decision.confidence >= 60 ? '⚡' : '⚠️';
+  const confEmoji = decision.confidence >= 80 ? '🔥' : decision.confidence >= 65 ? '⚡' : '⚠️';
+  const setupLabel = decision.setupLabel || (isLong ? 'Xung lực Long' : 'Xung lực Short');
+  const modeLabel = plan.liquidityMode === 'SCALP' ? 'SCALP CHỐT NHANH' : 'TREND GỒNG LÃI';
 
   let msg = '';
 
-  // ─── DÒNG 1: KHUYẾN NGHỊ DỨT KHOÁT ──────────────────────
-  msg += `${emoji} <b>MỞ ${direction}</b> — Tin cậy: <b>${decision.confidence}%</b> ${confEmoji}\n`;
-  msg += `━━━━━━━━━━━━━━━━━━\n\n`;
+  // ─── HEADER: KHUYẾN NGHỊ DỨT KHOÁT + SETUP + ĐỘ TIN CẬY ──────
+  msg += `${emoji} <b>MỞ ${direction} [${setupLabel}]</b>\n`;
+  msg += `🎯 Độ tin cậy: <b>${decision.confidence}%</b> ${confEmoji} | Chế độ: <b>${modeLabel}</b>\n`;
+  msg += `━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
-  // ─── DÒNG 2: PLAN GD ─────────────────────────────────────
-  msg += `💰 <b>Entry:</b> <b>${plan.entry.toFixed(1)}</b> | <b>SL:</b> ${plan.sl.toFixed(1)} (-${plan.slDistance}đ MTL)\n`;
-  msg += `🎯 <b>TP1:</b> ${plan.tp1.toFixed(1)} (+${plan.tp1Distance}đ, chốt 50%)\n`;
-  msg += `🎯 <b>TP2:</b> ${plan.tp2.toFixed(1)} (+${plan.tp2Distance}đ, gồng sóng)\n\n`;
+  // ─── PLAN GIAO DỊCH THỰC CHIẾN ──────────────────────────────
+  msg += `💰 <b>KẾ HOẠCH GIAO DỊCH:</b>\n`;
+  msg += `• <b>Entry:</b> <b>${plan.entry.toFixed(1)}</b> | <b>SL:</b> <b>${plan.sl.toFixed(1)}</b> (-${plan.slDistance}đ MTL)\n`;
+  msg += `• <b>TP1:</b> <b>${plan.tp1.toFixed(1)}</b> (+${plan.tp1Distance}đ, chốt 50% & dời hòa)\n`;
+  msg += `• <b>TP2:</b> <b>${plan.tp2.toFixed(1)}</b> (+${plan.tp2Distance}đ, ${plan.liquidityMode === 'SCALP' ? 'chốt hết' : 'gồng trailing stop'})\n`;
+  msg += `• Tỷ lệ R:R: <b>${plan.rr1}</b> (TP1) / <b>${plan.rr2}</b> (TP2)\n\n`;
 
-  // ─── DÒNG 3-4: TẠI SAO? ──────────────────────────────────
-  msg += `📊 <b>TẠI SAO MỞ ${direction}:</b>\n`;
-  const topReasons = (reasons && reasons.length > 0) ? reasons : (decision.reasons || []);
-  for (const r of topReasons.slice(0, 3)) {
-    msg += `• ${r}\n`;
+  // ─── 01. CẤU TRÚC THỊ TRƯỜNG (MARKET STRUCTURE) ─────────────
+  msg += `1️⃣ <b>CẤU TRÚC THỊ TRƯỜNG:</b>\n`;
+  if (marketStructureData) {
+    const waveTxt = marketStructureData.waveStructure === 'HIGHER_HIGHS_HIGHER_LOWS'
+      ? 'Uptrend (Nâng đỉnh - Nâng đáy) 🟢'
+      : marketStructureData.waveStructure === 'LOWER_HIGHS_LOWER_LOWS'
+      ? 'Downtrend (Hạ đỉnh - Hạ đáy) 🔴'
+      : 'Sideway / Dao động tích lũy 🟡';
+    msg += `• Trạng thái sóng: <b>${waveTxt}</b>\n`;
+    msg += `• Xu hướng chủ đạo: <b>${marketStructureData.trendBias || 'NEUTRAL'}</b> (Lực: ${marketStructureData.trendStrength || 0}%)\n`;
+  } else if (indicators && indicators.ma9_26Analysis) {
+    msg += `• MA: <b>${indicators.ma9_26Analysis.isUptrend ? 'Uptrend MA9 > MA26 🟢' : 'Downtrend MA9 < MA26 🔴'}</b>\n`;
+  }
+  msg += '\n';
+
+  // ─── 02. VÙNG GIÁ QUAN TRỌNG (KEY LEVELS & VWAP) ────────────
+  msg += `2️⃣ <b>VÙNG GIÁ QUAN TRỌNG (KEY LEVELS):</b>\n`;
+  if (marketStructureData) {
+    if (marketStructureData.vwap) {
+      const vwapDiff = candle.close - marketStructureData.vwap;
+      const vwapSign = vwapDiff >= 0 ? '+' : '';
+      msg += `• VWAP: <b>${marketStructureData.vwap.toFixed(1)}</b> (Giá đang ${vwapSign}${vwapDiff.toFixed(1)}đ so với VWAP)\n`;
+    }
+    if (marketStructureData.poc) {
+      msg += `• Volume Profile: POC <b>${marketStructureData.poc.toFixed(1)}</b>`;
+      if (marketStructureData.vah && marketStructureData.val) {
+        msg += ` | VAH ${marketStructureData.vah.toFixed(1)} - VAL ${marketStructureData.val.toFixed(1)}`;
+      }
+      msg += '\n';
+    }
+    const zoneDesc = marketStructureData.currentZone === 'AT_SUPPORT'
+      ? 'Tại Hỗ trợ tốt 🟢'
+      : marketStructureData.currentZone === 'AT_RESISTANCE'
+      ? 'Tại Kháng cự 🔴'
+      : 'Vùng giữa biên dao động ⚪';
+    msg += `• Vị trí giá: <b>${zoneDesc}</b>\n`;
+  } else {
+    msg += `• Giá hiện tại: <b>${candle.close.toFixed(1)}</b>\n`;
+  }
+  msg += '\n';
+
+  // ─── 03. HÀNH ĐỘNG GIÁ & DÒNG LỆNH (PA + FLOW) ──────────────
+  msg += `3️⃣ <b>HÀNH ĐỘNG GIÁ & DÒNG LỆNH (PA + FLOW):</b>\n`;
+  msg += `• Nến ${candle.time}: ${candle.isGreen ? '🟢 Tăng' : '🔴 Giảm'} | Thân ${candle.body.toFixed(1)}đ`;
+  if (candle.upperWick > 0.5 || candle.lowerWick > 0.5) {
+    msg += ` (Râu trên: ${candle.upperWick.toFixed(1)}đ, Râu dưới: ${candle.lowerWick.toFixed(1)}đ)`;
+  }
+  msg += '\n';
+
+  if (flowData && flowData.delta) {
+    const deltaSign = flowData.delta.current >= 0 ? '+' : '';
+    msg += `• Dòng lệnh Flow: Delta <b>${deltaSign}${flowData.delta.current} HĐ</b> (${flowData.delta.trend})\n`;
+    if (flowData.absorption && flowData.absorption.detected) {
+      msg += `• Hấp thụ: <b>${flowData.absorption.type === 'BOTTOM_ABSORPTION' ? '🟢 Hấp thụ đáy' : '🔴 Hấp thụ đỉnh'}</b> (${flowData.absorption.strength})\n`;
+    }
   }
 
-  // Đồng thuận MACD + RSI
-  if (indicators && indicators.macdAnalysis && indicators.rsiAnalysis) {
-    const macdUp = indicators.macdAnalysis.isSlopeUp;
-    const rsiUp = indicators.rsiAnalysis.isSlopeUp;
-    const isAligned = (isLong && macdUp && rsiUp) || (!isLong && !macdUp && !rsiUp);
-    if (isAligned) {
-      msg += `• MACD + RSI <b>đồng thuận</b> → xung lực <b>${isLong ? 'TĂNG' : 'GIẢM'} mạnh</b>\n`;
+  // Mẫu hình VSA nếu có
+  if (decision.reasons && decision.reasons.length > 0) {
+    const vsaReason = decision.reasons.find(r => r.includes('Engulfing') || r.includes('Hammer') || r.includes('Star') || r.includes('búa'));
+    if (vsaReason) {
+      msg += `• Mẫu hình: <b>${vsaReason}</b>\n`;
     }
   }
   msg += '\n';
 
-  // ─── DÒNG 5: BỐI CẢNH ────────────────────────────────────
-  msg += `⚡ <b>BỐI CẢNH:</b>\n`;
-
-  // Khung giờ
-  if (context && context.session) {
-    msg += `• ${context.session.emoji} ${context.session.name}\n`;
+  // ─── 04. KHỐI LƯỢNG TƯƠNG ĐỐI & THANH KHOẢN THỊ TRƯỜNG ──────
+  msg += `4️⃣ <b>KHỐI LƯỢNG TƯƠNG ĐỐI & THANH KHOẢN:</b>\n`;
+  msg += `• Vol nến 1p: <b>${candle.volume.toLocaleString()} HĐ</b>`;
+  if (volRatio) {
+    msg += ` (<b>${(volRatio * 100).toFixed(0)}%</b> MA20 Vol)`;
   }
-
-  // NN + Basis
-  if (context && context.supplyDemand) {
-    const sd = context.supplyDemand;
-    msg += `• NN: <b>${sd.nnNet >= 0 ? '+' : ''}${sd.nnNet.toLocaleString()} HĐ</b> (${sd.isNNBullish ? 'Long ròng' : sd.isNNBearish ? 'Short ròng' : 'Cân bằng'})\n`;
-  }
-  if (context && context.basis) {
-    msg += `• Basis: <b>${context.basis.basis >= 0 ? '+' : ''}${context.basis.basis}đ</b> (${context.basis.description})\n`;
-  }
-
-  // Nến detail
-  msg += `• Nến ${candle.time}: ${candle.isGreen ? '🟢' : '🔴'} Vol <b>${candle.volume.toLocaleString()}</b> HĐ | Body ${candle.body}đ\n`;
   msg += '\n';
 
-  // ─── CẢNH BÁO ────────────────────────────────────────────
-  if (decision.warnings && decision.warnings.length > 0) {
-    msg += `⚠️ <b>LƯU Ý:</b>\n`;
-    for (const w of decision.warnings.slice(0, 2)) {
-      msg += `• <i>${w}</i>\n`;
+  if (liquidityInfo) {
+    msg += `• Tốc độ TT: <b>${liquidityInfo.speed} tỷ/phút</b> | Dự phóng: <b>${liquidityInfo.projectedTotal?.toLocaleString()} tỷ</b>\n`;
+    if (liquidityInfo.isLowLiquidity) {
+      msg += `• Lưu ý: <i>Thanh khoản thấp → Bắt buộc chốt nhanh, không gồng non, chống bẫy fake breakout!</i>\n`;
+    }
+  }
+  msg += '\n';
+
+  // ─── 05. GIÁM SÁT 7 TRỤ ĐIỀU TIẾT (VN30/VNINDEX) ─────────────
+  if (pillarAnalysis && pillarAnalysis.pillars) {
+    const p = pillarAnalysis.pillars;
+    const pItems = TRACKED_PILLARS.map(s => {
+      const item = p[s];
+      if (!item) return `${s}: N/A`;
+      const sign = item.changePct > 0 ? '+' : '';
+      return `${s}: ${sign}${item.changePct.toFixed(1)}% ${item.emoji}`;
+    });
+    msg += `5️⃣ <b>7 TRỤ ĐIỀU TIẾT (VIC, VPL, VHM, MCH, VCB, GAS, VJC):</b>\n`;
+    msg += `• ${pItems.slice(0, 4).join(' | ')}\n`;
+    msg += `• ${pItems.slice(4).join(' | ')}\n`;
+    msg += `👉 Trạng thái Trụ: <b>${pillarAnalysis.consensusLabel}</b>\n`;
+
+    if (pillarAnalysis.manipulationWarnings && pillarAnalysis.manipulationWarnings.length > 0) {
+      for (const w of pillarAnalysis.manipulationWarnings) {
+        msg += `${w}\n`;
+      }
     }
     msg += '\n';
   }
 
-  // ─── INDICATORS COMPACT ──────────────────────────────────
-  msg += `📈 `;
-  if (indicators) {
-    if (indicators.macdAnalysis) msg += `MACD: ${indicators.macdAnalysis.zoneDesc} `;
-    if (indicators.rsiAnalysis) msg += `| RSI: <b>${indicators.rsiAnalysis.val}</b> ${indicators.rsiAnalysis.directionStr}`;
+  // ─── CẢNH BÁO NẾU CÓ ─────────────────────────────────────────
+  if (decision.warnings && decision.warnings.length > 0) {
+    msg += `⚠️ <b>CẢNH BÁO RỦI RO:</b>\n`;
+    for (const w of decision.warnings.slice(0, 2)) {
+      msg += `• <i>${escapeHtml(w)}</i>\n`;
+    }
+    msg += '\n';
   }
-  msg += '\n';
 
-  msg += `━━━━━━━━━━━━━━━━━━\n`;
-  msg += `<i>🔮 VN30F v6.0 | ${getVnTimeHHMMSS()}</i>`;
+  // ─── BỐI CẢNH & GHI CHÚ SENIOR TRADER ───────────────────────
+  msg += `━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+  if (context) {
+    let ctxLine = [];
+    if (context.session) ctxLine.push(`${context.session.emoji} ${context.session.name}`);
+    if (context.basis) ctxLine.push(`Basis: <b>${context.basis.basis >= 0 ? '+' : ''}${context.basis.basis}đ</b>`);
+    if (context.supplyDemand) ctxLine.push(`NN: <b>${context.supplyDemand.nnNet >= 0 ? '+' : ''}${context.supplyDemand.nnNet.toLocaleString()} HĐ</b>`);
+    if (ctxLine.length > 0) {
+      msg += `⚡ ${ctxLine.join(' | ')}\n`;
+    }
+  }
+  msg += `💡 <i>Kỷ luật: Khớp xong set ngay lệnh cắt lỗ MTL, không dời lỗ xa hơn!</i>\n`;
+  msg += `<i>🔮 VN30F v7.0 Hybrid | ${getVnTimeHHMMSS()}</i>`;
 
   return msg;
 }
 
-// ─── EXIT NOTIFICATION ──────────────────────────────────────
+// ─── 2. EXIT NOTIFICATION ────────────────────────────────────
 function formatExitNotification(params) {
   const {
     trade,          // { type, entryPrice, exitPrice, pnl, reason, maxProfit }
@@ -128,6 +215,7 @@ function formatExitNotification(params) {
     newDirection,
     newPlan,
     decision,
+    pillarAnalysis,
   } = params;
 
   const pnlEmoji = trade.pnl >= 0 ? '✅' : '❌';
@@ -137,81 +225,118 @@ function formatExitNotification(params) {
 
   if (isReverse) {
     const reverseEmoji = newDirection === 'LONG' ? '🟢' : '🔴';
-    msg += `🔄 <b>ĐÓNG ${trade.type} ${pnlStr}</b> → <b>ĐẢO ${newDirection}</b>\n`;
-    msg += `━━━━━━━━━━━━━━━━━━\n\n`;
-    msg += `${pnlEmoji} Đóng ${trade.type} @ ${trade.exitPrice.toFixed(1)} (${pnlStr})\n`;
-    msg += `${reverseEmoji} Mở ${newDirection} @ ${candle.close.toFixed(1)}\n\n`;
+    msg += `🔄 <b>ĐÓNG ${trade.type} ${pnlStr}</b> ➔ <b>ĐẢO ${newDirection}</b>\n`;
+    msg += `━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+    msg += `${pnlEmoji} Đóng ${trade.type} @ <b>${trade.exitPrice.toFixed(1)}</b> (${pnlStr})\n`;
+    msg += `${reverseEmoji} Mở mới ${newDirection} @ <b>${candle.close.toFixed(1)}</b>\n\n`;
 
     if (newPlan) {
-      msg += `💰 <b>Plan mới:</b> SL: ${newPlan.sl.toFixed(1)} | TP1: ${newPlan.tp1.toFixed(1)} | TP2: ${newPlan.tp2.toFixed(1)}\n\n`;
+      msg += `💰 <b>Plan mới:</b> SL: <b>${newPlan.sl.toFixed(1)}</b> (-${newPlan.slDistance}đ) | TP1: <b>${newPlan.tp1.toFixed(1)}</b> | TP2: <b>${newPlan.tp2.toFixed(1)}</b>\n\n`;
     }
   } else {
-    msg += `${pnlEmoji} <b>ĐÓNG ${trade.type} — ${pnlStr}</b>\n`;
-    msg += `━━━━━━━━━━━━━━━━━━\n\n`;
-    msg += `📋 Entry: ${trade.entryPrice.toFixed(1)} → Exit: ${trade.exitPrice.toFixed(1)}\n`;
-    msg += `📊 PnL: <b>${pnlStr}</b> | Max lãi: +${trade.maxProfit.toFixed(1)}đ\n\n`;
+    msg += `${pnlEmoji} <b>ĐÓNG VỊ THẾ ${trade.type} — ${pnlStr}</b>\n`;
+    msg += `━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+    msg += `📋 Entry: <b>${trade.entryPrice.toFixed(1)}</b> ➔ Exit: <b>${trade.exitPrice.toFixed(1)}</b>\n`;
+    msg += `📊 Kết quả: <b>${pnlStr}</b> | Đỉnh lãi chạm tới: <b>+${trade.maxProfit.toFixed(1)}đ</b>\n\n`;
   }
 
-  // Lý do
-  msg += `💡 <b>Lý do:</b> ${trade.reason}\n\n`;
+  // Lý do đóng vị thế
+  msg += `💡 <b>LÝ DO:</b> ${trade.reason}\n`;
+  msg += `📊 Nến trigger: ${candle.time} (${candle.isGreen ? '🟢' : '🔴'}) | Vol: <b>${candle.volume.toLocaleString()} HĐ</b>\n\n`;
 
-  // Nến trigger
-  msg += `📊 Nến ${candle.time}: ${candle.isGreen ? '🟢' : '🔴'} Vol <b>${candle.volume.toLocaleString()}</b> HĐ\n`;
+  // Nhắc nhẹ trụ điều tiết nếu có
+  if (pillarAnalysis && pillarAnalysis.consensusLabel) {
+    msg += `🏛️ Nhóm 7 trụ: <i>${pillarAnalysis.consensusLabel}</i>\n`;
+  }
 
-  msg += `━━━━━━━━━━━━━━━━━━\n`;
-  msg += `<i>🔮 VN30F v6.0 | ${getVnTimeHHMMSS()}</i>`;
+  msg += `━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+  msg += `<i>🔮 VN30F v7.0 Hybrid | ${getVnTimeHHMMSS()}</i>`;
 
   return msg;
 }
 
-// ─── TRAP SHIELD NOTIFICATION ───────────────────────────────
+// ─── 3. TRAP SHIELD ALERT ───────────────────────────────────
 function formatTrapShieldAlert(params) {
   const {
-    level,           // 1 or 2
+    level,
     candle,
-    priceChange,     // biến động giá (đ)
-    currentPosition, // 'LONG', 'SHORT', 'NONE'
+    priceChange,
+    currentPosition,
     context,
+    pillarAnalysis,
   } = params;
 
   const isLevel1 = level === 1;
   const alertEmoji = isLevel1 ? '🚨' : '⚠️';
   const levelDesc = isLevel1
-    ? 'MỨC 1 — BƠM/ĐẠP ĐỂU, VOL KIỆT QUỆ!'
-    : 'MỨC 2 — KÉO/XẢ ẢO, THIẾU DÒNG TIỀN!';
+    ? 'MỨC 1 — BƠM/ĐẠP ĐỂU (VOL KIỆT QUỆ, 100% BẪY LÁI)'
+    : 'MỨC 2 — KÉO/XẢ ẢO (THIẾU DÒNG TIỀN XÁC NHẬN)';
 
-  let msg = `${alertEmoji} <b>[TRAP SHIELD] ${levelDesc}</b>\n`;
-  msg += `━━━━━━━━━━━━━━━━━━\n\n`;
+  let msg = `${alertEmoji} <b>[TRAP SHIELD v7.0] ${levelDesc}</b>\n`;
+  msg += `━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
-  msg += `⚡ Giá giật <b>${priceChange >= 0 ? '+' : ''}${priceChange.toFixed(1)}đ</b> nhưng Vol CHỈ <b>${candle.volume.toLocaleString()} HĐ</b>\n`;
-  msg += `📊 Ngưỡng bẫy: Vol < ${isLevel1 ? '1,300' : '1,500'} HĐ\n\n`;
+  msg += `⚡ Giá giật <b>${priceChange >= 0 ? '+' : ''}${priceChange.toFixed(1)}đ</b> nhưng Vol chỉ <b>${candle.volume.toLocaleString()} HĐ</b>!\n`;
+  msg += `📊 Cảnh báo: Thị trường thanh khoản thấp, lái dùng lệnh mỏng vẽ nến dụ con mồi.\n\n`;
 
-  msg += `🛡️ <b>HÀNH ĐỘNG:</b>\n`;
-  msg += `• <b>KHÓA MỞ LỆNH MỚI 2 PHÚT!</b> Dù giá có vẻ ${priceChange > 0 ? 'tăng' : 'giảm'} mạnh\n`;
-
-  if (currentPosition === 'LONG') {
-    msg += `• Đang LONG → <b>CẤM BÁN THÁO, CẤM ĐẢO SHORT!</b>\n`;
-    msg += `• Đây là chiêu đạp dọa quét SL — Giữ chặt vị thế!\n`;
-  } else if (currentPosition === 'SHORT') {
-    msg += `• Đang SHORT → <b>CẤM CẮT LỖ NON, CẤM ĐẢO LONG!</b>\n`;
-    msg += `• Đây là chiêu kéo dụ Long — Giữ chặt vị thế!\n`;
-  } else {
-    msg += `• ĐỨNG NGOÀI → <b>TUYỆT ĐỐI KHÔNG MỞ LỆNH FOMO!</b>\n`;
-    msg += `• Chờ 2 phút cho lái xong trò, vol thật sẽ lộ diện\n`;
+  // Kiểm tra trụ điều tiết có đang kéo ảo không
+  if (pillarAnalysis && pillarAnalysis.manipulationWarnings && pillarAnalysis.manipulationWarnings.length > 0) {
+    msg += `🏛️ <b>DẤU VẾT ĐIỀU TIẾT TRỤ:</b>\n`;
+    for (const w of pillarAnalysis.manipulationWarnings) {
+      msg += `• ${w}\n`;
+    }
+    msg += '\n';
   }
 
-  msg += `\n━━━━━━━━━━━━━━━━━━\n`;
-  msg += `<i>🛡️ Trap Shield v6.0 | ${getVnTimeHHMMSS()}</i>`;
+  msg += `🛡️ <b>HÀNH ĐỘNG TUÂN THỦ:</b>\n`;
+  msg += `• <b>KHÓA MỞ VỊ THẾ MỚI 2 PHÚT!</b>\n`;
+
+  if (currentPosition === 'LONG') {
+    msg += `• Đang LONG ➔ <b>CẤM BÁN THÁO, CẤM ĐẢO SHORT!</b> Đòn dọa quét SL điển hình.\n`;
+  } else if (currentPosition === 'SHORT') {
+    msg += `• Đang SHORT ➔ <b>CẤM CẮT LỖ NON, CẤM ĐU LONG!</b> Đòn kéo ảo ép cover.\n`;
+  } else {
+    msg += `• ĐANG ĐỨNG NGOÀI ➔ <b>TUYỆT ĐỐI KHÔNG FOMO!</b> Đợi nến có vol thật.\n`;
+  }
+
+  msg += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+  msg += `<i>🛡️ Trap Shield v7.0 | ${getVnTimeHHMMSS()}</i>`;
 
   return msg;
 }
 
-// ─── CLIMAX NOTIFICATION ────────────────────────────────────
+// ─── 4. PILLAR MANIPULATION ALERT (Cảnh báo riêng về Trụ) ───
+function formatPillarAlert(params) {
+  const { pillarAnalysis, currentPrice, currentPosition } = params;
+
+  let msg = `🏛️🚨 <b>CẢNH BÁO BẪY ĐIỀU TIẾT 7 TRỤ (VN30/VNINDEX)</b>\n`;
+  msg += `━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+
+  if (pillarAnalysis.manipulationWarnings && pillarAnalysis.manipulationWarnings.length > 0) {
+    for (const w of pillarAnalysis.manipulationWarnings) {
+      msg += `• ${w}\n`;
+    }
+    msg += '\n';
+  }
+
+  msg += formatPillarsForNotification(pillarAnalysis);
+  msg += `\n`;
+
+  msg += `💡 <b>LỜI KHUYÊN SENIOR TRADER:</b>\n`;
+  msg += `• Phái sinh VN30F thường xuyên bị chi phối bởi lệnh khớp cơ sở ở VIC, VHM, VCB...\n`;
+  msg += `• Khi chỉ số bị kéo lệch bởi 1 vài trụ, tuyệt đối KHÔNG đua lệnh breakout!\n`;
+
+  msg += `━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+  msg += `<i>🔮 VN30F v7.0 Hybrid | ${getVnTimeHHMMSS()}</i>`;
+
+  return msg;
+}
+
+// ─── 5. CLIMAX ALERT ────────────────────────────────────────
 function formatClimaxAlert(params) {
   const {
     candle,
-    timeframe,      // '1M' or '5M'
-    volRatio,       // % so với MA
+    timeframe,
+    volRatio,
     currentPosition,
     indicators,
   } = params;
@@ -220,40 +345,40 @@ function formatClimaxAlert(params) {
   const tfLabel = timeframe === '5M' ? '5M' : '1M';
 
   let msg = `🔥🔥🔥 <b>[${tfLabel} CLIMAX] CAO TRÀO — Vol ${candle.volume.toLocaleString()} HĐ</b>\n`;
-  msg += `━━━━━━━━━━━━━━━━━━\n\n`;
+  msg += `━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
   if (isGreen) {
-    msg += `⚡ <b>ĐỈNH MUA CAO TRÀO:</b>\n`;
+    msg += `⚡ <b>ĐỈNH MUA CAO TRÀO (BUYING CLIMAX):</b>\n`;
     msg += `• Tay to CHỐT LỜI trên đỉnh + Đám đông FOMO mua đuổi!\n`;
     msg += `• <b>CẤM TUYỆT ĐỐI ĐU LONG VÀO CÂY NÀY!</b>\n\n`;
   } else {
-    msg += `⚡ <b>ĐÁY BÁN THÁO CAO TRÀO:</b>\n`;
-    msg += `• Tay to HẤP THỤ gom hàng đáy + Nhỏ lẻ hoảng loạn xả!\n`;
+    msg += `⚡ <b>ĐÁY BÁN THÁO CAO TRÀO (SELLING CLIMAX):</b>\n`;
+    msg += `• Tay to HẤP THỤ gom hàng đáy + Nhỏ lẻ hoảng loạn xả hoảng!\n`;
     msg += `• <b>CẤM BỒI SHORT! CẤM BÁN THÁO THEO!</b>\n\n`;
   }
 
   msg += `📊 Vol: <b>${candle.volume.toLocaleString()}</b> HĐ`;
   if (volRatio) msg += ` (<b>${(volRatio * 100).toFixed(0)}%</b> MA Vol)`;
   msg += `\n`;
-  msg += `📊 Nến: ${isGreen ? '🟢' : '🔴'} Body ${candle.body}đ | Râu ↑${candle.upperWick}đ ↓${candle.lowerWick}đ\n\n`;
+  msg += `📊 Nến: ${isGreen ? '🟢' : '🔴'} Body ${candle.body.toFixed(1)}đ | Râu ↑${candle.upperWick.toFixed(1)}đ ↓${candle.lowerWick.toFixed(1)}đ\n\n`;
 
   if (currentPosition !== 'NONE') {
     const dir = currentPosition;
     const isSameDir = (dir === 'LONG' && isGreen) || (dir === 'SHORT' && !isGreen);
     if (isSameDir) {
-      msg += `🛑 Đang ${dir} → <b>CHỐT LỜI BẢO TOÀN LÃI NGAY!</b>\n`;
+      msg += `🛑 Đang ${dir} ➔ <b>CHỐT LỜI BẢO TOÀN LÃI NGAY!</b>\n`;
     } else {
-      msg += `✅ Đang ${dir} → Chiều ngược → Tiếp tục giữ vị thế\n`;
+      msg += `✅ Đang ${dir} ➔ Chiều ngược đỉnh/đáy ➔ Giữ chặt vị thế\n`;
     }
   }
 
-  msg += `\n━━━━━━━━━━━━━━━━━━\n`;
-  msg += `<i>🔮 VN30F v6.0 | ${getVnTimeHHMMSS()}</i>`;
+  msg += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+  msg += `<i>🔮 VN30F v7.0 Hybrid | ${getVnTimeHHMMSS()}</i>`;
 
   return msg;
 }
 
-// ─── FLASH CRASH NOTIFICATION ───────────────────────────────
+// ─── 6. FLASH CRASH ALERT ───────────────────────────────────
 function formatFlashCrashAlert(params) {
   const {
     currentPrice,
@@ -266,34 +391,29 @@ function formatFlashCrashAlert(params) {
   } = params;
 
   let msg = `🚨🚨🚨 <b>CÁ MẬP ÚP BÔ / FORCE SELL / FLASH CRASH!</b>\n`;
-  msg += `━━━━━━━━━━━━━━━━━━\n\n`;
+  msg += `━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
   msg += `⚡ Giá tụt <b>-${dropPts.toFixed(1)} điểm</b> trong <b>${dropWindow}</b>!\n`;
-  msg += `📉 ${fromPrice.toFixed(1)} → <b>${currentPrice.toFixed(1)}</b>\n\n`;
+  msg += `📉 ${fromPrice.toFixed(1)} ➔ <b>${currentPrice.toFixed(1)}</b>\n\n`;
 
   if (isAfter14h) {
-    msg += `💀 <b>SAU 14H — GIỜ CALL MARGIN & XẢ KHO!</b>\n\n`;
+    msg += `💀 <b>SAU 14H — GIỜ CALL MARGIN KHO & ĐẠP ÉP ĐÓNG VỊ THẾ!</b>\n\n`;
   }
 
   if (wasLong) {
-    msg += `🛑 <b>ĐÃ THOÁT KHẨN CẤP LONG @ ${currentPrice.toFixed(1)}</b>\n`;
-    msg += `• Bảo toàn vốn — Không gồng lỗ khi lái tháo cống!\n\n`;
+    msg += `🛑 <b>ĐÃ THOÁT KHẨN CẤP VỊ THẾ LONG @ ${currentPrice.toFixed(1)}</b>\n`;
+    msg += `• Kỷ luật sinh tồn số 1 — Không gồng lỗ khi lái tháo cống!\n\n`;
   }
 
-  msg += `⛔ <b>CẤM TUYỆT ĐỐI BẮT ĐÁY DAO RƠI!</b>\n`;
-  msg += `• Chờ thị trường ổn định + nến vol xác nhận đáy\n`;
+  msg += `⛔ <b>CẤM TUYỆT ĐỐI BẮT ĐÁY DAO RƠI!</b> Chờ giá ngưng rơi và có vol hấp thụ.\n`;
 
-  if (indicators && indicators.macdAnalysis) {
-    msg += `\n📈 MACD: ${indicators.macdAnalysis.zoneDesc}`;
-  }
-
-  msg += `\n━━━━━━━━━━━━━━━━━━\n`;
-  msg += `<i>🔮 VN30F v6.0 | ${getVnTimeHHMMSS()}</i>`;
+  msg += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+  msg += `<i>🔮 VN30F v7.0 Hybrid | ${getVnTimeHHMMSS()}</i>`;
 
   return msg;
 }
 
-// ─── 5M BREAKOUT NOTIFICATION ───────────────────────────────
+// ─── 7. 5M BREAKOUT SIGNAL ──────────────────────────────────
 function format5mBreakoutSignal(params) {
   const {
     candle,
@@ -303,45 +423,43 @@ function format5mBreakoutSignal(params) {
     plan,
     decision,
     context,
+    pillarAnalysis,
   } = params;
 
   const isLong = direction === 'LONG';
   const emoji = isLong ? '🟢' : '🔴';
   const confEmoji = decision && decision.confidence >= 80 ? '🔥' : '⚡';
 
-  let msg = `🚀 <b>[5M BREAKOUT] ${direction} — Vol ${candle.volume.toLocaleString()} HĐ (${(indicators.volRatioAvg * 100).toFixed(0)}% MA)</b>\n`;
-  msg += `━━━━━━━━━━━━━━━━━━\n\n`;
+  let msg = `🚀 <b>[5M BREAKOUT] ${direction} — Vol ${candle.volume.toLocaleString()} HĐ</b>\n`;
+  msg += `🎯 Độ tin cậy: <b>${decision?.confidence || 75}%</b> ${confEmoji}\n`;
+  msg += `━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
-  // Plan
-  msg += `💰 <b>Entry:</b> ${plan.entry.toFixed(1)} | <b>SL:</b> ${plan.sl.toFixed(1)} (-${plan.slDistance}đ)\n`;
-  msg += `🎯 <b>TP1:</b> ${plan.tp1.toFixed(1)} (+${plan.tp1Distance}đ, chốt 50%) | <b>TP2:</b> ${plan.tp2.toFixed(1)} (+${plan.tp2Distance}đ)\n\n`;
+  msg += `💰 <b>Plan 5M:</b> Entry: <b>${plan.entry.toFixed(1)}</b> | SL: <b>${plan.sl.toFixed(1)}</b> (-${plan.slDistance}đ)\n`;
+  msg += `🎯 TP1: <b>${plan.tp1.toFixed(1)}</b> (+${plan.tp1Distance}đ) | TP2: <b>${plan.tp2.toFixed(1)}</b> (+${plan.tp2Distance}đ)\n\n`;
 
-  // Tại sao
-  msg += `📊 <b>TẠI SAO:</b>\n`;
-  msg += `• Nến 5M ${candle.time}: ${emoji} Vol <b>${candle.volume.toLocaleString()}</b> HĐ — bùng nổ chuẩn (115-145% MA)\n`;
-  msg += `• Giá ${isLong ? 'TRÊN' : 'DƯỚI'} cả MA20 & MA50 — đồng thuận ${isLong ? 'Uptrend' : 'Downtrend'}\n`;
+  msg += `📊 <b>XÁC NHẬN ĐA LỚP:</b>\n`;
+  msg += `• Nến 5M ${candle.time}: ${emoji} Vol bùng nổ chuẩn (${(indicators.volRatioAvg * 100).toFixed(0)}% MA Vol)\n`;
+  msg += `• Vị thế: Giá ${isLong ? 'TRÊN' : 'DƯỚI'} cả MA20 & MA50 khung 5 phút\n`;
 
-  if (indicators.macdAnalysis) {
-    msg += `• MACD 5M: ${indicators.macdAnalysis.zoneDesc}\n`;
+  if (pillarAnalysis && pillarAnalysis.consensusLabel) {
+    msg += `• 7 Trụ điều tiết: <b>${pillarAnalysis.consensusLabel}</b>\n`;
   }
   msg += '\n';
 
-  // Context
   if (context && context.supplyDemand) {
-    msg += `⚡ NN: <b>${context.supplyDemand.nnNet >= 0 ? '+' : ''}${context.supplyDemand.nnNet.toLocaleString()}</b> HĐ`;
-    if (context.basis) msg += ` | Basis: <b>${context.basis.basis >= 0 ? '+' : ''}${context.basis.basis}</b>đ`;
+    msg += `⚡ NN: <b>${context.supplyDemand.nnNet >= 0 ? '+' : ''}${context.supplyDemand.nnNet.toLocaleString()} HĐ</b>`;
+    if (context.basis) msg += ` | Basis: <b>${context.basis.basis >= 0 ? '+' : ''}${context.basis.basis}đ</b>`;
     msg += '\n';
   }
 
-  msg += `\n💡 <i>Khung 5M lọc sạch nhiễu vi mô → Tự tin gồng trọn TP1 & TP2!</i>\n`;
-
-  msg += `━━━━━━━━━━━━━━━━━━\n`;
-  msg += `<i>🔮 VN30F v6.0 | ${getVnTimeHHMMSS()}</i>`;
+  msg += `\n💡 <i>Khung 5M lọc nhiễu vi mô rất tốt — Tự tin bám theo kế hoạch!</i>\n`;
+  msg += `━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+  msg += `<i>🔮 VN30F v7.0 Hybrid | ${getVnTimeHHMMSS()}</i>`;
 
   return msg;
 }
 
-// ─── 5M CONTINUATION ────────────────────────────────────────
+// ─── 8. 5M CONTINUATION ─────────────────────────────────────
 function format5mContinuationSignal(params) {
   const {
     candle,
@@ -350,48 +468,52 @@ function format5mContinuationSignal(params) {
     indicators,
     ratios,
     context,
+    plan,
   } = params;
 
-  let msg = `🌊 <b>[5M SÓNG ĐẨY] 2 CÂY ${direction} LIÊN TIẾP — Cá mập giữ nhịp</b>\n`;
-  msg += `━━━━━━━━━━━━━━━━━━\n\n`;
+  let msg = `🌊 <b>[5M SÓNG ĐẨY] 2 NẾN ${direction} LIÊN TIẾP — Dòng tiền giữ nhịp</b>\n`;
+  msg += `━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
-  msg += `📊 <b>Dòng tiền đều đặn:</b>\n`;
-  msg += `• Cây 1 (${prevCandle.time}): <b>${prevCandle.volume.toLocaleString()}</b> HĐ (${(ratios.prevRatio * 100).toFixed(0)}% MA)\n`;
-  msg += `• Cây 2 (${candle.time}): <b>${candle.volume.toLocaleString()}</b> HĐ (${(ratios.volRatioAvg * 100).toFixed(0)}% MA)\n\n`;
+  msg += `📊 <b>DÒNG TIỀN ĐỀU ĐẶN KHÔNG CẢN:</b>\n`;
+  msg += `• Nến 1 (${prevCandle.time}): <b>${prevCandle.volume.toLocaleString()} HĐ</b> (${(ratios.prevRatio * 100).toFixed(0)}% MA)\n`;
+  msg += `• Nến 2 (${candle.time}): <b>${candle.volume.toLocaleString()} HĐ</b> (${(ratios.volRatioAvg * 100).toFixed(0)}% MA)\n\n`;
 
-  msg += `✅ 2 cây cùng chiều, vol đều đặn 90-110% MA → <b>Không có lực cản!</b>\n`;
-  msg += `👉 <b>TIẾP TỤC GỒNG ${direction}</b> ăn trọn TP1 (+4-6đ) và TP2 (+8-12đ)!\n`;
+  msg += `✅ 2 nến 5p đẩy dứt khoát không có râu ngược ➔ <b>Phe đối lập bỏ vị thế!</b>\n`;
+  msg += `👉 <b>TIẾP TỤC GỒNG VỊ THẾ ${direction}</b> tới mục tiêu lớn!\n`;
 
-  msg += `\n━━━━━━━━━━━━━━━━━━\n`;
-  msg += `<i>🔮 VN30F v6.0 | ${getVnTimeHHMMSS()}</i>`;
+  msg += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+  msg += `<i>🔮 VN30F v7.0 Hybrid | ${getVnTimeHHMMSS()}</i>`;
 
   return msg;
 }
 
-// ─── FOMO WARNING ───────────────────────────────────────────
+// ─── 9. FOMO WARNING (Cải tiến với phân tích Low Liquidity Trap) ──
 function formatFomoWarning(params) {
-  const { candle, indicators, context } = params;
+  const { candle, indicators, context, liquidityInfo, pillarAnalysis } = params;
 
-  let msg = `⛔ <b>CẤM FOMO — Vol ${candle.volume.toLocaleString()} HĐ > 2,800!</b>\n`;
-  msg += `━━━━━━━━━━━━━━━━━━\n\n`;
+  let msg = `⛔ <b>CẤNH BÁO BẪY FOMO & VOL ĐỘT BIẾN!</b>\n`;
+  msg += `━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
-  msg += `📊 Nến ${candle.time}: ${candle.isGreen ? '🟢' : '🔴'} Vol <b>${candle.volume.toLocaleString()}</b> HĐ\n`;
-  msg += `• Body ${candle.body}đ | Râu ↑${candle.upperWick}đ ↓${candle.lowerWick}đ\n\n`;
+  msg += `📊 Nến ${candle.time}: ${candle.isGreen ? '🟢' : '🔴'} Vol <b>${candle.volume.toLocaleString()} HĐ</b>\n`;
+  msg += `• Biên độ thân nến: ${candle.body.toFixed(1)}đ | Râu trên: ${candle.upperWick.toFixed(1)}đ | Râu dưới: ${candle.lowerWick.toFixed(1)}đ\n\n`;
 
-  msg += `⚠️ Vol trên 2,800 HĐ = đám đông hoảng loạn đu bám!\n`;
-  msg += `👉 <b>TUYỆT ĐỐI KHÔNG VÀO LỆNH!</b> Chờ vol hạ nhiệt.\n`;
+  msg += `⚠️ <b>TẠI SAO CẤM ĐU LỆNH:</b>\n`;
+  msg += `• Trong môi trường thanh khoản thấp, vol vọt lên đột biến thường là nến chốt lời của tay to hoặc bẫy quét thanh khoản đỉnh/đáy (Liquidity Sweep)!\n`;
+  msg += `• Khả năng cao giá sẽ đảo chiều hoặc quét ngược 2-4 điểm ngay sau đó.\n`;
 
-  if (indicators && indicators.rsiAnalysis) {
-    msg += `\n📈 RSI: <b>${indicators.rsiAnalysis.val}</b> ${indicators.rsiAnalysis.momentum}\n`;
+  if (pillarAnalysis && pillarAnalysis.manipulationWarnings && pillarAnalysis.manipulationWarnings.length > 0) {
+    msg += `• Phát hiện điều tiết: <i>${pillarAnalysis.manipulationWarnings[0]}</i>\n`;
   }
 
-  msg += `━━━━━━━━━━━━━━━━━━\n`;
-  msg += `<i>🔮 VN30F v6.0 | ${getVnTimeHHMMSS()}</i>`;
+  msg += `\n👉 <b>HÀNH ĐỘNG:</b> Giữ nguyên vị thế hiện tại hoặc chốt bớt lãi, TUYỆT ĐỐI KHÔNG mở mới!\n`;
+
+  msg += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+  msg += `<i>🔮 VN30F v7.0 Hybrid | ${getVnTimeHHMMSS()}</i>`;
 
   return msg;
 }
 
-// ─── DAY PNL SUMMARY ────────────────────────────────────────
+// ─── 10. DAY PNL SUMMARY ─────────────────────────────────────
 function formatDayPnL(tradeLog) {
   if (!tradeLog || tradeLog.length === 0) return '';
   const totalPnl = tradeLog.reduce((s, t) => s + t.pnl, 0);
@@ -404,6 +526,7 @@ module.exports = {
   formatEntryNotification,
   formatExitNotification,
   formatTrapShieldAlert,
+  formatPillarAlert,
   formatClimaxAlert,
   formatFlashCrashAlert,
   format5mBreakoutSignal,

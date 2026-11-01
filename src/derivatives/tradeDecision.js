@@ -1,23 +1,25 @@
 /**
  * ╔═══════════════════════════════════════════════════════════════╗
- * ║   🎯 VN30F v6.0 — Trade Decision Engine                      ║
+ * ║   🎯 VN30F v7.0 — Hybrid 5-Layer Trade Decision Engine        ║
  * ╠═══════════════════════════════════════════════════════════════╣
- * ║  • VSA Pattern Detection (Engulfing, Hammer, Star)            ║
- * ║  • Multi-Factor Scoring System (Confidence %)                 ║
- * ║  • Trade Plan Generator (Entry/SL/TP1/TP2)                   ║
- * ║  • Context-Aware Risk Assessment                              ║
+ * ║  Theo triết lý Trading Playbook VN30F1M Hybrid:              ║
+ * ║  "Không có tín hiệu nào được phép đứng riêng lẻ"              ║
+ * ║                                                               ║
+ * ║  5 Lớp Xác Nhận Toàn Diện:                                   ║
+ * ║  Lớp 1: Cấu Trúc Thị Trường (Market Structure) — 25%          ║
+ * ║  Lớp 2: Vùng Giá Quan Trọng (Key Levels)       — 15%          ║
+ * ║  Lớp 3: Hành Động Giá & Dòng Lệnh (PA + Flow)  — 25%          ║
+ * ║  Lớp 4: Khối Lượng Tương Đối (Relative Vol)    — 15%          ║
+ * ║  Lớp 5: Bối Cảnh Phiên & 7 Trụ Điều Tiết       — 20%          ║
  * ╚═══════════════════════════════════════════════════════════════╝
  */
 
-// ─── VSA PATTERN DETECTION ──────────────────────────────────
+// ─── VSA PATTERN DETECTION (Hỗ trợ Dynamic & Tương đối) ───────
 /**
  * Nhận diện mẫu hình nến kết hợp Volume Spread Analysis
- * 
- * Nguyên tắc playbook:
- * - Pattern đẹp + Vol đạt chuẩn = tín hiệu MẠNH
- * - Pattern đẹp + Vol teo tóp = BẪY LÁI 100%
+ * Hỗ trợ so sánh Volume tương đối (vs MA20 hoặc volThresholds linh hoạt)
  */
-function detectVSAPatterns(candles, volumeThresholds = { min: 2300, max: 2800, trap: 1300 }) {
+function detectVSAPatterns(candles, volumeThresholds = { min: 2000, max: 3200, trap: 1200 }, volRatio = null) {
   if (!candles || candles.length < 3) return [];
 
   const patterns = [];
@@ -25,14 +27,15 @@ function detectVSAPatterns(candles, volumeThresholds = { min: 2300, max: 2800, t
   const prev = candles[candles.length - 2];
   const prevPrev = candles.length >= 3 ? candles[candles.length - 3] : null;
 
-  // ─── 1. BULLISH ENGULFING (Nhấn chìm tăng) ──────────────
-  if (!latest.isGreen === false && latest.isGreen && !prev.isGreen) {
+  // Đánh giá chất lượng Vol linh hoạt
+  const isOptimalVol = volRatio ? (volRatio >= 1.15 && volRatio <= 2.2) : (latest.volume >= volumeThresholds.min && latest.volume <= volumeThresholds.max);
+  const isTrapVol = volRatio ? (volRatio < 0.75) : (latest.volume < volumeThresholds.trap);
+  const volQuality = isTrapVol ? 'TRAP' : (isOptimalVol ? 'OPTIMAL' : (latest.volume >= volumeThresholds.min ? 'STRONG' : 'WEAK'));
+
+  // 1. BULLISH ENGULFING (Nhấn chìm tăng)
+  if (latest.isGreen && !prev.isGreen) {
     const engulfs = latest.body > prev.body && latest.close > prev.open && latest.open < prev.close;
     if (engulfs) {
-      const volQuality = latest.volume >= volumeThresholds.min
-        ? (latest.volume <= volumeThresholds.max ? 'OPTIMAL' : 'STRONG')
-        : (latest.volume < volumeThresholds.trap ? 'TRAP' : 'WEAK');
-
       patterns.push({
         name: 'Bullish Engulfing',
         direction: 'LONG',
@@ -41,20 +44,16 @@ function detectVSAPatterns(candles, volumeThresholds = { min: 2300, max: 2800, t
         isTrap: volQuality === 'TRAP',
         volQuality,
         description: volQuality === 'TRAP'
-          ? `Nến xanh nhấn chìm ĐẸP nhưng Vol CHỈ ${latest.volume} HĐ — 100% BẪY DỤ LONG!`
-          : `Nến xanh nhấn chìm kèm Vol ${latest.volume.toLocaleString()} HĐ — Cầu áp đảo nuốt trọn cung`,
+          ? `Nến xanh nhấn chìm nhưng Vol kiệt (${latest.volume} HĐ) — Cảnh báo BẪY DỤ LONG!`
+          : `Nến xanh nhấn chìm kèm Vol tốt ${latest.volume.toLocaleString()} HĐ — Cầu áp đảo nuốt trọn cung`,
       });
     }
   }
 
-  // ─── 2. BEARISH ENGULFING (Nhấn chìm giảm) ──────────────
+  // 2. BEARISH ENGULFING (Nhấn chìm giảm)
   if (!latest.isGreen && prev.isGreen) {
     const engulfs = latest.body > prev.body && latest.open > prev.close && latest.close < prev.open;
     if (engulfs) {
-      const volQuality = latest.volume >= volumeThresholds.min
-        ? (latest.volume <= volumeThresholds.max ? 'OPTIMAL' : 'STRONG')
-        : (latest.volume < volumeThresholds.trap ? 'TRAP' : 'WEAK');
-
       patterns.push({
         name: 'Bearish Engulfing',
         direction: 'SHORT',
@@ -63,85 +62,76 @@ function detectVSAPatterns(candles, volumeThresholds = { min: 2300, max: 2800, t
         isTrap: volQuality === 'TRAP',
         volQuality,
         description: volQuality === 'TRAP'
-          ? `Nến đỏ nhấn chìm ĐẸP nhưng Vol CHỈ ${latest.volume} HĐ — 100% BẪY DỤ SHORT!`
+          ? `Nến đỏ nhấn chìm nhưng Vol kiệt (${latest.volume} HĐ) — Cảnh báo BẪY DỤ SHORT!`
           : `Nến đỏ nhấn chìm kèm Vol ${latest.volume.toLocaleString()} HĐ — Lực bán áp đảo`,
       });
     }
   }
 
-  // ─── 3. HAMMER (Nến búa — đáy) ──────────────────────────
-  if (latest.lowerWick >= latest.body * 2 && latest.upperWick <= latest.body * 0.5 && latest.body > 0) {
-    // Chỉ có giá trị ở vùng đáy (sau nhịp giảm)
-    const recentDowntrend = candles.slice(-5, -1).filter(c => !c.isGreen).length >= 3;
-    if (recentDowntrend) {
-      const volQuality = latest.volume >= volumeThresholds.min ? 'STRONG' : (latest.volume < volumeThresholds.trap ? 'TRAP' : 'WEAK');
-
+  // 3. HAMMER (Nến búa rút chân ở hỗ trợ / đáy)
+  if (latest.lowerWick >= latest.body * 1.8 && latest.upperWick <= latest.body * 0.6 && latest.body > 0) {
+    const recentDown = candles.slice(-5, -1).filter(c => !c.isGreen).length >= 2;
+    if (recentDown) {
       patterns.push({
         name: 'Hammer',
         direction: 'LONG',
         emoji: '🔨',
-        reliability: volQuality === 'TRAP' ? 'BẪY' : (volQuality === 'STRONG' ? 'CAO' : 'TRUNG BÌNH'),
+        reliability: volQuality === 'TRAP' ? 'BẪY RÚT CHÂN ẢO' : (volQuality === 'STRONG' || volQuality === 'OPTIMAL' ? 'CAO' : 'TRUNG BÌNH'),
         isTrap: volQuality === 'TRAP',
         volQuality,
-        description: volQuality === 'STRONG'
-          ? `Nến búa rút chân ${latest.lowerWick.toFixed(1)}đ + Vol ${latest.volume.toLocaleString()} HĐ — Smart Money quét cạn cung đáy`
-          : `Nến búa rút chân nhưng Vol ${volQuality === 'TRAP' ? 'kiệt quệ' : 'yếu'} — ${volQuality === 'TRAP' ? 'BẪY!' : 'Cần xác nhận thêm'}`,
+        description: volQuality === 'TRAP'
+          ? `Nến búa rút chân nhưng Vol teo tóp (${latest.volume} HĐ) — Dễ là kê lệnh ảo đỡ giá!`
+          : `Nến búa rút chân ${latest.lowerWick.toFixed(1)}đ + Vol ${latest.volume.toLocaleString()} HĐ — Smart Money quét cạn cung đáy`,
       });
     }
   }
 
-  // ─── 4. HANGING MAN (Người treo cổ — đỉnh) ──────────────
-  if (latest.lowerWick >= latest.body * 2 && latest.upperWick <= latest.body * 0.5 && latest.body > 0) {
-    const recentUptrend = candles.slice(-5, -1).filter(c => c.isGreen).length >= 3;
-    if (recentUptrend) {
+  // 4. SHOOTING STAR (Bắn sao râu trên ở cản / đỉnh)
+  if (latest.upperWick >= latest.body * 1.8 && latest.lowerWick <= latest.body * 0.6 && latest.body > 0) {
+    const recentUp = candles.slice(-5, -1).filter(c => c.isGreen).length >= 2;
+    if (recentUp) {
       patterns.push({
-        name: 'Hanging Man',
+        name: 'Shooting Star',
         direction: 'SHORT',
-        emoji: '☠️',
-        reliability: latest.volume >= volumeThresholds.min ? 'CAO' : 'TRUNG BÌNH',
-        isTrap: false,
-        volQuality: latest.volume >= volumeThresholds.min ? 'STRONG' : 'WEAK',
-        description: `Nến treo cổ ở đỉnh — Phe bán thâm nhập sâu. Nến sau gãy giá → Đảo SHORT!`,
+        emoji: '🌠',
+        reliability: volQuality === 'TRAP' ? 'BẪY TIẾT CUNG' : 'CAO',
+        isTrap: volQuality === 'TRAP',
+        volQuality,
+        description: `Bắn sao râu trên ${latest.upperWick.toFixed(1)}đ — Cung đè ép đỉnh mạnh, phe mua kiệt sức`,
       });
     }
   }
 
-  // ─── 5. MORNING STAR (Sao Mai — đáy, 3 nến) ─────────────
-  if (prevPrev && !prevPrev.isGreen && prevPrev.body >= 1.5) {
-    const isDoji = prev.body <= 0.5;
-    const isBullClose = latest.isGreen && latest.body >= 1.5 && latest.close > (prevPrev.open + prevPrev.close) / 2;
+  // 5. MORNING STAR (Sao Mai — Đáy 3 nến)
+  if (prevPrev && !prevPrev.isGreen && prevPrev.body >= 1.2) {
+    const isDoji = prev.body <= 0.6;
+    const isBullClose = latest.isGreen && latest.body >= 1.2 && latest.close > (prevPrev.open + prevPrev.close) / 2;
     if (isDoji && isBullClose) {
-      const volQuality = latest.volume >= volumeThresholds.min ? 'STRONG' : 'WEAK';
       patterns.push({
         name: 'Morning Star',
         direction: 'LONG',
         emoji: '⭐',
-        reliability: volQuality === 'STRONG' ? 'RẤT CAO' : 'TRUNG BÌNH',
+        reliability: volQuality === 'STRONG' || volQuality === 'OPTIMAL' ? 'RẤT CAO' : 'TRUNG BÌNH',
         isTrap: false,
         volQuality,
-        description: volQuality === 'STRONG'
-          ? `Sao Mai 3 nến + Vol bùng nổ ${latest.volume.toLocaleString()} HĐ — Tín hiệu đảo chiều đáy CỰC MẠNH!`
-          : `Sao Mai 3 nến nhưng Vol cần mạnh hơn để xác nhận`,
+        description: `Bộ 3 nến Sao Mai đảo chiều đáy vững chắc kèm Vol ${latest.volume.toLocaleString()} HĐ`,
       });
     }
   }
 
-  // ─── 6. EVENING STAR (Sao Hôm — đỉnh, 3 nến) ────────────
-  if (prevPrev && prevPrev.isGreen && prevPrev.body >= 1.5) {
-    const isDoji = prev.body <= 0.5;
-    const isBearClose = !latest.isGreen && latest.body >= 1.5 && latest.close < (prevPrev.open + prevPrev.close) / 2;
+  // 6. EVENING STAR (Sao Hôm — Đỉnh 3 nến)
+  if (prevPrev && prevPrev.isGreen && prevPrev.body >= 1.2) {
+    const isDoji = prev.body <= 0.6;
+    const isBearClose = !latest.isGreen && latest.body >= 1.2 && latest.close < (prevPrev.open + prevPrev.close) / 2;
     if (isDoji && isBearClose) {
-      const volQuality = latest.volume >= volumeThresholds.min ? 'STRONG' : 'WEAK';
       patterns.push({
         name: 'Evening Star',
         direction: 'SHORT',
         emoji: '🌑',
-        reliability: volQuality === 'STRONG' ? 'RẤT CAO' : 'TRUNG BÌNH',
+        reliability: volQuality === 'STRONG' || volQuality === 'OPTIMAL' ? 'RẤT CAO' : 'TRUNG BÌNH',
         isTrap: false,
         volQuality,
-        description: volQuality === 'STRONG'
-          ? `Sao Hôm 3 nến + Vol đạp gãy nền ${latest.volume.toLocaleString()} HĐ — Xác nhận đỉnh xu hướng!`
-          : `Sao Hôm 3 nến nhưng Vol chưa đủ mạnh`,
+        description: `Bộ 3 nến Sao Hôm gãy nền đỉnh kèm Vol ${latest.volume.toLocaleString()} HĐ`,
       });
     }
   }
@@ -149,26 +139,147 @@ function detectVSAPatterns(candles, volumeThresholds = { min: 2300, max: 2800, t
   return patterns;
 }
 
-// ─── MULTI-FACTOR SCORING SYSTEM ────────────────────────────
+// ─── NHẬN DIỆN THIẾT LẬP VÀO LỆNH CHUẨN PLAYBOOK ───────────────
 /**
- * Tính điểm tin cậy (Confidence %) cho quyết định giao dịch
- * 
- * Components:
- * 1. Volume Score (0-30): Vol trong vùng chuẩn = cao, FOMO/kiệt = thấp
- * 2. Trend Score (0-25): MA9>MA26 + giá sát dải = cao
- * 3. Momentum Score (0-20): MACD + RSI đồng thuận = cao
- * 4. VSA Score (0-15): Pattern + Vol match = cao
- * 5. Context Score (0-10): Session tối ưu, Basis thuận = cao
- * Penalties: Trap Shield, BB block, ngược trend = trừ điểm
+ * Xác định mẫu thiết lập giao dịch theo Playbook VN30F:
+ * 1. TREND_CONTINUATION: Thuận xu hướng khi giá pullback về VWAP/EMA
+ * 2. BREAKOUT_RETEST: Phá cản/hỗ trợ và test thành công
+ * 3. FAILED_BREAKOUT: Bẫy breakout giả, đảo chiều
+ * 4. RANGE_REVERSAL: Bật từ biên hộp Sideway
+ */
+function detectPlaybookSetup(params) {
+  const {
+    candle,
+    direction,
+    marketStructureData,
+    flowData,
+    vsaPatterns = [],
+  } = params;
+
+  if (!marketStructureData || !candle) {
+    return { type: 'STANDARD_MOMENTUM', label: 'Xung lực thông thường', quality: 'NORMAL' };
+  }
+
+  const { vwap, ema20, currentZone, waveStructure, structuralBreak } = marketStructureData;
+  const isLong = direction === 'LONG';
+
+  // 1. FAILED BREAKOUT (Cực kỳ giá trị trên VN30F do lái hay vẽ bẫy quét SL)
+  if (structuralBreak === 'FAILED_BREAKOUT_BEARISH' && !isLong) {
+    return {
+      type: 'FAILED_BREAKOUT',
+      label: '⚡ FAILED BREAKOUT (Bẫy vượt đỉnh xả ngược)',
+      quality: 'HIGH',
+      description: 'Giá vượt đỉnh/VAH ảo nhưng bị đạp ngược ngay lập tức, khối ngoại hoặc lái xả hàng',
+    };
+  }
+
+  if (flowData && flowData.absorption && flowData.absorption.detected) {
+    if (isLong && flowData.absorption.type === 'BOTTOM_ABSORPTION') {
+      return {
+        type: 'FAILED_BREAKOUT',
+        label: '⚡ SPRING / FAILED BREAKDOWN (Quét đáy gom hàng)',
+        quality: 'HIGH',
+        description: 'Giá nhúng thủng hỗ trợ nhưng bị tay to hấp thụ toàn bộ cung và rút chân',
+      };
+    }
+    if (!isLong && flowData.absorption.type === 'TOP_ABSORPTION') {
+      return {
+        type: 'FAILED_BREAKOUT',
+        label: '⚡ UPTHRUST / FAILED BREAKOUT (Quét đỉnh xả hàng)',
+        quality: 'HIGH',
+        description: 'Giá rướn vượt đỉnh nhưng gặp lệnh bán đối ứng chặn đứng hoàn toàn',
+      };
+    }
+  }
+
+  // 2. BREAKOUT & RETEST
+  if (currentZone === 'AT_SUPPORT' && isLong && waveStructure === 'HIGHER_HIGHS_HIGHER_LOWS') {
+    return {
+      type: 'BREAKOUT_RETEST',
+      label: '🎯 BREAKOUT & RETEST (Test thành công hỗ trợ mới)',
+      quality: 'HIGH',
+      description: 'Giá vượt kháng cự cũ, quay lại kiểm định thành công và bật tăng tiếp',
+    };
+  }
+  if (currentZone === 'AT_RESISTANCE' && !isLong && waveStructure === 'LOWER_HIGHS_LOWER_LOWS') {
+    return {
+      type: 'BREAKOUT_RETEST',
+      label: '🎯 BREAKDOWN & RETEST (Test thành công cản mới)',
+      quality: 'HIGH',
+      description: 'Giá thủng hỗ trợ cũ, hồi lên test lại cản và bị ép bán tiếp',
+    };
+  }
+
+  // 3. TREND CONTINUATION (Hồi về VWAP / EMA20 trong xu hướng mạnh)
+  if (vwap && ema20) {
+    const nearVWAP = Math.abs(candle.close - vwap) <= 1.5;
+    const nearEMA20 = Math.abs(candle.close - ema20) <= 1.2;
+
+    if (isLong && waveStructure === 'HIGHER_HIGHS_HIGHER_LOWS' && (nearVWAP || nearEMA20) && candle.close >= vwap) {
+      return {
+        type: 'TREND_CONTINUATION',
+        label: '🌊 TREND CONTINUATION (Hồi về VWAP/EMA20 bật tiếp)',
+        quality: 'HIGH',
+        description: 'Xu hướng tăng rõ ràng (Nâng đỉnh nâng đáy), giá retest VWAP/EMA20 an toàn',
+      };
+    }
+    if (!isLong && waveStructure === 'LOWER_HIGHS_LOWER_LOWS' && (nearVWAP || nearEMA20) && candle.close <= vwap) {
+      return {
+        type: 'TREND_CONTINUATION',
+        label: '🌊 TREND CONTINUATION (Hồi về VWAP/EMA20 dội xuống)',
+        quality: 'HIGH',
+        description: 'Xu hướng giảm rõ ràng (Hạ đỉnh hạ đáy), giá hồi chạm cản VWAP/EMA20 bị ép bán',
+      };
+    }
+  }
+
+  // 4. RANGE REVERSAL (Đánh trong biên đi ngang)
+  if (currentZone === 'AT_SUPPORT' && isLong) {
+    return {
+      type: 'RANGE_REVERSAL',
+      label: '↔️ RANGE REVERSAL (Bật lại từ biên dưới hộp)',
+      quality: 'NORMAL',
+      description: 'Thị trường sideway, giá chạm cận dưới hỗ trợ/VAL có phản ứng gom',
+    };
+  }
+  if (currentZone === 'AT_RESISTANCE' && !isLong) {
+    return {
+      type: 'RANGE_REVERSAL',
+      label: '↔️ RANGE REVERSAL (Dội lại từ biên trên hộp)',
+      quality: 'NORMAL',
+      description: 'Thị trường sideway, giá chạm cận trên kháng cự/VAH có phản ứng bán',
+    };
+  }
+
+  return {
+    type: 'TREND_FOLLOWING',
+    label: '📈 BÁM THEO XUNG LỰC (Trend Following)',
+    quality: 'NORMAL',
+  };
+}
+
+// ─── HYBRID 5-LAYER CONFIDENCE SCORING (0 - 100) ──────────────
+/**
+ * Chấm điểm toàn diện 5 lớp theo chuẩn Playbook VN30F:
+ * Layer 1 (25%): Market Structure (Trend bias, Wave structure, Multi-TF alignment)
+ * Layer 2 (15%): Key Levels (VWAP, POC, VAH, VAL, Support/Resistance distance)
+ * Layer 3 (25%): Price Action & Order Flow (VSA patterns, Delta/CVD, Absorption, Sweep)
+ * Layer 4 (15%): Relative Volume Quality (Dynamic thresholds, Vol MA ratio)
+ * Layer 5 (20%): Context & 7 Pillar Stocks (Session gold hours, Basis, Foreign, 7 Trụ)
  */
 function calculateConfidence(params) {
   const {
     candle,
-    direction,        // 'LONG' or 'SHORT'
-    indicators,       // { ma9, ma26, ma20, ma50, bb, ma9_26Analysis, macdAnalysis, rsiAnalysis }
-    vsaPatterns,      // from detectVSAPatterns()
-    marketContext,    // from buildMarketContext()
-    volumeThresholds, // { min: 2300, max: 2800, fomo: 2800, climax: 3000, trap: 1300 }
+    direction,            // 'LONG' or 'SHORT'
+    indicators,           // { ma9, ma26, ma20, ma50, bb, ma9_26Analysis, macdAnalysis, rsiAnalysis }
+    vsaPatterns = [],
+    marketContext,
+    volumeThresholds,
+    volRatio = null,      // Tỷ lệ Vol nến so với Vol MA20
+    marketStructureData,  // Từ marketStructure.buildPriceMap()
+    flowData,             // Từ flowEngine.analyzeFlow() + detectAbsorption()
+    pillarAnalysis,       // Từ pillarMonitor.analyzePillars()
+    setupInfo,            // Từ detectPlaybookSetup()
   } = params;
 
   let score = 0;
@@ -176,261 +287,389 @@ function calculateConfidence(params) {
   const warnings = [];
   const isLong = direction === 'LONG';
 
-  // ─── 1. VOLUME SCORE (0-30) ──────────────────────────────
-  const vol = candle.volume;
-  const vt = volumeThresholds || { min: 2300, max: 2800, fomo: 2800, climax: 3000, trap: 1300 };
+  // ═════════════════════════════════════════════════════════════
+  // LỚP 1: CẤU TRÚC THỊ TRƯỜNG (MARKET STRUCTURE) — TỐI ĐA 25 ĐIỂM
+  // ═════════════════════════════════════════════════════════════
+  let layer1Score = 0;
+  if (marketStructureData) {
+    const { waveStructure, trendBias } = marketStructureData;
 
-  if (vol >= vt.min && vol <= vt.max) {
-    score += 28;
-    reasons.push(`Vol ${vol.toLocaleString()} HĐ — vùng chuẩn cá mập đẩy giá`);
-  } else if (vol >= vt.max && vol <= vt.climax) {
-    score += 18;
-    reasons.push(`Vol ${vol.toLocaleString()} HĐ — mạnh nhưng gần vùng FOMO`);
-  } else if (vol >= vt.trap && vol < vt.min) {
-    score += 8;
-    warnings.push(`Vol ${vol.toLocaleString()} HĐ — dưới chuẩn, có thể đang bẫy`);
-  } else if (vol < vt.trap) {
-    score -= 15;
-    warnings.push(`⚠️ Vol CHỈ ${vol.toLocaleString()} HĐ — VOL KIỆT QUỆ, RẤT CÓ THỂ LÀ BẪY LÁI!`);
-  }
+    // A. Sóng đỉnh đáy (HH/HL vs LH/LL)
+    if (isLong && waveStructure === 'HIGHER_HIGHS_HIGHER_LOWS') {
+      layer1Score += 14;
+      reasons.push('Cấu trúc nến: Nâng đỉnh - Nâng đáy (Higher Highs / Higher Lows)');
+    } else if (!isLong && waveStructure === 'LOWER_HIGHS_LOWER_LOWS') {
+      layer1Score += 14;
+      reasons.push('Cấu trúc nến: Hạ đỉnh - Hạ đáy (Lower Highs / Lower Lows)');
+    } else if (waveStructure === 'NEUTRAL') {
+      layer1Score += 6;
+      reasons.push('Cấu trúc nến: Biên độ dao động tích lũy (Sideway)');
+    } else {
+      // Đánh ngược cấu trúc sóng
+      layer1Score -= 8;
+      warnings.push(`⚠️ Đánh ngược cấu trúc sóng đỉnh/đáy (${waveStructure})`);
+    }
 
-  // ─── 2. TREND SCORE (0-25) ───────────────────────────────
-  if (indicators) {
+    // B. Xu hướng tổng thể (trendBias)
+    if (isLong && (trendBias === 'BULLISH' || trendBias === 'MILD_BULLISH')) {
+      layer1Score += 11;
+      reasons.push(`Trend Bias: Thuận chiều TĂNG (${trendBias})`);
+    } else if (!isLong && (trendBias === 'BEARISH' || trendBias === 'MILD_BEARISH')) {
+      layer1Score += 11;
+      reasons.push(`Trend Bias: Thuận chiều GIẢM (${trendBias})`);
+    } else if (trendBias === 'NEUTRAL') {
+      layer1Score += 5;
+    } else {
+      layer1Score -= 7;
+      warnings.push(`⚠️ Ngược Trend Bias tổng thể (${trendBias})`);
+    }
+  } else if (indicators && indicators.ma9_26Analysis) {
+    // Fallback nếu thiếu marketStructureData
     const ma = indicators.ma9_26Analysis;
-    if (ma) {
-      if (isLong && ma.isUptrend) {
-        score += 20;
-        reasons.push('MA9 > MA26 — Cấu trúc Uptrend');
-        if (ma.bandPos === 'upper_sat') {
-          score += 5;
-          reasons.push('Giá sát dải trên — Vị thế thuận trend tối ưu');
-        }
-      } else if (!isLong && ma.isDowntrend) {
-        score += 20;
-        reasons.push('MA9 < MA26 — Cấu trúc Downtrend');
-        if (ma.bandPos === 'lower_sat') {
-          score += 5;
-          reasons.push('Giá sát dải dưới — Vị thế thuận trend tối ưu');
-        }
-      } else if (isLong && ma.isDowntrend) {
-        score -= 10;
-        warnings.push('⚠️ Mở LONG ngược Downtrend MA9 < MA26');
-      } else if (!isLong && ma.isUptrend) {
-        score -= 10;
-        warnings.push('⚠️ Mở SHORT ngược Uptrend MA9 > MA26');
+    if (isLong && ma.isUptrend) {
+      layer1Score += 20;
+      reasons.push('MA9 > MA26 — Cấu trúc Uptrend');
+    } else if (!isLong && ma.isDowntrend) {
+      layer1Score += 20;
+      reasons.push('MA9 < MA26 — Cấu trúc Downtrend');
+    } else {
+      layer1Score -= 8;
+      warnings.push('⚠️ Ngược xu hướng MA ngắn hạn');
+    }
+  }
+  score += Math.max(0, Math.min(25, layer1Score));
+
+  // ═════════════════════════════════════════════════════════════
+  // LỚP 2: VÙNG GIÁ QUAN TRỌNG (KEY LEVELS & VWAP) — TỐI ĐA 15 ĐIỂM
+  // ═════════════════════════════════════════════════════════════
+  let layer2Score = 0;
+  if (marketStructureData) {
+    const { vwap, poc, vah, val, currentZone } = marketStructureData;
+    const price = candle.close;
+
+    // A. Vị trí so với VWAP (Neo giá tổ chức)
+    if (vwap) {
+      if (isLong && price >= vwap) {
+        layer2Score += 8;
+        reasons.push(`Giá ${price.toFixed(1)} nằm TRÊN VWAP (${vwap.toFixed(1)}) — Phe Mua kiểm soát sân chơi`);
+      } else if (!isLong && price <= vwap) {
+        layer2Score += 8;
+        reasons.push(`Giá ${price.toFixed(1)} nằm DƯỚI VWAP (${vwap.toFixed(1)}) — Phe Bán kiểm soát sân chơi`);
+      } else {
+        layer2Score -= 4;
+        warnings.push(`⚠️ Mở lệnh ngược phía VWAP (${vwap.toFixed(1)})`);
+      }
+    }
+
+    // B. Vị trí so với Volume Profile (VAH / VAL / POC)
+    if (vah && val) {
+      if (isLong && currentZone === 'AT_SUPPORT') {
+        layer2Score += 7;
+        reasons.push(`Vị thế tại vùng Hỗ trợ / VAL (${val.toFixed(1)}) — Điểm vào an toàn`);
+      } else if (!isLong && currentZone === 'AT_RESISTANCE') {
+        layer2Score += 7;
+        reasons.push(`Vị thế tại vùng Kháng cự / VAH (${vah.toFixed(1)}) — Điểm vào an toàn`);
+      } else if (isLong && currentZone === 'AT_RESISTANCE') {
+        layer2Score -= 6;
+        warnings.push(`🚨 Mở LONG ngay sát Cản / VAH (${vah.toFixed(1)}) — Dễ dính cản dội lại!`);
+      } else if (!isLong && currentZone === 'AT_SUPPORT') {
+        layer2Score -= 6;
+        warnings.push(`🚨 Mở SHORT ngay sát Hỗ trợ / VAL (${val.toFixed(1)}) — Dễ dính hỗ trợ bật lên!`);
+      } else {
+        layer2Score += 4;
       }
     }
   }
+  score += Math.max(0, Math.min(15, layer2Score));
 
-  // ─── 3. MOMENTUM SCORE (0-20) ────────────────────────────
-  if (indicators && indicators.macdAnalysis && indicators.rsiAnalysis) {
-    const macd = indicators.macdAnalysis;
-    const rsi = indicators.rsiAnalysis;
+  // ═════════════════════════════════════════════════════════════
+  // LỚP 3: HÀNH ĐỘNG GIÁ & DÒNG LỆNH (PA & FLOW) — TỐI ĐA 25 ĐIỂM
+  // ═════════════════════════════════════════════════════════════
+  let layer3Score = 0;
 
-    // Đồng thuận MACD + RSI
-    const macdBull = macd.isSlopeUp;
-    const rsiBull = rsi.isSlopeUp;
-
-    if (isLong && macdBull && rsiBull) {
-      score += 18;
-      reasons.push('MACD + RSI đồng thuận hướng lên → Xung lực MẠNH');
-    } else if (!isLong && !macdBull && !rsiBull) {
-      score += 18;
-      reasons.push('MACD + RSI đồng thuận hướng xuống → Xung lực BÁN mạnh');
-    } else if ((isLong && macdBull) || (!isLong && !macdBull)) {
-      score += 8;
-      warnings.push('Xung lực phân hóa (MACD thuận, RSI chưa)');
-    } else {
-      score -= 5;
-      warnings.push('⚠️ Xung lực PHÂN KỲ — MACD và RSI không đồng thuận');
-    }
-
-    // Phân kỳ MACD
-    if (isLong && macd.hasBullishDiv) {
-      score += 5;
-      reasons.push('⚡ Phân kỳ dương MACD — Đáy nâng, sắp bật!');
-    }
-    if (!isLong && macd.hasBearishDiv) {
-      score += 5;
-      reasons.push('⚡ Phân kỳ âm MACD — Đỉnh hạ, sắp sập!');
-    }
-    if (isLong && macd.hasBearishDiv) {
-      score -= 10;
-      warnings.push('🚨 Phân kỳ ÂM MACD khi mở LONG — Đỉnh giá tăng nhưng MACD giảm!');
-    }
-
-    // RSI quá mua/quá bán
-    if (isLong && rsi.curRSI >= 70) {
-      score -= 12;
-      warnings.push('🚨 RSI QUÁ MUA (≥70) — CẤM mở LONG mới!');
-    }
-    if (!isLong && rsi.curRSI <= 30) {
-      score -= 12;
-      warnings.push('🚨 RSI QUÁ BÁN (≤30) — CẤM đuổi SHORT!');
-    }
-  }
-
-  // ─── 4. VSA PATTERN SCORE (0-15) ─────────────────────────
+  // A. VSA Candlestick Patterns
   if (vsaPatterns && vsaPatterns.length > 0) {
-    const matchingPatterns = vsaPatterns.filter(p => p.direction === direction);
-    const trapPatterns = vsaPatterns.filter(p => p.direction === direction && p.isTrap);
-    const oppositePatterns = vsaPatterns.filter(p => p.direction !== direction && !p.isTrap);
+    const matching = vsaPatterns.filter(p => p.direction === direction);
+    const trap = vsaPatterns.filter(p => p.direction === direction && p.isTrap);
+    const opposite = vsaPatterns.filter(p => p.direction !== direction && !p.isTrap);
 
-    for (const p of matchingPatterns) {
+    for (const p of matching) {
       if (p.isTrap) {
-        score -= 20;
+        layer3Score -= 12;
         warnings.push(`🚨 ${p.name}: ${p.description}`);
-      } else if (p.volQuality === 'STRONG' || p.volQuality === 'OPTIMAL') {
-        score += 12;
+      } else if (p.volQuality === 'OPTIMAL' || p.volQuality === 'STRONG') {
+        layer3Score += 10;
         reasons.push(`${p.emoji} ${p.name}: ${p.description}`);
       } else {
-        score += 5;
-        reasons.push(`${p.emoji} ${p.name} (yếu): ${p.description}`);
+        layer3Score += 5;
+        reasons.push(`${p.emoji} ${p.name}: ${p.description}`);
       }
     }
 
-    for (const p of oppositePatterns) {
-      score -= 8;
-      warnings.push(`⚠️ Mẫu hình ngược chiều: ${p.name} (${p.direction})`);
+    for (const p of opposite) {
+      layer3Score -= 8;
+      warnings.push(`⚠️ Mẫu hình nến ngược chiều: ${p.name}`);
     }
   }
 
-  // ─── 5. CONTEXT SCORE (0-10) ─────────────────────────────
-  if (marketContext) {
-    // Session bonus & warnings
-    if (marketContext.isOptimalTime) {
-      score += 8;
-      reasons.push('🎯 Khung giờ vàng sáng (09:15-11:30) — Tập trung tối đa, xu hướng mượt ăn điểm biên lớn');
-    } else if (marketContext.isAfternoonTrapZone) {
-      score -= 10;
-      warnings.push('⚠️ Phiên chiều rất dễ Bull Trap / đạp bẫy — Kỷ luật Vol tuyệt đối!');
-    } else if (marketContext.shouldMaxProtection) {
-      score -= 20;
-      warnings.push('💀 VÙNG TỬ THẦN (14h-14h25) — Dễ đạp thủng 15-20đ trong vài giây, bảo vệ vốn số 1!');
-    } else if (marketContext.shouldBlockEntry) {
-      score -= 25;
-      warnings.push('🚫 Khung giờ CẤM mở vị thế (ATO/Nghỉ trưa/Extreme Risk)');
+  // B. Flow Engine (Delta / CVD / Absorption)
+  if (flowData) {
+    const { delta, cvd, absorption } = flowData;
+
+    // Delta & CVD
+    if (delta) {
+      if (isLong && delta.trend === 'BULLISH') {
+        layer3Score += 8;
+        reasons.push('Dòng lệnh Flow: Delta mua chủ động áp đảo');
+      } else if (!isLong && delta.trend === 'BEARISH') {
+        layer3Score += 8;
+        reasons.push('Dòng lệnh Flow: Delta bán chủ động áp đảo');
+      } else if ((isLong && delta.trend === 'BEARISH') || (!isLong && delta.trend === 'BULLISH')) {
+        layer3Score -= 5;
+        warnings.push(`⚠️ Delta dòng lệnh đang đi ngược chiều tín hiệu (${delta.trend})`);
+      }
     }
 
-    // Basis alignment
+    // Absorption (Hấp thụ)
+    if (absorption && absorption.detected) {
+      if (isLong && absorption.type === 'BOTTOM_ABSORPTION') {
+        layer3Score += 7;
+        reasons.push('⚡ Tín hiệu HẤP THỤ ĐÁY: Tay to nuốt sạch lệnh bán hoảng loạn');
+      } else if (!isLong && absorption.type === 'TOP_ABSORPTION') {
+        layer3Score += 7;
+        reasons.push('⚡ Tín hiệu HẤP THỤ ĐỈNH: Tay to chặn gom/xả trần dập tắt lực mua');
+      }
+    }
+  }
+
+  // C. Chất lượng thân nến và râu nến
+  if (candle.body >= 1.5) {
+    if (candle.isGreen && candle.upperWick <= candle.body * 0.4 && isLong) {
+      layer3Score += 5;
+      reasons.push(`Nến đặc tăng ${candle.body.toFixed(1)}đ, râu trên ngắn — Dứt khoát`);
+    } else if (!candle.isGreen && candle.lowerWick <= candle.body * 0.4 && !isLong) {
+      layer3Score += 5;
+      reasons.push(`Nến đặc giảm ${candle.body.toFixed(1)}đ, râu dưới ngắn — Lực bán dứt khoát`);
+    }
+  }
+  score += Math.max(0, Math.min(25, layer3Score));
+
+  // ═════════════════════════════════════════════════════════════
+  // LỚP 4: KHỐI LƯỢNG TƯƠNG ĐỐI (RELATIVE VOLUME) — TỐI ĐA 15 ĐIỂM
+  // ═════════════════════════════════════════════════════════════
+  let layer4Score = 0;
+  const vol = candle.volume;
+  const vt = volumeThresholds || { min: 2000, max: 2800, fomo: 2800, climax: 3200, trap: 1200 };
+
+  // Ưu tiên tỷ lệ Vol Ratio nếu có
+  if (volRatio !== null && volRatio !== undefined) {
+    if (volRatio >= 1.2 && volRatio <= 2.2) {
+      layer4Score += 15;
+      reasons.push(`Vol tương đối đạt chuẩn: ${(volRatio * 100).toFixed(0)}% MA20 Vol — Dòng tiền đẩy thực`);
+    } else if (volRatio > 2.2 && volRatio <= 3.0) {
+      layer4Score += 9;
+      warnings.push(`Vol tăng đột biến ${(volRatio * 100).toFixed(0)}% MA20 Vol — Cẩn trọng FOMO`);
+    } else if (volRatio > 3.0) {
+      layer4Score -= 5;
+      warnings.push('🚨 Vol Climax quá mức (>300% MA20) — Dễ tạo đỉnh/đáy cao trào!');
+    } else if (volRatio < 0.7) {
+      layer4Score -= 8;
+      warnings.push(`⚠️ Vol cạn chỉ ${(volRatio * 100).toFixed(0)}% MA20 — Tránh bẫy kéo/xả thanh khoản thấp`);
+    } else {
+      layer4Score += 7;
+    }
+  } else {
+    // Ngưỡng dynamic thresholds
+    if (vol >= vt.min && vol <= vt.max) {
+      layer4Score += 15;
+      reasons.push(`Vol ${vol.toLocaleString()} HĐ — Vùng chuẩn đẩy giá`);
+    } else if (vol > vt.max && vol <= vt.climax) {
+      layer4Score += 9;
+      warnings.push(`Vol ${vol.toLocaleString()} HĐ — Biên độ lớn, cẩn trọng đuổi giá`);
+    } else if (vol < vt.trap) {
+      layer4Score -= 10;
+      warnings.push(`🚨 Vol chỉ ${vol.toLocaleString()} HĐ — THANH KHOẢN RẤT THẤP, NGUY CƠ BẪY LÁI!`);
+    } else {
+      layer4Score += 6;
+    }
+  }
+  score += Math.max(0, Math.min(15, layer4Score));
+
+  // ═════════════════════════════════════════════════════════════
+  // LỚP 5: BỐI CẢNH & 7 TRỤ ĐIỀU TIẾT — TỐI ĐA 20 ĐIỂM
+  // (10đ Bối cảnh + 10đ Đồng thuận Trụ & Chống Kéo Trụ Ảo)
+  // ═════════════════════════════════════════════════════════════
+  let layer5Score = 0;
+
+  // A. Khung Giờ & Bối Cảnh Phiên (10đ)
+  if (marketContext) {
+    if (marketContext.isOptimalTime) {
+      layer5Score += 6;
+      reasons.push('Khung giờ vàng thanh thoát (09:15-11:30) — Sóng mượt, biên chuẩn');
+    } else if (marketContext.isAfternoonTrapZone) {
+      layer5Score -= 4;
+      warnings.push('⚠️ Phiên chiều nhạy cảm bẫy giật hai đầu — Đòi hỏi xác nhận đa khung');
+    } else if (marketContext.shouldMaxProtection) {
+      layer5Score -= 15;
+      warnings.push('💀 VÙNG NGUY HIỂM (14h-14h25): Tránh vị thế mới, ưu tiên quản trị vốn');
+    }
+
+    // Basis F1 vs VN30
     if (marketContext.basis) {
       if (isLong && marketContext.basis.isBullish) {
-        score += 5;
+        layer5Score += 4;
         reasons.push(`Basis thuận Long: ${marketContext.basis.text}`);
       } else if (!isLong && marketContext.basis.isBearish) {
-        score += 5;
+        layer5Score += 4;
         reasons.push(`Basis thuận Short: ${marketContext.basis.text}`);
       }
     }
+  }
 
-    // NN alignment
-    if (marketContext.supplyDemand) {
-      if (isLong && marketContext.supplyDemand.isNNBullish) {
-        score += 5;
-        reasons.push('NN Long ròng — Smart Money cùng chiều');
-      } else if (!isLong && marketContext.supplyDemand.isNNBearish) {
-        score += 5;
-        reasons.push('NN Short ròng — Smart Money cùng chiều');
+  // B. Giám Sát 7 Mã Trụ: VIC, VPL, VHM, MCH, VCB, GAS, VJC (10đ)
+  if (pillarAnalysis) {
+    const { consensus, manipulationWarnings, divergenceWithF1 } = pillarAnalysis;
+
+    if (isLong && (consensus === 'LONG' || consensus === 'STRONG_LONG')) {
+      layer5Score += 10;
+      reasons.push(`🏛️ 7 Trụ đồng thuận XANH (${pillarAnalysis.bullishCount}/7 mã) — Hậu thuẫn Long vững`);
+    } else if (!isLong && (consensus === 'SHORT' || consensus === 'STRONG_SHORT')) {
+      layer5Score += 10;
+      reasons.push(`🏛️ 7 Trụ đồng thuận ĐỎ (${pillarAnalysis.bearishCount}/7 mã) — Hậu thuẫn Short vững`);
+    } else if (consensus === 'CONFLICT') {
+      layer5Score -= 3;
+      warnings.push('⚡ Nhóm trụ điều tiết giằng co — Thị trường có hiện tượng giữ con này đạp con kia');
+    }
+
+    // Phạt nặng nếu phát hiện bẫy kéo trụ ảo hoặc phân kỳ với F1
+    if (manipulationWarnings && manipulationWarnings.length > 0) {
+      layer5Score -= 12;
+      for (const mw of manipulationWarnings.slice(0, 2)) {
+        warnings.push(mw);
       }
+    }
+
+    if (divergenceWithF1) {
+      layer5Score -= 15;
+      warnings.push('🚨 CẢNH BÁO BẪY: F1 đang chạy ngược chiều với phần lớn 7 mã trụ!');
     }
   }
 
-  // ─── 6. CANDLE QUALITY ───────────────────────────────────
-  // Thân nến đặc, ít râu = tín hiệu mạnh
-  if (candle.body >= 2.0 && candle.upperWick < candle.body && candle.lowerWick < candle.body) {
-    score += 5;
-    reasons.push(`Nến thân đặc ${candle.body}đ, ít râu — Dòng tiền dứt khoát`);
-  }
+  score += Math.max(0, Math.min(20, layer5Score));
 
-  // ─── NORMALIZE ───────────────────────────────────────────
-  const confidence = Math.max(0, Math.min(100, score));
+  // ═════════════════════════════════════════════════════════════
+  // CHUẨN HÓA ĐIỂM TIN CẬY & QUYẾT ĐỊNH
+  // ═════════════════════════════════════════════════════════════
+  const confidence = Math.max(0, Math.min(100, Math.round(score)));
 
   let level = 'LOW';
   let levelEmoji = '⚪';
   if (confidence >= 80) { level = 'HIGH'; levelEmoji = '🔥'; }
-  else if (confidence >= 60) { level = 'MEDIUM'; levelEmoji = '⚡'; }
-  else if (confidence >= 40) { level = 'LOW'; levelEmoji = '⚠️'; }
+  else if (confidence >= 65) { level = 'MEDIUM'; levelEmoji = '⚡'; }
+  else if (confidence >= 45) { level = 'LOW'; levelEmoji = '⚠️'; }
   else { level = 'VERY_LOW'; levelEmoji = '🚫'; }
+
+  const criticalWarnings = warnings.filter(w => w.includes('🚨') || w.includes('💀'));
+  const shouldTrade = confidence >= 60 && criticalWarnings.length === 0;
+  const shouldAvoid = confidence < 50 || criticalWarnings.length > 0;
 
   return {
     confidence,
     level,
     levelEmoji,
     direction,
-    reasons: reasons.slice(0, 5), // Top 5 lý do
-    warnings: warnings.slice(0, 3), // Top 3 cảnh báo
-    shouldTrade: confidence >= 55 && warnings.filter(w => w.includes('🚨')).length === 0,
-    shouldAvoid: confidence < 40 || warnings.filter(w => w.includes('🚨')).length > 0,
+    setupType: setupInfo ? setupInfo.type : 'STANDARD',
+    setupLabel: setupInfo ? setupInfo.label : 'Xung lực chuẩn',
+    reasons: reasons.slice(0, 5),
+    warnings: warnings.slice(0, 3),
+    shouldTrade,
+    shouldAvoid,
+    criticalWarnings,
   };
 }
 
-// ─── TRADE PLAN GENERATOR ───────────────────────────────────
+// ─── DYNAMIC TRADE PLAN GENERATOR (ATR & Key Levels) ──────────
 /**
- * Tạo plan giao dịch chi tiết
+ * Tạo kế hoạch vào lệnh / SL / TP thích ứng theo biên dao động thực tế
+ * Không bao giờ dùng SL cố định phi lý
  */
-function generateTradePlan(entry, direction, timeframe = '1M') {
+function generateTradePlan(entry, direction, timeframe = '1M', options = {}) {
+  const {
+    atr = 2.0,
+    keyLevels = [],
+    liquidityMode = 'SCALP', // 'SCALP' (< 16k tỷ) hoặc 'TREND' (>= 16k tỷ)
+    setupType = 'STANDARD',
+  } = options;
+
   const isLong = direction === 'LONG';
 
-  if (timeframe === '5M') {
-    return {
-      entry,
-      sl: isLong ? entry - 2.8 : entry + 2.8,
-      tp1: isLong ? entry + 5.0 : entry - 5.0,
-      tp2: isLong ? entry + 10.0 : entry - 10.0,
-      slDistance: 2.8,
-      tp1Distance: 5.0,
-      tp2Distance: 10.0,
-      rr1: '1:1.8',
-      rr2: '1:3.6',
-      scaleOutPct: 50,
-      note: 'Chốt 50% tại TP1, dời SL về hòa vốn, gồng 50% còn lại tới TP2',
-    };
+  // 1. Tính toán khoảng cách SL dựa trên Key Level gần nhất hoặc ATR
+  // Giới hạn an toàn: SL tối thiểu 1.8đ, tối đa 2.8đ MTL (chuẩn Playbook phái sinh VN)
+  let slDistance = Math.max(1.8, Math.min(2.8, parseFloat((atr * 1.1).toFixed(1))));
+
+  // Nếu có Key Level gần đó, đặt SL ngoài mức đó 0.6đ buffer
+  if (keyLevels && keyLevels.length > 0) {
+    if (isLong) {
+      const nearestSupport = keyLevels.filter(l => l.price < entry).sort((a, b) => b.price - a.price)[0];
+      if (nearestSupport && (entry - nearestSupport.price) <= 2.8) {
+        slDistance = Math.max(1.8, Math.min(2.8, parseFloat((entry - nearestSupport.price + 0.6).toFixed(1))));
+      }
+    } else {
+      const nearestResist = keyLevels.filter(l => l.price > entry).sort((a, b) => a.price - b.price)[0];
+      if (nearestResist && (nearestResist.price - entry) <= 2.8) {
+        slDistance = Math.max(1.8, Math.min(2.8, parseFloat((nearestResist.price - entry + 0.6).toFixed(1))));
+      }
+    }
   }
 
-  // 1M Scalping
+  // 2. Tính toán TP1 và TP2 theo chế độ thanh khoản
+  let tp1Distance = 0;
+  let tp2Distance = 0;
+
+  if (liquidityMode === 'SCALP') {
+    // Thị trường thanh khoản thấp (< 16k tỷ) → Ăn nhanh 3 - 5 điểm, bảo toàn vốn
+    tp1Distance = parseFloat(Math.max(2.5, slDistance * 1.25).toFixed(1));
+    tp2Distance = parseFloat(Math.max(4.5, slDistance * 2.2).toFixed(1));
+  } else {
+    // Thị trường thanh khoản tốt (>= 16k tỷ) → Cho phép gồng trend với Trailing Stop
+    tp1Distance = parseFloat(Math.max(3.5, slDistance * 1.5).toFixed(1));
+    tp2Distance = parseFloat(Math.max(7.0, slDistance * 3.0).toFixed(1));
+  }
+
+  const sl = isLong ? parseFloat((entry - slDistance).toFixed(1)) : parseFloat((entry + slDistance).toFixed(1));
+  const tp1 = isLong ? parseFloat((entry + tp1Distance).toFixed(1)) : parseFloat((entry - tp1Distance).toFixed(1));
+  const tp2 = isLong ? parseFloat((entry + tp2Distance).toFixed(1)) : parseFloat((entry - tp2Distance).toFixed(1));
+
   return {
-    entry,
-    sl: isLong ? entry - 2.0 : entry + 2.0,
-    tp1: isLong ? entry + 2.5 : entry - 2.5,
-    tp2: isLong ? entry + 5.0 : entry - 5.0,
-    slDistance: 2.0,
-    tp1Distance: 2.5,
-    tp2Distance: 5.0,
-    rr1: '1:1.25',
-    rr2: '1:2.5',
+    entry: parseFloat(entry.toFixed(1)),
+    sl,
+    tp1,
+    tp2,
+    slDistance,
+    tp1Distance,
+    tp2Distance,
+    rr1: `1:${(tp1Distance / slDistance).toFixed(1)}`,
+    rr2: `1:${(tp2Distance / slDistance).toFixed(1)}`,
+    liquidityMode,
     scaleOutPct: 50,
-    note: 'Chốt nhanh TP1 scalp, nếu sóng mạnh gồng tiếp TP2',
+    note: liquidityMode === 'SCALP'
+      ? 'Thanh khoản thấp: Đạt TP1 dời SL về hòa vốn ngay, chủ động chốt hết tại TP2'
+      : 'Thanh khoản tốt: Chốt 50% tại TP1, dời SL hòa vốn, gồng 50% còn lại theo Trailing Stop',
   };
 }
 
 // ─── SENIOR TRADER REASONING ────────────────────────────────
-/**
- * Tạo lý do phân tích như senior trader giải thích
- * (Ngắn gọn, dứt khoát, không dài dòng)
- */
-function buildSeniorReasoning(decision, candle, indicators) {
+function buildSeniorReasoning(decision, candle, indicators, marketStructureData) {
   const reasons = [];
 
-  // Lý do chính dựa trên volume
-  if (candle.volume >= 2300 && candle.volume <= 2800) {
-    reasons.push(`Vol ${candle.volume.toLocaleString()} HĐ — vùng chuẩn cá mập, không phải FOMO đám đông`);
-  } else if (candle.volume > 2800) {
-    reasons.push(`Vol ${candle.volume.toLocaleString()} HĐ — bùng nổ mạnh, cẩn trọng FOMO`);
+  if (marketStructureData && marketStructureData.trendBias) {
+    reasons.push(`Cấu trúc thị trường: ${marketStructureData.trendBias} | Nến bám sát dải biên`);
   }
 
-  // Lý do từ cấu trúc giá
-  if (indicators && indicators.ma9_26Analysis) {
-    const ma = indicators.ma9_26Analysis;
-    if (ma.isUptrend && decision.direction === 'LONG') {
-      reasons.push(`Giá bám sát MA9 (${indicators.ma9?.toFixed(1)}) > MA26 (${indicators.ma26?.toFixed(1)}) — Uptrend vững chắc`);
-    } else if (ma.isDowntrend && decision.direction === 'SHORT') {
-      reasons.push(`Giá dưới MA9 (${indicators.ma9?.toFixed(1)}) < MA26 (${indicators.ma26?.toFixed(1)}) — Downtrend rõ ràng`);
+  if (decision && decision.reasons && decision.reasons.length > 0) {
+    for (const r of decision.reasons) {
+      if (!reasons.includes(r)) reasons.push(r);
     }
-  }
-
-  // Nến quality
-  if (candle.body >= 2.0) {
-    reasons.push(`Thân nến đặc ${candle.body}đ — dòng tiền dứt khoát, không giằng co`);
   }
 
   return reasons.slice(0, 3);
@@ -438,6 +677,7 @@ function buildSeniorReasoning(decision, candle, indicators) {
 
 module.exports = {
   detectVSAPatterns,
+  detectPlaybookSetup,
   calculateConfidence,
   generateTradePlan,
   buildSeniorReasoning,
