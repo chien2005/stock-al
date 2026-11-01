@@ -934,6 +934,150 @@ function getRealtimePositionSnapshot(allData) {
   };
 }
 
+// ─── 14H25 NOTIFICATION (XUNG LỰC SAU CẮT MARGIN & SMART MONEY SOI ATC/ATO) ───
+
+/**
+ * Báo cáo realtime lúc 14h25:
+ * Đo xung lực sau khi các CTCK kết thúc đợt cắt margin (14h00 - 14h20).
+ * Soi 5-10 phút cuối (14h15 - 14h25) xem Smart Money (Khối ngoại + Tự doanh) đang âm thầm nhồi Long hay Short.
+ * Phân tích xem họ mở thêm Long hay mở mới Short cho ATC và ATO sáng mai.
+ * Đưa ra nhận định nhanh: Có nên chuẩn bị mở lệnh ATC hay không?
+ */
+async function buildMarginCutoffNotificationAsync(simulatedData = null) {
+  console.log('   ⚡ [Margin Cutoff 14h25] Fetching realtime data...');
+  let realtimeOI = null;
+  let futuresPrice = null;
+  let vn30Price = null;
+  let vnindexPrice = null;
+  let realtimeVN30 = null;
+  let m5Data = null;
+
+  if (simulatedData) {
+    realtimeOI = simulatedData.realtimeOI;
+    futuresPrice = simulatedData.futuresPrice;
+    vn30Price = simulatedData.vn30Price;
+    vnindexPrice = simulatedData.vnindexPrice;
+    realtimeVN30 = simulatedData.realtimeVN30;
+    m5Data = simulatedData.m5Data;
+  } else {
+    try {
+      [realtimeOI, futuresPrice, vn30Price, vnindexPrice, realtimeVN30, m5Data] = await Promise.all([
+        dataFetcher.fetchDerivativesOIData().catch(e => null),
+        dataFetcher.fetchRealtimeFuturesPrice().catch(e => null),
+        dataFetcher.fetchRealtimeVN30Price().catch(e => null),
+        dataFetcher.fetchRealtimeVNINDEXPrice().catch(e => null),
+        dataFetcher.fetchRealtimeVN30().catch(e => null),
+        dataFetcher.fetchOHLCV('VN30F1M', '5', 2).catch(e => null),
+      ]);
+    } catch (e) {
+      console.error('⚠️ Margin Cutoff fetch failed:', e.message);
+    }
+  }
+
+  const vnTime = dataFetcher.getVnTime();
+  const todayStr = `${vnTime.getDate()}/${vnTime.getMonth() + 1}/${vnTime.getFullYear()}`;
+
+  const fmt = (num) => (num !== undefined && num !== null ? Math.round(num).toLocaleString('vi-VN') : '0');
+  const fmtDec = (num, d = 1) => (num !== undefined && num !== null ? Number(num).toLocaleString('vi-VN', { minimumFractionDigits: d, maximumFractionDigits: d }) : '0');
+  const fmtSign = (num) => (num > 0 ? `+${fmt(num)}` : fmt(num));
+  const fmtSignDec = (num, d = 1) => (num > 0 ? `+${fmtDec(num, d)}` : fmtDec(num, d));
+
+  const f1mPrice = futuresPrice ? futuresPrice.price : 0;
+  const f1mPrev = futuresPrice ? futuresPrice.prevPrice : 0;
+  const f1mChange = f1mPrice && f1mPrev ? (f1mPrice - f1mPrev) : 0;
+  const vn30Val = vn30Price ? vn30Price.price : 0;
+  const basis = f1mPrice && vn30Val ? parseFloat((f1mPrice - vn30Val).toFixed(2)) : 0;
+
+  // Realtime Foreign & Tự Doanh
+  const foreignBuy = realtimeOI ? (realtimeOI.foreignBuy || 0) : 0;
+  const foreignSell = realtimeOI ? (realtimeOI.foreignSell || 0) : 0;
+  const foreignNet = realtimeOI ? (realtimeOI.foreignNet !== undefined ? realtimeOI.foreignNet : (foreignBuy - foreignSell)) : 0;
+  const totalVolume = realtimeOI ? (realtimeOI.totalVolume || 0) : 1;
+
+  const foreignStore = loadForeignOIData();
+  const existingToday = (foreignStore.history || []).find(h => h.date === todayStr);
+  const tuDoanhNet = existingToday ? (existingToday.tuDoanhOvernight || 0) : 0;
+  const tdEst = oiEstimator.estimateTuDoanh(foreignNet, tuDoanhNet);
+  const effectiveTD = tuDoanhNet !== 0 ? tuDoanhNet : tdEst.value;
+
+  // Smart Money Tổng Lực
+  const smartMoneyNet = foreignNet + effectiveTD;
+  const crowdNet = -smartMoneyNet;
+
+  // Tỷ trọng %
+  const totalVolSafe = Math.max(1, totalVolume);
+  const foreignPct = ((Math.abs(foreignNet) / totalVolSafe) * 100).toFixed(1);
+  const tdPct = ((Math.abs(effectiveTD) / totalVolSafe) * 100).toFixed(1);
+  const smartMoneyPct = ((Math.abs(smartMoneyNet) / totalVolSafe) * 100).toFixed(1);
+
+  // Xung lực giá 5-10 phút gần nhất (14:15 - 14:25)
+  let impulseDirection = 'NEUTRAL';
+  let impulseDiff = 0;
+  let lastCandleType = 'DOJI / THÂN HẸP';
+  if (m5Data && m5Data.c && m5Data.c.length >= 2) {
+    const closes = m5Data.c;
+    const opens = m5Data.o || closes;
+    const lastIdx = closes.length - 1;
+    const prevIdx = lastIdx - 1;
+    impulseDiff = closes[lastIdx] - closes[prevIdx];
+    const lastOpen = opens[lastIdx];
+    const lastClose = closes[lastIdx];
+    if (lastClose > lastOpen + 0.8) lastCandleType = '🟢 NẾN XANH TĂNG ĐẶC (Cầu hấp thụ dứt khoát)';
+    else if (lastClose < lastOpen - 0.8) lastCandleType = '🔴 NẾN ĐỎ GIẢM ĐẶC (Cung dội bán đè ép)';
+    else lastCandleType = '🟡 NẾN GIẰNG CO (Thăm dò / Do dự)';
+
+    if (impulseDiff >= 1.0) impulseDirection = 'BULLISH';
+    else if (impulseDiff <= -1.0) impulseDirection = 'BEARISH';
+  }
+
+  // Đánh giá hành vi Smart Money
+  let stealthAction = '';
+  let preliminaryVerdict = '';
+  let verdictIcon = '⏸️';
+
+  if (smartMoneyNet >= 1000 && (impulseDirection === 'BULLISH' || basis >= -3.0)) {
+    stealthAction = '🟢 <b>ÂM THẦM NHỒI THÊM LONG ĐÓN ĐẦU ATC & ATO</b>';
+    preliminaryVerdict = 'CHUẨN BỊ MỞ LỆNH LONG ATC (Canh chốt nhịp vào lệnh lúc 14h29)';
+    verdictIcon = '🟢';
+  } else if (smartMoneyNet <= -1000 && (impulseDirection === 'BEARISH' || basis <= 3.0)) {
+    stealthAction = '🔴 <b>ÂM THẦM MỞ MỚI SHORT ĐÈ BẸP ATC & ATO</b>';
+    preliminaryVerdict = 'CHUẨN BỊ MỞ LỆNH SHORT ATC (Canh chốt nhịp vào lệnh lúc 14h29)';
+    verdictIcon = '🔴';
+  } else {
+    stealthAction = '⚖️ <b>GIẰNG CO / HAI PHE CHƯA BỘC LỘ Ý ĐỒ DỨT KHOÁT</b>';
+    preliminaryVerdict = 'KHẢ NĂNG CAO ĐỨNG NGOÀI PHIÊN ATC (Ưu tiên bảo toàn vốn)';
+    verdictIcon = '⏸️';
+  }
+
+  let msg = `⚡ <b>BÁO CÁO XUNG LỰC SAU CẮT MARGIN (14h25) — VN30F1M</b>\n`;
+  msg += `🕐 <i>14:25 Ngày ${todayStr} | Kết thúc đợt ép margin 14h00-14h20, 5p trước ATC</i>\n`;
+  msg += `━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+
+  // 1. TÌNH HÌNH GIÁ VÀ XUNG LỰC 5-10P CUỐI
+  msg += `📍 <b>1. XUNG LỰC THỊ TRƯỜNG SAU ĐỢT CẮT MARGIN:</b>\n`;
+  msg += `• <b>F1M:</b> <b>${fmtDec(f1mPrice)}</b> (${fmtSignDec(f1mChange)}đ) | <b>Basis:</b> <b>${fmtSignDec(basis, 2)}đ</b>\n`;
+  msg += `• <b>VN30:</b> <b>${fmtDec(vn30Val, 2)}</b>\n`;
+  msg += `• <b>Biến động 5-10p cuối (14h15 - 14h25):</b> ${impulseDiff >= 0 ? `🟢 Tăng +${fmtDec(impulseDiff)}đ` : `🔴 Giảm ${fmtDec(impulseDiff)}đ`}\n`;
+  msg += `• <b>Trạng thái nến 5p gần nhất:</b> <i>${lastCandleType}</i>\n\n`;
+
+  // 2. PHÂN TÍCH SMART MONEY REALTIME
+  msg += `🐋 <b>2. HÀNH VI SMART MONEY (KHỐI NGOẠI & TỰ DOANH):</b>\n`;
+  msg += `• 🌐 <b>Khối ngoại (NN):</b> <b>${foreignNet >= 0 ? '🟢 MUA RÒNG' : '🔴 BÁN RÒNG'} ${fmtSign(foreignNet)} HĐ</b> (Tỷ trọng: <b>${foreignPct}%</b>)\n`;
+  msg += `• 🏛️ <b>Tự doanh (TD):</b> <b>${effectiveTD >= 0 ? '🟢 CẦM LONG' : '🔴 CẦM SHORT'} ${fmtSign(effectiveTD)} HĐ</b>${tdEst.isEstimated ? ' <i>(ước tính)</i>' : ''} (Tỷ trọng: <b>${tdPct}%</b>)\n`;
+  msg += `• 🔥 <b>HỢP LỰC SMART MONEY:</b> <b>${smartMoneyNet >= 0 ? `🟢 TỔNG LONG ${fmtSign(smartMoneyNet)}` : `🔴 TỔNG SHORT ${fmtSign(smartMoneyNet)}`} HĐ</b> (Tỷ trọng: <b>${smartMoneyPct}%</b>)\n`;
+  msg += `• 👥 <b>Đám đông đối ứng:</b> <b>${crowdNet >= 0 ? `🟢 ÔM LONG ${fmtSign(crowdNet)}` : `🔴 ÔM SHORT ${fmtSign(crowdNet)}`} HĐ</b>\n`;
+  msg += `• 🔎 <b>Đọc vị ý đồ 5-10p cuối:</b> ${stealthAction}\n\n`;
+
+  // 3. ĐỊNH HƯỚNG MỞ LỆNH ATC
+  msg += `🎯 <b>3. ĐỊNH HƯỚNG MỞ LỆNH PHIÊN ATC (14h30 - 14h45):</b>\n`;
+  msg += `${verdictIcon} <b>ĐÁNH GIÁ SƠ BỘ: ${preliminaryVerdict}</b>\n`;
+  msg += `👉 <i>Hãy sẵn sàng tài khoản và theo dõi phán quyết chốt hạ tại Noti 14h29 ngay trước thềm ATC!</i>\n`;
+  msg += `━━━━━━━━━━━━━━━━━━━━━━\n`;
+  msg += `💡 <i>Cảnh báo tự động lúc 14h25 đo xung lực sau cắt margin | VN Stock Bot</i>`;
+
+  return msg;
+}
+
 // ─── 14H29 PRE-ATC NOTIFICATION (VÀO ATC HAY KHÔNG?) ─────────
 
 /**
@@ -1009,13 +1153,19 @@ async function buildPreATCNotificationAsync(simulatedData = null) {
     totalOIChange = totalOI - prevSession.totalOI;
   }
 
-  // Tự doanh & Đám đông
+  // Tự doanh & Đám đông & Smart Money hợp lực
   const foreignStore = loadForeignOIData();
   const existingToday = (foreignStore.history || []).find(h => h.date === todayStr);
   const tuDoanhNet = existingToday ? (existingToday.tuDoanhOvernight || 0) : 0;
   const tdEst = oiEstimator.estimateTuDoanh(foreignNet, tuDoanhNet);
-  const crowdNet = -(foreignNet + tuDoanhNet);
-  const crowdEst = -(foreignNet + tdEst.value);
+  const effectiveTD = tuDoanhNet !== 0 ? tuDoanhNet : tdEst.value;
+  const smartMoneyNet = foreignNet + effectiveTD;
+  const crowdNet = -smartMoneyNet;
+
+  const totalVolSafe = Math.max(1, totalVolume);
+  const foreignPct = ((Math.abs(foreignNet) / totalVolSafe) * 100).toFixed(1);
+  const tdPct = ((Math.abs(effectiveTD) / totalVolSafe) * 100).toFixed(1);
+  const smartMoneyPct = ((Math.abs(smartMoneyNet) / totalVolSafe) * 100).toFixed(1);
 
   // Strength badge
   const foreignAbs = Math.abs(foreignNet);
@@ -1053,23 +1203,25 @@ async function buildPreATCNotificationAsync(simulatedData = null) {
       `• Khối ngoại chỉ giao dịch thăm dò (${fmtSign(foreignNet)} HĐ), không có động thái kéo/đạp quyết liệt.\n` +
       `• Phiên ATC rất dễ đứng im không chạy (mất phí thuế vô ích) hoặc bị thao túng giật cục với vài trăm HĐ mỏng.`;
     tradePlan = `👉 <b>Chiến thuật:</b> Đứng ngoài tuyệt đối. Không tham gia cược may rủi trong phiên ATC.`;
-  } else if (foreignNet >= 1500 && breadth.greenCount >= 14 && basis >= -3.5) {
+  } else if ((foreignNet >= 1200 || smartMoneyNet >= 1500) && effectiveTD >= -500 && breadth.greenCount >= 13 && basis >= -3.5) {
     verdictType = 'LONG_ATC';
     verdictIcon = '🟢';
     verdictTitle = 'NÊN MỞ VỊ THẾ LONG ĐÓN ĐẦU ATC!';
     actionAdvice = `👉 Đặt lệnh LONG giá ATC (hoặc khớp quanh vùng <b>${fmtDec(f1mPrice)}</b> trước 14h29m50s).`;
-    verdictReason = `• Khối ngoại gom Mua ròng khủng: <b>${fmtSign(foreignNet)} HĐ Long</b> (${foreignStrengthBadge}).\n` +
+    verdictReason = `• Smart Money (NN + Tự Doanh) hợp lực Mua ròng: <b>${fmtSign(smartMoneyNet)} HĐ Long</b> (Tỷ trọng: <b>${smartMoneyPct}%</b>).\n` +
+      `• Khối ngoại dẫn dắt gom mạnh: <b>${fmtSign(foreignNet)} HĐ</b> (${foreignStrengthBadge}).\n` +
       `• Phe Đám đông (nhỏ lẻ) đang ôm đối ứng: <b>${fmtSign(crowdNet)} HĐ Short</b> (kẹt Short nặng).\n` +
       `• Rổ VN30 cơ sở phe Mua áp đảo (${breadth.greenCount} mã xanh / ${breadth.redCount} mã đỏ, Bank ${breadth.bank.label}).\n` +
       `• Basis duy trì mức ${fmtSignDec(basis)}đ, tâm lý thị trường kỳ vọng đà tăng tiếp diễn.`;
     tradePlan = `🎯 <b>Mục tiêu chốt lời (TP):</b> <b>${fmtDec(f1mPrice + 5)} - ${fmtDec(f1mPrice + 10)}đ</b> (Cược kéo ATC và quán tính ATO sáng mai).\n` +
       `🛑 <b>Cắt lỗ (SL):</b> <b>${fmtDec(f1mPrice - 3.5)}đ</b> (Thoát nếu lực kéo ATC bị dội ngược).`;
-  } else if (foreignNet <= -1500 && breadth.redCount >= 16 && basis <= 4.0) {
+  } else if ((foreignNet <= -1200 || smartMoneyNet <= -1500) && effectiveTD <= 500 && breadth.redCount >= 15 && basis <= 4.0) {
     verdictType = 'SHORT_ATC';
     verdictIcon = '🔴';
     verdictTitle = 'NÊN MỞ VỊ THẾ SHORT ĐÓN ĐẦU ATC!';
     actionAdvice = `👉 Đặt lệnh SHORT giá ATC (hoặc khớp quanh vùng <b>${fmtDec(f1mPrice)}</b> trước 14h29m50s).`;
-    verdictReason = `• Khối ngoại xả Bán ròng dồn dập: <b>${fmtSign(foreignNet)} HĐ Short</b> (${foreignStrengthBadge}).\n` +
+    verdictReason = `• Smart Money (NN + Tự Doanh) dồn lực xả Bán ròng: <b>${fmtSign(smartMoneyNet)} HĐ Short</b> (Tỷ trọng: <b>${smartMoneyPct}%</b>).\n` +
+      `• Khối ngoại xả quyết liệt: <b>${fmtSign(foreignNet)} HĐ</b> (${foreignStrengthBadge}).\n` +
       `• Phe Đám đông (nhỏ lẻ) đang ôm đối ứng: <b>${fmtSign(crowdNet)} HĐ Long</b> (kẹt Long đu bắt đáy).\n` +
       `• Rổ VN30 cơ sở chìm trong sắc đỏ (${breadth.redCount} mã đỏ / ${breadth.greenCount} mã xanh), áp lực bán tháo lan rộng.\n` +
       `• Basis ${fmtSignDec(basis)}đ, phản ánh kỳ vọng chiết khấu giảm tiếp.`;
@@ -1080,7 +1232,7 @@ async function buildPreATCNotificationAsync(simulatedData = null) {
     verdictIcon = '⏸️';
     verdictTitle = 'ĐỨNG NGOÀI — KHÔNG MỞ MỚI VÀO ATC!';
     actionAdvice = '👉 NẾU ĐANG CÓ LỆNH LÃI/LỖ MỎNG ➔ CHỦ ĐỘNG CHỐT TRƯỚC 14H29 ĐỂ BẢO TOÀN VỐN!';
-    verdictReason = `• Hai phe Khối ngoại (${fmtSign(foreignNet)} HĐ) và Đám đông (${fmtSign(crowdNet)} HĐ) ở thế giằng co, chưa có ưu thế áp đảo.\n` +
+    verdictReason = `• Smart Money (NN ${fmtSign(foreignNet)} HĐ, TD ${fmtSign(effectiveTD)} HĐ) giằng co hoặc phân hóa, tổng lực ${fmtSign(smartMoneyNet)} HĐ chưa có ưu thế áp đảo.\n` +
       `• Cơ sở VN30 phân hóa (${breadth.greenCount} xanh / ${breadth.redCount} đỏ), không có sóng ngành dẫn dắt rõ rệt.\n` +
       `• Biên độ thị trường lưỡng lự, rủi ro cược ATC là 50/50.`;
     tradePlan = `👉 <b>Chiến thuật:</b> Đứng ngoài bảo toàn vốn. Chờ phiên ATC chốt sổ và đánh giá lại lúc 14h44.`;
@@ -1100,19 +1252,24 @@ async function buildPreATCNotificationAsync(simulatedData = null) {
   msg += `• <b>Nhóm Bank VN30:</b> ${breadth.bank.greenCount}/${breadth.bank.totalCount} mã xanh (Tham gia: <b>${breadth.bank.label}</b>)\n`;
   msg += `• <b>Thanh khoản:</b> F1M đạt <b>${fmt(totalVolume)} HĐ</b> | VN30 đạt <b>${fmt(vn30Price?.totalVolume ? vn30Price.totalVolume / 1e6 : 0)}M cp</b>\n\n`;
 
-  // 2. VỊ THẾ 3 PHE REALTIME
-  msg += `🔥 <b>2. VỊ THẾ 3 PHE REALTIME (ĐẾN 14H29):</b>\n`;
-  msg += `• 🌐 <b>Khối ngoại:</b> <b>${foreignNet > 0 ? '🟢 MUA RÒNG' : foreignNet < 0 ? '🔴 BÁN RÒNG' : '⚖️ CÂN BẰNG'} ${fmtSign(foreignNet)} HĐ</b>\n`;
+  // 2. VỊ THẾ SMART MONEY REALTIME (ĐẾN 14H29)
+  msg += `🔥 <b>2. VỊ THẾ SMART MONEY REALTIME (ĐẾN 14H29):</b>\n`;
+  msg += `• 🌐 <b>Khối ngoại (NN):</b> <b>${foreignNet > 0 ? '🟢 MUA RÒNG' : foreignNet < 0 ? '🔴 BÁN RÒNG' : '⚖️ CÂN BẰNG'} ${fmtSign(foreignNet)} HĐ</b> (Tỷ trọng: <b>${foreignPct}%</b>)\n`;
   msg += `   └ Mua: <code>${fmt(foreignBuy)}</code> | Bán: <code>${fmt(foreignSell)}</code> | Đánh giá: <b>${foreignStrengthBadge}</b>\n`;
   if (tuDoanhNet !== 0) {
-    msg += `• 🏛️ <b>Tự doanh:</b> <b>${tuDoanhNet > 0 ? `🟢 CẦM LONG ${fmtSign(tuDoanhNet)}` : `🔴 CẦM SHORT ${fmtSign(tuDoanhNet)}`} HĐ</b>\n`;
+    msg += `• 🏛️ <b>Tự doanh (TD):</b> <b>${tuDoanhNet > 0 ? `🟢 CẦM LONG ${fmtSign(tuDoanhNet)}` : `🔴 CẦM SHORT ${fmtSign(tuDoanhNet)}`} HĐ</b> (Tỷ trọng: <b>${tdPct}%</b>)\n`;
   } else {
-    msg += `• 🏛️ <b>Tự doanh:</b> <b>0 HĐ</b> <i>(Ước tính phòng hộ: ~${fmtSign(tdEst.value)} HĐ đối ứng)</i>\n`;
+    msg += `• 🏛️ <b>Tự doanh (TD):</b> <b>${fmtSign(effectiveTD)} HĐ</b> <i>(ước tính phòng hộ)</i> (Tỷ trọng: <b>${tdPct}%</b>)\n`;
+  }
+  msg += `• 🔥 <b>HỢP LỰC SMART MONEY:</b> <b>${smartMoneyNet >= 0 ? `🟢 TỔNG LONG ${fmtSign(smartMoneyNet)}` : `🔴 TỔNG SHORT ${fmtSign(smartMoneyNet)}`} HĐ</b> (Tỷ trọng: <b>${smartMoneyPct}%</b>)\n`;
+  if (foreignNet > 500 && effectiveTD > 0) {
+    msg += `   └ Trạng thái: <b>🟢 NN & TD ĐỒNG THUẬN LONG CỰC MẠNH</b>\n`;
+  } else if (foreignNet < -500 && effectiveTD < 0) {
+    msg += `   └ Trạng thái: <b>🔴 NN & TD ĐỒNG THUẬN SHORT CỰC MẠNH</b>\n`;
+  } else {
+    msg += `   └ Trạng thái: <b>⚖️ SMART MONEY PHÂN HÓA (${foreignNet >= 0 ? 'NN Long' : 'NN Short'} vs ${effectiveTD >= 0 ? 'TD Long' : 'TD Short'})</b>\n`;
   }
   msg += `• 👥 <b>Đám đông (Cá nhân):</b> <b>${crowdNet > 0 ? `🟢 ÔM LONG ${fmtSign(crowdNet)}` : crowdNet < 0 ? `🔴 ÔM SHORT ${fmtSign(crowdNet)}` : '⚖️ CÂN BẰNG 0'} HĐ</b>\n`;
-  if (tdEst.isEstimated && tdEst.value !== 0) {
-    msg += `   └ <i>(Nếu tính TD phòng hộ: Đám đông ròng ~${fmtSign(crowdEst)} HĐ)</i>\n`;
-  }
   if (crowdNet > 1000) {
     msg += `   └ Đánh giá: <b>🔴 ĐÁM ĐÔNG ĐU LONG BẮT ĐÁY BỊ KẸP NẶNG</b>\n`;
   } else if (crowdNet < -1000) {
@@ -1227,8 +1384,14 @@ async function buildPostATCNotificationAsync(simulatedData = null) {
   const existingToday = (foreignStore.history || []).find(h => h.date === todayStr);
   const tuDoanhNet = existingToday ? (existingToday.tuDoanhOvernight || 0) : 0;
   const tdEst = oiEstimator.estimateTuDoanh(foreignNet, tuDoanhNet);
-  const crowdNet = -(foreignNet + tuDoanhNet);
-  const crowdEst = -(foreignNet + tdEst.value);
+  const effectiveTD = tuDoanhNet !== 0 ? tuDoanhNet : tdEst.value;
+  const smartMoneyNet = foreignNet + effectiveTD;
+  const crowdNet = -smartMoneyNet;
+
+  const totalVolSafe = Math.max(1, totalVolume);
+  const foreignPct = ((Math.abs(foreignNet) / totalVolSafe) * 100).toFixed(1);
+  const tdPct = ((Math.abs(effectiveTD) / totalVolSafe) * 100).toFixed(1);
+  const smartMoneyPct = ((Math.abs(smartMoneyNet) / totalVolSafe) * 100).toFixed(1);
 
   const foreignAbs = Math.abs(foreignNet);
 
@@ -1272,29 +1435,31 @@ async function buildPostATCNotificationAsync(simulatedData = null) {
     verdictIcon = '⏹️';
     verdictTitle = 'ĐÓNG TOÀN BỘ VỊ THẾ TRƯỚC 14H45 — KHÔNG GIỮ QUA ĐÊM (FLAT)!';
     actionAdvice = '👉 Khớp lệnh đóng sạch toàn bộ vị thế đang mở trước 14h45, đưa tài khoản về 0 HĐ.';
-    verdictReason = `• Khối ngoại không nắm ưu thế áp đảo (${fmtSign(foreignNet)} HĐ), thị trường ở thế giằng co.\n` +
+    verdictReason = `• Smart Money không nắm ưu thế áp đảo (NN ${fmtSign(foreignNet)} HĐ, TD ${fmtSign(effectiveTD)} HĐ ➔ Net: ${fmtSign(smartMoneyNet)} HĐ), thị trường ở thế giằng co.\n` +
       `• Tổng OI sàn ${totalOIChange < 0 ? `sụt giảm ${fmt(Math.abs(totalOIChange))} HĐ cho thấy dòng tiền lớn đã chủ động chốt lời tất toán trong phiên.` : 'không gia tăng mạnh, thiếu sự bảo kê của cá mập.'}\n` +
       `• ${isFriday ? 'Hôm nay là Thứ Sáu, rủi ro biến động thông tin 2 ngày cuối tuần rất cao.\n' : ''}` +
       `• Cầm qua đêm phải chịu chi phí lưu ký và rủi ro tin tức thế giới (Dow Jones, chứng khoán Mỹ) mà không có lợi thế xác suất thắng rõ rệt.`;
     atoStrategy = `💡 <b>Kế hoạch ATO sáng mai:</b> Giữ tài khoản trạng thái FLAT an toàn. Sáng mai quan sát ATO mở cửa và tín hiệu dòng tiền 9h15 để mở vị thế mới chủ động.`;
-  } else if (foreignNet >= 1500 && crowdNet <= -1000 && basis >= -4.0 && totalOIChange >= -500) {
+  } else if ((foreignNet >= 1500 || smartMoneyNet >= 1800) && crowdNet <= -1000 && basis >= -4.0 && totalOIChange >= -500) {
     verdictType = 'HOLD_LONG';
     verdictIcon = '🟢';
     verdictTitle = 'NÊN GIỮ VỊ THẾ LONG QUA ĐÊM VÀO ATO SÁNG MAI!';
     actionAdvice = `👉 CẦM VỊ THẾ LONG QUA ĐÊM. Chuẩn bị kế hoạch chốt lời ở phiên ATO ${isFriday ? 'Thứ Hai' : 'sáng mai'}.`;
-    verdictReason = `• Khối ngoại găm ròng cực lớn: <b>${fmtSign(foreignNet)} HĐ Long</b> qua đêm.\n` +
+    verdictReason = `• Smart Money (NN + TD) găm ròng cực lớn: <b>${fmtSign(smartMoneyNet)} HĐ Long</b> (Tỷ trọng: <b>${smartMoneyPct}%</b>).\n` +
+      `• Khối ngoại dẫn đầu: <b>${fmtSign(foreignNet)} HĐ Long</b> qua đêm.\n` +
       `• Đám đông ôm Short đối ứng bị kẹt nặng: <b>${fmtSign(crowdNet)} HĐ Short</b>.\n` +
       `• Tổng OI sàn duy trì cao (${fmt(totalOI)} HĐ, ${fmtSign(totalOIChange)} HĐ), tay to neo vốn quyết liệt để bảo vệ vị thế.\n` +
       `• Lợi thế thống kê: Sáng mai xác suất rất cao sẽ mở Gap Up (<b>+5 đến +10đ</b>) hoặc có nhịp kéo rướn ngay ATO để ép nhỏ lẻ Short cắt lỗ (Short Squeeze).`;
     atoStrategy = `🎯 <b>Kế hoạch hành động ATO sáng mai:</b>\n` +
       `   • Canh chốt lời 50-70% vị thế ngay tại ATO hoặc nhịp kéo hưng phấn 9h00 - 9h15.\n` +
       `   • Ngưỡng Stoploss/Chặn lãi: Thoát toàn bộ nếu ATO mở Gap giảm bất ngờ thủng <b>${fmtDec(f1mPrice - 3.5)}đ</b>.`;
-  } else if (foreignNet <= -1500 && crowdNet >= 1000 && totalOIChange >= -500) {
+  } else if ((foreignNet <= -1500 || smartMoneyNet <= -1800) && crowdNet >= 1000 && totalOIChange >= -500) {
     verdictType = 'HOLD_SHORT';
     verdictIcon = '🔴';
     verdictTitle = 'NÊN GIỮ VỊ THẾ SHORT QUA ĐÊM VÀO ATO SÁNG MAI!';
     actionAdvice = `👉 CẦM VỊ THẾ SHORT QUA ĐÊM. Chuẩn bị kế hoạch cover chốt lời ở phiên ATO ${isFriday ? 'Thứ Hai' : 'sáng mai'}.`;
-    verdictReason = `• Khối ngoại xả găm ròng Short khủng: <b>${fmtSign(foreignNet)} HĐ Short</b> qua đêm.\n` +
+    verdictReason = `• Smart Money (NN + TD) xả găm ròng Short khủng: <b>${fmtSign(smartMoneyNet)} HĐ Short</b> (Tỷ trọng: <b>${smartMoneyPct}%</b>).\n` +
+      `• Khối ngoại bán ròng: <b>${fmtSign(foreignNet)} HĐ Short</b> qua đêm.\n` +
       `• Đám đông đu Long bắt đáy bị kẹp cứng: <b>${fmtSign(crowdNet)} HĐ Long</b>.\n` +
       `• Cơ sở VN30 và VN-Index chịu áp lực bán tháo, mất các mốc hỗ trợ kỹ thuật trọng yếu.\n` +
       `• Lợi thế thống kê: Sáng mai quán tính rơi tiếp diễn, xác suất rất cao mở Gap Down (<b>-5 đến -15đ</b>) theo đà tháo chạy hoảng loạn của phe kẹp Long.`;
@@ -1306,7 +1471,7 @@ async function buildPostATCNotificationAsync(simulatedData = null) {
     verdictIcon = '⏹️';
     verdictTitle = 'ĐÓNG TOÀN BỘ VỊ THẾ TRƯỚC 14H45 — KHÔNG GIỮ QUA ĐÊM (FLAT)!';
     actionAdvice = '👉 Khớp lệnh đóng sạch toàn bộ vị thế đang mở trước 14h45, bảo toàn vốn 100%.';
-    verdictReason = `• Vị thế các bên ở trạng thái cân bằng (${fmtSign(foreignNet)} HĐ), không có sự bảo kê một chiều từ cá mập.\n` +
+    verdictReason = `• Vị thế các bên ở trạng thái cân bằng (${fmtSign(smartMoneyNet)} HĐ), không có sự bảo kê một chiều từ cá mập.\n` +
       `• Cầm qua đêm chịu rủi ro Gap mở phiên khó lường và phí lưu ký. Đóng trạng thái để tâm lý thoải mái và bảo vệ lợi nhuận.`;
     atoStrategy = `💡 <b>Kế hoạch ATO sáng mai:</b> Đợi thị trường xác nhận phản ứng tại ATO rồi mới giải ngân theo dòng tiền phiên mới.`;
   }
@@ -1323,19 +1488,17 @@ async function buildPostATCNotificationAsync(simulatedData = null) {
   msg += `• <b>VNINDEX chốt ATC:</b> <b>${fmtDec(vnidxVal, 2)}</b> (${fmtSignDec(vnidxChange, 2)}đ)\n`;
   msg += `• <b>Tổng KLGD cả ngày:</b> <b>${fmt(totalVolume)} HĐ</b>\n\n`;
 
-  // 2. VỊ THẾ 3 PHE QUA ĐÊM
-  msg += `🔥 <b>2. VỊ THẾ 3 PHE CẦM QUA ĐÊM (CHỐT SỔ ATC):</b>\n`;
-  msg += `• 🌐 <b>Khối ngoại:</b> <b>${foreignNet > 0 ? '🟢 CẦM LONG' : foreignNet < 0 ? '🔴 CẦM SHORT' : '⚖️ CÂN BẰNG'} ${fmtSign(foreignNet)} HĐ</b>\n`;
+  // 2. VỊ THẾ SMART MONEY QUA ĐÊM
+  msg += `🔥 <b>2. VỊ THẾ SMART MONEY CẦM QUA ĐÊM (CHỐT SỔ ATC):</b>\n`;
+  msg += `• 🌐 <b>Khối ngoại (NN):</b> <b>${foreignNet > 0 ? '🟢 CẦM LONG' : foreignNet < 0 ? '🔴 CẦM SHORT' : '⚖️ CÂN BẰNG'} ${fmtSign(foreignNet)} HĐ</b> (Tỷ trọng: <b>${foreignPct}%</b>)\n`;
   msg += `   └ Mua: <code>${fmt(foreignBuy)}</code> | Bán: <code>${fmt(foreignSell)}</code>\n`;
   if (tuDoanhNet !== 0) {
-    msg += `• 🏛️ <b>Tự doanh:</b> <b>${tuDoanhNet > 0 ? `🟢 CẦM LONG ${fmtSign(tuDoanhNet)}` : `🔴 CẦM SHORT ${fmtSign(tuDoanhNet)}`} HĐ</b>\n`;
+    msg += `• 🏛️ <b>Tự doanh (TD):</b> <b>${tuDoanhNet > 0 ? `🟢 CẦM LONG ${fmtSign(tuDoanhNet)}` : `🔴 CẦM SHORT ${fmtSign(tuDoanhNet)}`} HĐ</b> (Tỷ trọng: <b>${tdPct}%</b>)\n`;
   } else {
-    msg += `• 🏛️ <b>Tự doanh:</b> <b>0 HĐ</b> <i>(Ước tính phòng hộ: ~${fmtSign(tdEst.value)} HĐ đối ứng NN)</i>\n`;
+    msg += `• 🏛️ <b>Tự doanh (TD):</b> <b>${fmtSign(effectiveTD)} HĐ</b> <i>(ước tính)</i> (Tỷ trọng: <b>${tdPct}%</b>)\n`;
   }
-  msg += `• 👥 <b>Đám đông:</b> <b>${crowdNet > 0 ? `🟢 ÔM LONG ${fmtSign(crowdNet)}` : crowdNet < 0 ? `🔴 ÔM SHORT ${fmtSign(crowdNet)}` : '⚖️ CÂN BẰNG 0'} HĐ</b>\n`;
-  if (tdEst.isEstimated && tdEst.value !== 0) {
-    msg += `   └ <i>(Nếu tính TD phòng hộ: Đám đông ròng ~${fmtSign(crowdEst)} HĐ)</i>\n`;
-  }
+  msg += `• 🔥 <b>HỢP LỰC SMART MONEY:</b> <b>${smartMoneyNet >= 0 ? `🟢 TỔNG LONG ${fmtSign(smartMoneyNet)}` : `🔴 TỔNG SHORT ${fmtSign(smartMoneyNet)}`} HĐ</b> (Tỷ trọng: <b>${smartMoneyPct}%</b>)\n`;
+  msg += `• 👥 <b>Đám đông đối ứng:</b> <b>${crowdNet > 0 ? `🟢 ÔM LONG ${fmtSign(crowdNet)}` : crowdNet < 0 ? `🔴 ÔM SHORT ${fmtSign(crowdNet)}` : '⚖️ CÂN BẰNG 0'} HĐ</b>\n`;
   msg += `• 📊 <b>Tổng OI sàn qua đêm:</b> <b>${fmt(totalOI)} HĐ</b> (Biến động: <b>${fmtSign(totalOIChange)} HĐ</b>)\n\n`;
 
   // 3. PHÁN QUYẾT CỐT LÕI
@@ -1360,6 +1523,7 @@ module.exports = {
   buildOIEveningNotification,
   buildOIEveningNotificationAsync,
   buildOIEveningNotificationSync,
+  buildMarginCutoffNotificationAsync,
   buildPreATCNotificationAsync,
   buildPostATCNotificationAsync,
   recordDailySessionOI,

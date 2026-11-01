@@ -146,6 +146,25 @@ async function runDerivativesOIJob(session = 'evening') {
   }
 }
 
+// ─── DERIVATIVES MARGIN CUTOFF JOB (14h25 T2-T6) ─────────────
+async function runMarginCutoffJob() {
+  if (!isCurrentInstanceActive()) return;
+
+  console.log('\n' + '═'.repeat(55));
+  console.log('⚡ DERIVATIVES MARGIN CUTOFF & SMART MONEY — 14h25');
+  console.log('═'.repeat(55));
+
+  try {
+    const msg = await oiTracker.buildMarginCutoffNotificationAsync();
+    await sendDerivativesMessage(msg);
+    console.log('   ✅ Derivatives Margin Cutoff [14h25] hoàn thành');
+    return true;
+  } catch (e) {
+    console.error('   ❌ Derivatives Margin Cutoff [14h25] lỗi:', e.message);
+    return false;
+  }
+}
+
 // ─── DERIVATIVES PRE-ATC JOB (14h29 T2-T6) ───────────────────
 async function runPreATCJob() {
   if (!isCurrentInstanceActive()) return;
@@ -222,6 +241,7 @@ module.exports = {
   // AI & OI Jobs (giữ nguyên)
   runAIDerivativesJob,
   runDerivativesOIJob,
+  runMarginCutoffJob,
   runPreATCJob,
   runPostATCJob,
   // Evening Plan v7.0
@@ -233,6 +253,7 @@ module.exports = {
   oiTracker,
   buildOIEveningNotification: oiTracker.buildOIEveningNotification,
   buildOIEveningNotificationAsync: oiTracker.buildOIEveningNotificationAsync,
+  buildMarginCutoffNotificationAsync: oiTracker.buildMarginCutoffNotificationAsync,
   buildPreATCNotificationAsync: oiTracker.buildPreATCNotificationAsync,
   buildPostATCNotificationAsync: oiTracker.buildPostATCNotificationAsync,
   // Compatibility

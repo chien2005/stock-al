@@ -35,7 +35,7 @@ const { startBotHandler, stopBotHandler } = require('./botHandler');
 const { startAlertMonitor, stopAlertMonitor, resetDailyData, flushBigTradeBuffer } = require('./alertService');
 const { runSmartMoneyReport } = require('./smartMoneyReport');
 const { runWhaleTrackerReport } = require('./whaleTracker');
-const { runAIDerivativesJob, runDerivativesOIJob, runPreATCJob, runPostATCJob, resetDerivativesState, startVolumeScalper, stopVolumeScalper, runEveningPlanJob, runIntradaySignalJob, resetIntradayState } = require('./derivatives');
+const { runAIDerivativesJob, runDerivativesOIJob, runMarginCutoffJob, runPreATCJob, runPostATCJob, resetDerivativesState, startVolumeScalper, stopVolumeScalper, runEveningPlanJob, runIntradaySignalJob, resetIntradayState } = require('./derivatives');
 
 // ─── Thời điểm khởi động (cho health check) ─────────────
 const startedAt = new Date();
@@ -425,16 +425,16 @@ async function main() {
         await sendDerivativesMessage(
           `🔮 <b>VN Stock Bot v${config.version} đã kết nối! (Nhóm Phái Sinh VN30F)</b>\n` +
           `🕐 ${startupTime}\n` +
-          `📊 Chế độ: <b>Tín hiệu Phái Sinh v7.0 (Multi-TF & Intraday Signal)</b>\n` +
+          `📊 Chế độ: <b>Senior Trader AI Trading v8.0 (Quản trị Vị thế Realtime)</b>\n` +
           `📅 Ngày hoạt động: <b>${config.activeDays}</b> (ACTIVE)\n` +
-          `⚡ <b>MỚI:</b> Intraday Signal: 15p/lần (Sáng 09:15-11:30 & Chiều 13:00-13:45), <b>5p/lần (13:45-14:25)</b>\n` +
-          `🌙 <b>MỚI:</b> Evening Plan 19:50 (chiến lược ngày tiếp theo)\n` +
-          `⏰ Tín hiệu: 9h05 - 14h45 (bắn khi biến động ≥4đ, realtime)\n` +
-          `🤖 AI Phái sinh: 9h22 | 10h22 | 13h50\n` +
-          `⚡ Pre-ATC (Vào ATC hay không?): 14h29\n` +
+          `⚡ <b>MỚI:</b> AI Trading Realtime như người thật: Ghi nhớ vị thế, note PnL âm/dương, 11 trạng thái lệnh\n` +
+          `⏰ Khung giờ Intraday (5p/lần): Sáng 09:10-11:30 (29 noti) & Chiều 13:05-14:20 (16 noti)\n` +
+          `⚡ Xung lực sau cắt margin (Smart Money soi ATC/ATO): 14h25\n` +
+          `⚡ Pre-ATC (Vào ATC hay không? Smart Money NN + TD): 14h29\n` +
           `🌙 Post-ATC (Cầm qua đêm hay Đóng?): 14h44\n` +
           `📊 OI Sơ bộ sau ATC: 14h47\n` +
           `📊 OI & Basis (Chính thức HNX/VSDC): 19h35\n` +
+          `🌙 Evening Plan: 19h50 (chiến lược ngày tiếp theo)\n` +
           `━━━━━━━━━━━━━━━━━━━━━━\n` +
           `<i>Kênh chuyên biệt phân tích & tín hiệu phái sinh realtime 24/24</i>`
         );
@@ -641,6 +641,23 @@ async function main() {
   }, { scheduled: true, timezone: config.timezone });
   console.log('   🤖 AI Derivatives Forecast: 9:22, 10:22 & 13:50 (T2-T6)');
 
+  // ─── SCHEDULE: DERIVATIVES MARGIN CUTOFF & SMART MONEY (14h25 T2-T6) ────
+  // Đo xung lực sau khi cắt margin xong (14h00 - 14h20), soi 5-10p cuối Smart Money nhồi Long/Short cho ATC & ATO
+  cron.schedule('25 14 * * 1-5', async () => {
+    if (!isWeekday()) return;
+    if (isDuplicate('derivativesMarginCutoff_1425')) return;
+    const now = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
+    console.log(`\n⚡ [Derivatives Margin Cutoff 14h25] Cron triggered: ${now}`);
+    try {
+      await runMarginCutoffJob();
+      jobLastSuccess['derivativesMarginCutoff_1425'] = Date.now();
+    } catch (err) {
+      console.error('⚡ [Derivatives Margin Cutoff 14h25] Lỗi:', err.message);
+      jobLastError['derivativesMarginCutoff_1425'] = { time: Date.now(), message: err.message };
+    }
+  }, { scheduled: true, timezone: config.timezone });
+  console.log('   ⚡ Derivatives Margin Cutoff (Xung lực & Smart Money soi ATC/ATO): 14:25 (T2-T6)');
+
   // ─── SCHEDULE: DERIVATIVES PRE-ATC REALTIME (14h29 T2-T6) ────
   // Quyết định realtime: Có nên mở vị thế để vào ATC hay không?
   // Cảnh báo chốt lệnh trước 14h29 nếu thanh khoản cạn kiệt, tay to đóng bớt HĐ, ảm đạm
@@ -733,22 +750,45 @@ async function main() {
   // Sáng: 9:15 → 11:30 (mỗi 15 phút = 10 noti)
   // Chiều: 13:00 → 14:25 (mỗi 15 phút = 6 noti)
   const intradayMorningSchedules = [
+    { cron: '10 9 * * 1-5',  label: '09:10' },
     { cron: '15 9 * * 1-5',  label: '09:15' },
+    { cron: '20 9 * * 1-5',  label: '09:20' },
+    { cron: '25 9 * * 1-5',  label: '09:25' },
     { cron: '30 9 * * 1-5',  label: '09:30' },
+    { cron: '35 9 * * 1-5',  label: '09:35' },
+    { cron: '40 9 * * 1-5',  label: '09:40' },
     { cron: '45 9 * * 1-5',  label: '09:45' },
+    { cron: '50 9 * * 1-5',  label: '09:50' },
+    { cron: '55 9 * * 1-5',  label: '09:55' },
     { cron: '0 10 * * 1-5',  label: '10:00' },
+    { cron: '5 10 * * 1-5',  label: '10:05' },
+    { cron: '10 10 * * 1-5', label: '10:10' },
     { cron: '15 10 * * 1-5', label: '10:15' },
+    { cron: '20 10 * * 1-5', label: '10:20' },
+    { cron: '25 10 * * 1-5', label: '10:25' },
     { cron: '30 10 * * 1-5', label: '10:30' },
+    { cron: '35 10 * * 1-5', label: '10:35' },
+    { cron: '40 10 * * 1-5', label: '10:40' },
     { cron: '45 10 * * 1-5', label: '10:45' },
+    { cron: '50 10 * * 1-5', label: '10:50' },
+    { cron: '55 10 * * 1-5', label: '10:55' },
     { cron: '0 11 * * 1-5',  label: '11:00' },
+    { cron: '5 11 * * 1-5',  label: '11:05' },
+    { cron: '10 11 * * 1-5', label: '11:10' },
     { cron: '15 11 * * 1-5', label: '11:15' },
+    { cron: '20 11 * * 1-5', label: '11:20' },
+    { cron: '25 11 * * 1-5', label: '11:25' },
     { cron: '30 11 * * 1-5', label: '11:30' },
   ];
   const intradayAfternoonSchedules = [
-    { cron: '0 13 * * 1-5',  label: '13:00' },
+    { cron: '5 13 * * 1-5',  label: '13:05' },
+    { cron: '10 13 * * 1-5', label: '13:10' },
     { cron: '15 13 * * 1-5', label: '13:15' },
+    { cron: '20 13 * * 1-5', label: '13:20' },
+    { cron: '25 13 * * 1-5', label: '13:25' },
     { cron: '30 13 * * 1-5', label: '13:30' },
-    // 13h45 → 14h25: Giờ vàng cao trào trước ATC, bắn 5p/lần bám sát thị trường
+    { cron: '35 13 * * 1-5', label: '13:35' },
+    { cron: '40 13 * * 1-5', label: '13:40' },
     { cron: '45 13 * * 1-5', label: '13:45' },
     { cron: '50 13 * * 1-5', label: '13:50' },
     { cron: '55 13 * * 1-5', label: '13:55' },
@@ -757,7 +797,6 @@ async function main() {
     { cron: '10 14 * * 1-5', label: '14:10' },
     { cron: '15 14 * * 1-5', label: '14:15' },
     { cron: '20 14 * * 1-5', label: '14:20' },
-    { cron: '25 14 * * 1-5', label: '14:25' },
   ];
 
   for (const schedule of [...intradayMorningSchedules, ...intradayAfternoonSchedules]) {
@@ -773,7 +812,7 @@ async function main() {
       }
     }, { scheduled: true, timezone: config.timezone });
   }
-  console.log('   ⚡ Intraday Signal: Sáng 09:15→11:30 (15p/lần) | Chiều 13:00→13:45 (15p/lần) | 13:45→14:25 (5p/lần)');
+  console.log('   ⚡ Intraday Signal (5p/lần): Sáng 09:10→11:30 (29 noti) | Chiều 13:05→14:20 (16 noti)');
 
   // Reset intraday signal state mỗi sáng 9:00
   cron.schedule('0 9 * * 1-5', () => {

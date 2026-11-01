@@ -23,6 +23,7 @@ const dataFetcher = require('./dataFetcher');
 const marketStructure = require('./marketStructure');
 const marketContext = require('./marketContext');
 const oiTracker = require('./oiTracker');
+const oiEstimator = require('./oiEstimator');
 const { sendDerivativesMessage } = require('../telegramService');
 
 // ─── MULTI-TIMEFRAME SUPPORT / RESISTANCE ─────────────────────
@@ -263,63 +264,107 @@ function analyzeDailyPriceAction(dailyData) {
 // ─── SMART MONEY OVERNIGHT POSITIONING ──────────────────────
 /**
  * Phân tích vị thế qua đêm của dòng tiền thông minh
- * Dựa trên OI data cuối phiên
+ * Tích hợp KHỐI NGOẠI (NN) + TỰ DOANH (TD) + ĐÁM ĐÔNG (Cá nhân)
+ * Dựa trên OI data cuối phiên & tỷ lệ Zero-Sum
  */
 function analyzeSmartMoneyOvernight(oiData) {
   if (!oiData) return null;
 
-  const nnNet = (oiData.foreignBuy || 0) - (oiData.foreignSell || 0);
+  // 1. Khối ngoại (NN)
+  const nnBuy = oiData.foreignBuy || 0;
+  const nnSell = oiData.foreignSell || 0;
+  const nnNet = oiData.foreignNet !== undefined ? oiData.foreignNet : (nnBuy - nnSell);
   const totalOI = oiData.totalOI || 0;
   const oiChange = oiData.totalOIChange || 0;
   const f1mVol = oiData.f1mVolume || 0;
+
+  // 2. Tự doanh (TD) & Hợp lực Smart Money
+  const foreignStore = oiTracker.loadForeignOIData ? oiTracker.loadForeignOIData() : null;
+  const vnTime = dataFetcher.getVnTime();
+  const todayStr = `${vnTime.getDate()}/${vnTime.getMonth() + 1}/${vnTime.getFullYear()}`;
+  const existingToday = foreignStore && foreignStore.history ? foreignStore.history.find(h => h.date === todayStr) : null;
+  const tuDoanhNet = existingToday ? (existingToday.tuDoanhOvernight || 0) : 0;
+  const tdEst = oiEstimator.estimateTuDoanh(nnNet, tuDoanhNet);
+  const effectiveTD = tuDoanhNet !== 0 ? tuDoanhNet : tdEst.value;
+  const isTDEstimated = tuDoanhNet === 0;
+
+  // Hợp lực Smart Money & Đám đông đối ứng (Quy tắc Zero-Sum)
+  const smartMoneyNet = nnNet + effectiveTD;
+  const crowdNet = -smartMoneyNet;
+
+  // Tỷ trọng %
+  const totalVolSafe = Math.max(1, f1mVol || totalOI || 1);
+  const foreignPct = ((Math.abs(nnNet) / totalVolSafe) * 100).toFixed(1);
+  const tdPct = ((Math.abs(effectiveTD) / totalVolSafe) * 100).toFixed(1);
+  const smartMoneyPct = ((Math.abs(smartMoneyNet) / totalVolSafe) * 100).toFixed(1);
 
   // OI interpretation
   let oiSignal = 'NEUTRAL';
   let oiDesc = '';
   if (oiChange > 500) {
-    oiSignal = nnNet > 0 ? 'BULLISH_ACCUMULATE' : 'BEARISH_ACCUMULATE';
-    oiDesc = `OI tăng +${oiChange.toLocaleString()} HĐ → Vị thế MỚI đang được mở (${nnNet > 0 ? 'nghiêng LONG' : 'nghiêng SHORT'})`;
+    oiSignal = smartMoneyNet > 0 ? 'BULLISH_ACCUMULATE' : 'BEARISH_ACCUMULATE';
+    oiDesc = `OI tăng +${oiChange.toLocaleString()} HĐ → Vị thế MỚI đang được mở (${smartMoneyNet > 0 ? 'Smart Money nghiêng LONG' : 'Smart Money nghiêng SHORT'})`;
   } else if (oiChange < -500) {
-    oiDesc = `OI giảm ${oiChange.toLocaleString()} HĐ → Đang ĐÓNG vị thế (chốt lời hoặc cắt lỗ)`;
+    oiDesc = `OI giảm ${oiChange.toLocaleString()} HĐ → Đang ĐÓNG vị thế (chốt lời hoặc hạ rủi ro)`;
     oiSignal = 'CLOSING';
   } else {
     oiDesc = `OI biến động nhẹ (${oiChange >= 0 ? '+' : ''}${oiChange.toLocaleString()} HĐ) → Thận trọng`;
     oiSignal = 'NEUTRAL';
   }
 
-  // Smart Money interpretation
+  // Smart Money interpretation (Hợp lực Khối ngoại + Tự doanh)
   let smartMoneyBias = 'NEUTRAL';
   let smartMoneyDesc = '';
-  if (nnNet > 500) {
+  if (smartMoneyNet >= 1000 || (nnNet >= 800 && effectiveTD >= 0)) {
     smartMoneyBias = 'STRONG_LONG';
-    smartMoneyDesc = `🐋 NN Long ròng mạnh +${nnNet.toLocaleString()} HĐ → Smart Money đặt cược TĂNG mạnh phiên tới`;
-  } else if (nnNet > 200) {
+    smartMoneyDesc = `🐋 Smart Money (NN + TD) hợp lực Long ròng rất mạnh +${smartMoneyNet.toLocaleString()} HĐ (Tỷ trọng: ${smartMoneyPct}%) → Đặt cược TĂNG mạnh phiên tới`;
+  } else if (smartMoneyNet >= 300) {
     smartMoneyBias = 'LONG';
-    smartMoneyDesc = `🐋 NN Long ròng +${nnNet.toLocaleString()} HĐ → Nghiêng về phe mua`;
-  } else if (nnNet < -500) {
+    smartMoneyDesc = `🐋 Smart Money (NN + TD) nghiêng Long +${smartMoneyNet.toLocaleString()} HĐ (Tỷ trọng: ${smartMoneyPct}%) → Nghiêng về phe Mua`;
+  } else if (smartMoneyNet <= -1000 || (nnNet <= -800 && effectiveTD <= 0)) {
     smartMoneyBias = 'STRONG_SHORT';
-    smartMoneyDesc = `🦈 NN Short ròng mạnh ${nnNet.toLocaleString()} HĐ → Smart Money đặt cược GIẢM mạnh phiên tới`;
-  } else if (nnNet < -200) {
+    smartMoneyDesc = `🦈 Smart Money (NN + TD) dồn lực Short ròng rất mạnh ${smartMoneyNet.toLocaleString()} HĐ (Tỷ trọng: ${smartMoneyPct}%) → Đặt cược GIẢM mạnh phiên tới`;
+  } else if (smartMoneyNet <= -300) {
     smartMoneyBias = 'SHORT';
-    smartMoneyDesc = `🦈 NN Short ròng ${nnNet.toLocaleString()} HĐ → Nghiêng về phe bán`;
+    smartMoneyDesc = `🦈 Smart Money (NN + TD) nghiêng Short ${smartMoneyNet.toLocaleString()} HĐ (Tỷ trọng: ${smartMoneyPct}%) → Nghiêng về phe Bán`;
   } else {
-    smartMoneyDesc = `🔘 NN cân bằng (${nnNet >= 0 ? '+' : ''}${nnNet.toLocaleString()} HĐ) → Chưa rõ ý đồ`;
+    smartMoneyDesc = `🔘 Smart Money (NN + TD) cân bằng / phân hóa (${smartMoneyNet >= 0 ? '+' : ''}${smartMoneyNet.toLocaleString()} HĐ, Tỷ trọng: ${smartMoneyPct}%) → Chưa rõ ý đồ bứt phá`;
+  }
+
+  let synergyLabel = '';
+  if (nnNet > 200 && effectiveTD > 100) {
+    synergyLabel = '🟢 NN & TD ĐỒNG THUẬN LONG';
+  } else if (nnNet < -200 && effectiveTD < -100) {
+    synergyLabel = '🔴 NN & TD ĐỒNG THUẬN SHORT';
+  } else if (Math.abs(nnNet) >= 300 && (nnNet * effectiveTD < 0)) {
+    synergyLabel = `⚖️ PHÂN HÓA HEDGING (${nnNet > 0 ? 'NN Long' : 'NN Short'} vs ${effectiveTD > 0 ? 'TD Long' : 'TD Short'})`;
+  } else {
+    synergyLabel = '⚖️ CÂN BẰNG THĂM DÒ';
   }
 
   return {
+    smartMoneyNet,
+    smartMoneyPct,
+    smartMoneyBias,
+    smartMoneyDesc,
+    synergyLabel,
     nnNet,
+    nnBuy,
+    nnSell,
+    foreignPct,
+    allNNBuy: oiData.allForeignBuy || 0,
+    allNNSell: oiData.allForeignSell || 0,
+    allNNNet: oiData.allForeignNet || 0,
+    tuDoanhNet,
+    effectiveTD,
+    tdPct,
+    isTDEstimated,
+    crowdNet,
     totalOI,
     oiChange,
     f1mVol,
     oiSignal,
     oiDesc,
-    smartMoneyBias,
-    smartMoneyDesc,
-    nnBuy: oiData.foreignBuy || 0,
-    nnSell: oiData.foreignSell || 0,
-    allNNBuy: oiData.allForeignBuy || 0,
-    allNNSell: oiData.allForeignSell || 0,
-    allNNNet: oiData.allForeignNet || 0,
   };
 }
 
@@ -347,12 +392,15 @@ function predictNextDayTrend(priceAction, smartMoney, srLevels, currentPrice) {
     if (priceAction.volRatio < 0.7) { score -= 5; factors.push('Thanh khoản teo tóp → thiếu niềm tin'); }
   }
 
-  // 2. Smart Money positioning
+  // 2. Smart Money positioning (Khối ngoại NN + Tự doanh TD)
   if (smartMoney) {
-    if (smartMoney.smartMoneyBias === 'STRONG_LONG') { score += 25; factors.push('Smart Money Long ròng mạnh'); }
-    else if (smartMoney.smartMoneyBias === 'LONG') { score += 15; factors.push('Smart Money nghiêng Long'); }
-    else if (smartMoney.smartMoneyBias === 'STRONG_SHORT') { score -= 25; factors.push('Smart Money Short ròng mạnh'); }
-    else if (smartMoney.smartMoneyBias === 'SHORT') { score -= 15; factors.push('Smart Money nghiêng Short'); }
+    if (smartMoney.smartMoneyBias === 'STRONG_LONG') { score += 25; factors.push('Smart Money (NN + TD) Long ròng mạnh'); }
+    else if (smartMoney.smartMoneyBias === 'LONG') { score += 15; factors.push('Smart Money (NN + TD) nghiêng Long'); }
+    else if (smartMoney.smartMoneyBias === 'STRONG_SHORT') { score -= 25; factors.push('Smart Money (NN + TD) Short ròng mạnh'); }
+    else if (smartMoney.smartMoneyBias === 'SHORT') { score -= 15; factors.push('Smart Money (NN + TD) nghiêng Short'); }
+
+    if (smartMoney.synergyLabel && smartMoney.synergyLabel.includes('ĐỒNG THUẬN LONG')) { score += 10; factors.push('NN & Tự doanh đồng thuận Long'); }
+    if (smartMoney.synergyLabel && smartMoney.synergyLabel.includes('ĐỒNG THUẬN SHORT')) { score -= 10; factors.push('NN & Tự doanh đồng thuận Short'); }
 
     if (smartMoney.oiSignal === 'BULLISH_ACCUMULATE') { score += 10; factors.push('OI tăng → tích lũy vị thế mới'); }
     if (smartMoney.oiSignal === 'BEARISH_ACCUMULATE') { score -= 10; factors.push('OI tăng theo hướng Short'); }
@@ -534,13 +582,17 @@ async function buildEveningPlanNotification() {
   dataSection += formatSRText(srLevels, f1mPrice);
   dataSection += `\n`;
 
-  // Smart Money
+  // Smart Money (NN + Tự doanh)
   if (smartMoney) {
-    dataSection += `🐋 <b>DÒNG TIỀN QUA ĐÊM:</b>\n`;
+    dataSection += `🔥 <b>DÒNG TIỀN SMART MONEY QUA ĐÊM (NN + TỰ DOANH):</b>\n`;
     dataSection += `  ${smartMoney.smartMoneyDesc}\n`;
-    dataSection += `  ${smartMoney.oiDesc}\n`;
-    dataSection += `  NN: Mua ${smartMoney.nnBuy.toLocaleString()} | Bán ${smartMoney.nnSell.toLocaleString()} | Net: ${smartMoney.nnNet >= 0 ? '+' : ''}${smartMoney.nnNet.toLocaleString()} HĐ\n`;
-    dataSection += `  Tổng OI: ${smartMoney.totalOI.toLocaleString()} HĐ | Vol F1: ${smartMoney.f1mVol.toLocaleString()} HĐ\n`;
+    dataSection += `  • 🌐 <b>Khối ngoại (NN):</b> <b>${smartMoney.nnNet >= 0 ? '+' : ''}${smartMoney.nnNet.toLocaleString()} HĐ</b> (Tỷ trọng: <b>${smartMoney.foreignPct}%</b>)\n`;
+    dataSection += `     └ Mua: <code>${smartMoney.nnBuy.toLocaleString()}</code> | Bán: <code>${smartMoney.nnSell.toLocaleString()}</code>\n`;
+    dataSection += `  • 🏛️ <b>Tự doanh (TD):</b> <b>${smartMoney.effectiveTD >= 0 ? '+' : ''}${smartMoney.effectiveTD.toLocaleString()} HĐ</b> ${smartMoney.isTDEstimated ? '<i>(ước tính)</i>' : ''} (Tỷ trọng: <b>${smartMoney.tdPct}%</b>)\n`;
+    dataSection += `  • 🔥 <b>Hợp lực Smart Money:</b> <b>${smartMoney.smartMoneyNet >= 0 ? `🟢 TỔNG LONG +${smartMoney.smartMoneyNet.toLocaleString()}` : `🔴 TỔNG SHORT ${smartMoney.smartMoneyNet.toLocaleString()}`} HĐ</b> (Tỷ trọng: <b>${smartMoney.smartMoneyPct}%</b>)\n`;
+    dataSection += `     └ Trạng thái: <b>${smartMoney.synergyLabel}</b>\n`;
+    dataSection += `  • 👥 <b>Đám đông đối ứng:</b> <b>${smartMoney.crowdNet >= 0 ? `🟢 ÔM LONG +${smartMoney.crowdNet.toLocaleString()}` : `🔴 ÔM SHORT ${smartMoney.crowdNet.toLocaleString()}`} HĐ</b>\n`;
+    dataSection += `  • 📊 <b>OI & Thanh khoản:</b> Tổng OI: <b>${smartMoney.totalOI.toLocaleString()} HĐ</b> (${smartMoney.oiDesc}) | Vol F1: <b>${smartMoney.f1mVol.toLocaleString()} HĐ</b>\n`;
     dataSection += `\n`;
   }
 
@@ -586,11 +638,13 @@ ${srLevels.supports.map((s, i) => `  S${i + 1}: ${s.price} (${s.tf})`).join('\n'
 ${srLevels.resistances.slice(0, 3).map((r, i) => `  R${i + 1}: ${r.price} (${r.tf})`).join('\n') || '  Không có'}
 ${srLevels.keyLevels?.length > 0 ? `  Vùng hội tụ: ${srLevels.keyLevels.map(k => `${k.price.toFixed(1)} (${k.tfs.join('+')})`).join(', ')}` : ''}
 
-DÒNG TIỀN THÔNG MINH QUA ĐÊM:
+DÒNG TIỀN THÔNG MINH QUA ĐÊM (SMART MONEY = KHỐI NGOẠI + TỰ DOANH):
 - ${smartMoney?.smartMoneyDesc || 'N/A'}
-- ${smartMoney?.oiDesc || 'N/A'}
-- NN: Mua ${smartMoney?.nnBuy?.toLocaleString() || '0'} | Bán ${smartMoney?.nnSell?.toLocaleString() || '0'} | Net: ${smartMoney?.nnNet?.toLocaleString() || '0'} HĐ
-- Tổng OI: ${smartMoney?.totalOI?.toLocaleString() || 'N/A'} | Vol F1: ${smartMoney?.f1mVol?.toLocaleString() || 'N/A'}
+- Hợp lực Smart Money (NN + TD): ${smartMoney?.smartMoneyNet >= 0 ? '+' : ''}${smartMoney?.smartMoneyNet?.toLocaleString() || '0'} HĐ (Tỷ trọng: ${smartMoney?.smartMoneyPct || '0'}%) | Trạng thái: ${smartMoney?.synergyLabel || 'N/A'}
+- Khối ngoại (NN): Mua ${smartMoney?.nnBuy?.toLocaleString() || '0'} | Bán ${smartMoney?.nnSell?.toLocaleString() || '0'} | Net: ${smartMoney?.nnNet >= 0 ? '+' : ''}${smartMoney?.nnNet?.toLocaleString() || '0'} HĐ (Tỷ trọng: ${smartMoney?.foreignPct || '0'}%)
+- Tự doanh (TD): Net ${smartMoney?.effectiveTD >= 0 ? '+' : ''}${smartMoney?.effectiveTD?.toLocaleString() || '0'} HĐ ${smartMoney?.isTDEstimated ? '(ước tính)' : ''} (Tỷ trọng: ${smartMoney?.tdPct || '0'}%)
+- Đám đông (Cá nhân) đối ứng: ${smartMoney?.crowdNet >= 0 ? '+' : ''}${smartMoney?.crowdNet?.toLocaleString() || '0'} HĐ
+- Tổng OI: ${smartMoney?.totalOI?.toLocaleString() || 'N/A'} HĐ (${smartMoney?.oiDesc || 'N/A'}) | Vol F1: ${smartMoney?.f1mVol?.toLocaleString() || 'N/A'} HĐ
 
 PREDICTION ENGINE: ${prediction.trendPrediction} (Score: ${prediction.score}, Tin cậy: ${prediction.confidence}%)
 Factors: ${prediction.factors.join('; ')}
@@ -655,9 +709,11 @@ YÊU CẦU PHÂN TÍCH NHƯ SENIOR TRADER:
       `<b>2. VÙNG THEN CHỐT NGÀY MAI:</b>\n` +
       `• Hỗ trợ trọng yếu S1: <b>${s1}</b> | Kháng cự trọng yếu R1: <b>${r1}</b>.\n` +
       `• Vùng hội tụ đa khung: ${srLevels.keyLevels?.length > 0 ? srLevels.keyLevels.map(k => k.price.toFixed(1)).join(', ') : 'Theo dõi phản ứng tại S1/R1'}.\n\n` +
-      `<b>3. DÒNG TIỀN QUA ĐÊM (SMART MONEY):</b>\n` +
-      `• Khối ngoại net: <b>${smartMoney?.nnNet >= 0 ? '+' : ''}${smartMoney?.nnNet?.toLocaleString() || 0} HĐ</b> qua đêm.\n` +
-      `• Dòng tiền lớn: <i>${smartMoney?.smartMoneyDesc || 'Cân bằng'}</i>.\n\n` +
+      `<b>3. DÒNG TIỀN QUA ĐÊM (SMART MONEY = NN + TỰ DOANH):</b>\n` +
+      `• Hợp lực Smart Money: <b>${smartMoney?.smartMoneyNet >= 0 ? '+' : ''}${smartMoney?.smartMoneyNet?.toLocaleString() || 0} HĐ</b> (Tỷ trọng: <b>${smartMoney?.smartMoneyPct || 0}%</b>).\n` +
+      `  └ Khối ngoại (NN): <b>${smartMoney?.nnNet >= 0 ? '+' : ''}${smartMoney?.nnNet?.toLocaleString() || 0} HĐ</b> (Tỷ trọng: <b>${smartMoney?.foreignPct || 0}%</b>)\n` +
+      `  └ Tự doanh (TD): <b>${smartMoney?.effectiveTD >= 0 ? '+' : ''}${smartMoney?.effectiveTD?.toLocaleString() || 0} HĐ</b> ${smartMoney?.isTDEstimated ? '<i>(ước tính)</i>' : ''} (Tỷ trọng: <b>${smartMoney?.tdPct || 0}%</b>)\n` +
+      `• Trạng thái dòng tiền lớn: <b>${smartMoney?.synergyLabel || 'Cân bằng'}</b>.\n\n` +
       `<b>4. CHIẾN LƯỢC MỞ VỊ THẾ PHIÊN MAI:</b>\n` +
       `• <b>Dự báo mở phiên:</b> ${prediction.gapPrediction}\n` +
       (isBull
