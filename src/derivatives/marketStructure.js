@@ -324,15 +324,38 @@ function buildPriceMap({ intradayF1M, dailyF1M, dailyVN30 }) {
   }
 
   let currentZone = 'UNKNOWN';
-  if (currentPrice) {
-    const supports = deduped.filter(l => (l.type === 'SUPPORT' || l.type === 'VAL') && l.price <= currentPrice);
-    const resistances = deduped.filter(l => (l.type === 'RESISTANCE' || l.type === 'VAH') && l.price >= currentPrice);
-    const nearestSupport = supports.length > 0 ? supports[0] : null;
-    const nearestResistance = resistances.length > 0 ? resistances[resistances.length - 1] : null;
+  let nearestSupport = null;
+  let nearestResistance = null;
 
-    if (nearestSupport && Math.abs(currentPrice - nearestSupport.price) <= 2) {
+  if (currentPrice) {
+    // 1. Tập hợp tất cả mức Hỗ trợ (Levels <= currentPrice + 0.5 hoặc Day Low)
+    const supports = deduped
+      .filter(l => (l.type === 'SUPPORT' || l.type === 'VAL') && l.price <= currentPrice + 0.5)
+      .sort((a, b) => b.price - a.price); // Giá cao nhất gần currentPrice nhất lên đầu
+
+    if (todayRange.low && !supports.find(s => Math.abs(s.price - todayRange.low) < 1.0)) {
+      supports.push({ price: parseFloat(todayRange.low.toFixed(1)), type: 'SUPPORT', label: 'Đáy trong ngày (Day Low)', strength: 'HIGH' });
+      supports.sort((a, b) => b.price - a.price);
+    }
+    nearestSupport = supports.length > 0 ? supports[0] : null;
+
+    // 2. Tập hợp tất cả mức Kháng cự (Levels >= currentPrice - 0.5 hoặc Day High)
+    const resistances = deduped
+      .filter(l => (l.type === 'RESISTANCE' || l.type === 'VAH') && l.price >= currentPrice - 0.5)
+      .sort((a, b) => a.price - b.price); // Giá thấp nhất gần currentPrice nhất lên đầu
+
+    if (todayRange.high && !resistances.find(r => Math.abs(r.price - todayRange.high) < 1.0)) {
+      resistances.push({ price: parseFloat(todayRange.high.toFixed(1)), type: 'RESISTANCE', label: 'Đỉnh trong ngày (Day High)', strength: 'HIGH' });
+      resistances.sort((a, b) => a.price - b.price);
+    }
+    nearestResistance = resistances.length > 0 ? resistances[0] : null;
+
+    const distToSupport = nearestSupport ? Math.abs(currentPrice - nearestSupport.price) : 999;
+    const distToResistance = nearestResistance ? Math.abs(currentPrice - nearestResistance.price) : 999;
+
+    if (distToSupport <= 1.8) {
       currentZone = 'AT_SUPPORT';
-    } else if (nearestResistance && Math.abs(currentPrice - nearestResistance.price) <= 2) {
+    } else if (distToResistance <= 1.8) {
       currentZone = 'AT_RESISTANCE';
     } else {
       currentZone = 'BETWEEN';
@@ -342,6 +365,8 @@ function buildPriceMap({ intradayF1M, dailyF1M, dailyVN30 }) {
   return {
     levels: deduped,
     currentZone,
+    nearestSupport,
+    nearestResistance,
     currentPrice: currentPrice ? parseFloat(currentPrice.toFixed(1)) : null,
     vwap,
     ema9,

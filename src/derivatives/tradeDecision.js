@@ -361,24 +361,27 @@ function calculateConfidence(params) {
       }
     }
 
-    // B. Vị trí so với Volume Profile (VAH / VAL / POC)
-    if (vah && val) {
-      if (isLong && currentZone === 'AT_SUPPORT') {
-        layer2Score += 7;
-        reasons.push(`Vị thế tại vùng Hỗ trợ / VAL (${val.toFixed(1)}) — Điểm vào an toàn`);
-      } else if (!isLong && currentZone === 'AT_RESISTANCE') {
-        layer2Score += 7;
-        reasons.push(`Vị thế tại vùng Kháng cự / VAH (${vah.toFixed(1)}) — Điểm vào an toàn`);
-      } else if (isLong && currentZone === 'AT_RESISTANCE') {
-        layer2Score -= 6;
-        warnings.push(`🚨 Mở LONG ngay sát Cản / VAH (${vah.toFixed(1)}) — Dễ dính cản dội lại!`);
-      } else if (!isLong && currentZone === 'AT_SUPPORT') {
-        layer2Score -= 6;
-        warnings.push(`🚨 Mở SHORT ngay sát Hỗ trợ / VAL (${val.toFixed(1)}) — Dễ dính hỗ trợ bật lên!`);
-      } else {
-        layer2Score += 4;
-      }
+  // B. Vị trí so với Volume Profile & Key Levels
+  if (marketStructureData) {
+    const supportPrice = marketStructureData.nearestSupport?.price ?? marketStructureData.val ?? marketStructureData.todayRange?.low;
+    const resistPrice = marketStructureData.nearestResistance?.price ?? marketStructureData.vah ?? marketStructureData.todayRange?.high;
+
+    if (isLong && currentZone === 'AT_SUPPORT') {
+      layer2Score += 7;
+      reasons.push(`Vị thế tại vùng Hỗ trợ (${supportPrice ? supportPrice.toFixed(1) : 'VAL'}) — Điểm vào an toàn`);
+    } else if (!isLong && currentZone === 'AT_RESISTANCE') {
+      layer2Score += 7;
+      reasons.push(`Vị thế tại vùng Kháng cự (${resistPrice ? resistPrice.toFixed(1) : 'VAH'}) — Điểm vào an toàn`);
+    } else if (isLong && (currentZone === 'AT_RESISTANCE' || (resistPrice && Math.abs(candle.close - resistPrice) <= 1.8))) {
+      layer2Score -= 10;
+      warnings.push(`🚨 Mở LONG ngay sát Cản (${resistPrice ? resistPrice.toFixed(1) : 'Đỉnh'}) — Dễ dính cản dội lại!`);
+    } else if (!isLong && (currentZone === 'AT_SUPPORT' || (supportPrice && Math.abs(candle.close - supportPrice) <= 1.8))) {
+      layer2Score -= 10;
+      warnings.push(`🚨 Mở SHORT ngay sát Hỗ trợ (${supportPrice ? supportPrice.toFixed(1) : 'Đáy'}) — Dễ dính hỗ trợ bật lên!`);
+    } else {
+      layer2Score += 4;
     }
+  }
   }
   score += Math.max(0, Math.min(15, layer2Score));
 
@@ -558,6 +561,80 @@ function calculateConfidence(params) {
   score += Math.max(0, Math.min(20, layer5Score));
 
   // ═════════════════════════════════════════════════════════════
+  // BỘ LỌC CỨNG (HARD FILTERS) — ĐỦ CƠ SỞ MỚI VÀO LỆNH
+  // 1. CẤM BÁN VÀO HỖ TRỢ (Selling into Support) nếu chưa thủng
+  // 2. CẤM MUA VÀO KHÁNG CỰ (Buying into Resistance) nếu chưa vượt
+  // 3. CẤM SHORT KHI RSI QUÁ BÁN (< 32) HOẶC RƠI QUÁ XA VWAP
+  // 4. CẤM LONG KHI RSI QUÁ MUA (> 68) HOẶC RƯỚN QUÁ XA VWAP
+  // 5. CẤM MỞ MỚI KHUNG GIỜ NGUY HIỂM 14h00 - 14h25
+  // ═════════════════════════════════════════════════════════════
+  let hardBlockReason = null;
+  const price = candle.close;
+
+  // Trích xuất RSI
+  const rsiVal = indicators?.rsiAnalysis?.curRSI !== undefined
+    ? Number(indicators.rsiAnalysis.curRSI)
+    : (indicators?.rsiAnalysis?.val !== undefined
+      ? Number(indicators.rsiAnalysis.val)
+      : (indicators?.rsi ? Number(indicators.rsi) : null));
+
+  // HARD BLOCK 1: HỖ TRỢ / KHÁNG CỰ & CẤU TRÚC PHÁ VỠ
+  if (marketStructureData) {
+    const supportPrice = marketStructureData.nearestSupport?.price ?? marketStructureData.val ?? marketStructureData.todayRange?.low;
+    const resistPrice = marketStructureData.nearestResistance?.price ?? marketStructureData.vah ?? marketStructureData.todayRange?.high;
+    const isBreakdown = marketStructureData.structuralBreak === 'CONFIRMED_BREAKDOWN';
+    const isBreakout = marketStructureData.structuralBreak === 'CONFIRMED_BREAKOUT';
+
+    // A. Chặn SHORT ngay sát hỗ trợ:
+    // Nếu giá đang nằm ngay trên hỗ trợ (từ support - 0.3đ đến support + 1.8đ) và CHƯA có xác nhận thủng đáy
+    if (!isLong && supportPrice) {
+      const distToSupport = price - supportPrice;
+      if (distToSupport >= -0.3 && distToSupport <= 1.8 && !isBreakdown) {
+        hardBlockReason = `🚨 CẤM MỞ SHORT NGAY SÁT HỖ TRỢ (${supportPrice.toFixed(1)}) — Giá ${price.toFixed(1)} chưa có xác nhận thủng đáy, nguy cơ dính Short Squeeze bẫy rút chân rất cao! Vị thế: ĐỨNG NGOÀI QUAN SÁT.`;
+      }
+    }
+
+    // B. Chặn LONG ngay sát kháng cự:
+    // Nếu giá đang nằm ngay dưới cản (từ resist - 1.8đ đến resist + 0.3đ) và CHƯA có xác nhận vượt đỉnh
+    if (isLong && resistPrice) {
+      const distToResist = resistPrice - price;
+      if (distToResist >= -0.3 && distToResist <= 1.8 && !isBreakout) {
+        hardBlockReason = `🚨 CẤM MỞ LONG NGAY SÁT KHÁNG CỰ (${resistPrice.toFixed(1)}) — Giá ${price.toFixed(1)} chưa có xác nhận vượt đỉnh, nguy cơ dính Bull Trap dội ngược rất cao! Vị thế: ĐỨNG NGOÀI QUAN SÁT.`;
+      }
+    }
+
+    // C. Chặn mở lệnh khi giá dãn biên quá xa VWAP (Mean Reversion Trap)
+    if (marketStructureData.vwap) {
+      const vwapDiff = price - marketStructureData.vwap;
+      if (!isLong && vwapDiff <= -4.0 && !hardBlockReason) {
+        hardBlockReason = `⚠️ Giá đã rơi quá xa VWAP (-${Math.abs(vwapDiff).toFixed(1)}đ) — Nguy cơ bị hút ngược về VWAP (Mean Reversion)! Vị thế: ĐỨNG NGOÀI QUAN SÁT.`;
+      } else if (isLong && vwapDiff >= 4.0 && !hardBlockReason) {
+        hardBlockReason = `⚠️ Giá đã rướn quá xa VWAP (+${vwapDiff.toFixed(1)}đ) — Nguy cơ bị ép dội ngược về VWAP! Vị thế: ĐỨNG NGOÀI QUAN SÁT.`;
+      }
+    }
+  }
+
+  // HARD BLOCK 2: RSI CỰC TRỊ
+  if (rsiVal !== null && !isNaN(rsiVal)) {
+    if (!isLong && rsiVal <= 32 && !hardBlockReason) {
+      hardBlockReason = `🚨 CẤM MỞ SHORT KHI RSI QUÁ BÁN (${rsiVal.toFixed(1)}) — Dư địa giảm cạn kiệt, xác suất bật giật ngược rất cao! Vị thế: ĐỨNG NGOÀI QUAN SÁT.`;
+    } else if (isLong && rsiVal >= 68 && !hardBlockReason) {
+      hardBlockReason = `🚨 CẤM MỞ LONG KHI RSI QUÁ MUA (${rsiVal.toFixed(1)}) — Dễ dính phân kỳ đỉnh hoặc chốt lời cao trào! Vị thế: ĐỨNG NGOÀI QUAN SÁT.`;
+    }
+  }
+
+  // HARD BLOCK 3: KHUNG GIỜ TỬ THẦN 14h00 - 14h25
+  if (marketContext && marketContext.shouldMaxProtection && !hardBlockReason) {
+    hardBlockReason = '💀 VÙNG NGUY HIỂM (14h00-14h25): Cấm mở mới vị thế — Ưu tiên bảo toàn vốn và quản trị rủi ro!';
+  }
+
+  // Nếu vi phạm Hard Block -> Phạt điểm tin cậy rớt dưới ngưỡng vào lệnh
+  if (hardBlockReason) {
+    warnings.unshift(hardBlockReason);
+    score = Math.min(score, 35);
+  }
+
+  // ═════════════════════════════════════════════════════════════
   // CHUẨN HÓA ĐIỂM TIN CẬY & QUYẾT ĐỊNH
   // ═════════════════════════════════════════════════════════════
   const confidence = Math.max(0, Math.min(100, Math.round(score)));
@@ -570,8 +647,13 @@ function calculateConfidence(params) {
   else { level = 'VERY_LOW'; levelEmoji = '🚫'; }
 
   const criticalWarnings = warnings.filter(w => w.includes('🚨') || w.includes('💀'));
-  const shouldTrade = confidence >= 60 && criticalWarnings.length === 0;
-  const shouldAvoid = confidence < 50 || criticalWarnings.length > 0;
+  const shouldTrade = confidence >= 60 && criticalWarnings.length === 0 && !hardBlockReason;
+  const shouldAvoid = confidence < 50 || criticalWarnings.length > 0 || !!hardBlockReason;
+
+  // Xác định rõ lý do đứng ngoài quan sát
+  const standAsideReason = !shouldTrade
+    ? (hardBlockReason || (criticalWarnings.length > 0 ? criticalWarnings[0] : (confidence < 60 ? `Độ tin cậy ${confidence}% chưa đạt ngưỡng chuẩn 60% — Kiên nhẫn chờ setup rõ ràng` : 'Chưa đủ điều kiện xác nhận 5 lớp')))
+    : null;
 
   return {
     confidence,
@@ -581,10 +663,14 @@ function calculateConfidence(params) {
     setupType: setupInfo ? setupInfo.type : 'STANDARD',
     setupLabel: setupInfo ? setupInfo.label : 'Xung lực chuẩn',
     reasons: reasons.slice(0, 5),
-    warnings: warnings.slice(0, 3),
+    warnings: warnings.slice(0, 4),
     shouldTrade,
     shouldAvoid,
     criticalWarnings,
+    hardBlock: !!hardBlockReason,
+    hardBlockReason,
+    actionRecommendation: shouldTrade ? `MỞ ${direction}` : 'ĐỨNG NGOÀI QUAN SÁT',
+    standAsideReason,
   };
 }
 

@@ -178,6 +178,9 @@ const _state = {
   // Market Context v6.0  
   lastMarketContext: null,       // Cache bối cảnh thị trường gần nhất
   // Hybrid v7.0
+  marketState: 'STAND_ASIDE',     // 'STAND_ASIDE' | 'HOLD_LONG' | 'HOLD_SHORT'
+  standAsideReason: 'Hệ thống đang quan sát chờ setup...',
+  lastStandAsideAlertTime: 0,
   currentPlan: null,             // Kế hoạch giao dịch hiện tại { entry, sl, tp1, tp2, rr1, rr2 }
   lastPillarAlertTime: 0,        // Cooldown cảnh báo thao túng trụ
   lastPillarAnalysis: null,      // Cache trạng thái 7 trụ gần nhất
@@ -682,6 +685,8 @@ async function processNewCandle(candle, allCandles, oiData, extraData = {}) {
       };
       _state.tradeLog.push(trade);
       _state.position = 'NONE';
+      _state.marketState = 'STAND_ASIDE';
+      _state.standAsideReason = 'Chốt lời Triple Top, tạm đứng ngoài quan sát';
       _state.currentPlan = null;
     }
     await sendTripleTopWarning(candle, tripleTop, indicators, oiData);
@@ -763,6 +768,8 @@ async function processNewCandle(candle, allCandles, oiData, extraData = {}) {
         });
         await sendDerivativesMessage(exitMsg);
         _state.position = 'NONE';
+        _state.marketState = 'STAND_ASIDE';
+        _state.standAsideReason = `Vừa đóng Long (${trade.reason}), tạm đứng ngoài quan sát!`;
         _state.currentPlan = null;
       }
       return;
@@ -833,6 +840,8 @@ async function processNewCandle(candle, allCandles, oiData, extraData = {}) {
         });
         await sendDerivativesMessage(exitMsg);
         _state.position = 'NONE';
+        _state.marketState = 'STAND_ASIDE';
+        _state.standAsideReason = `Vừa đóng Long (${trade.reason}), tạm đứng ngoài quan sát!`;
         _state.currentPlan = null;
       }
       return;
@@ -954,9 +963,11 @@ async function processNewCandle(candle, allCandles, oiData, extraData = {}) {
       }
     }
 
-    // E. ĐIỀU KIỆN QUYẾT ĐỊNH: ĐỦ ĐỘ TIN CẬY 5 LỚP (Confidence >= 60% & shouldTrade = true)
-    if (decision.shouldTrade && decision.confidence >= 60) {
+    // E. ĐIỀU KIỆN QUYẾT ĐỊNH: ĐỦ ĐỘ TIN CẬY 5 LỚP (Confidence >= 60% & shouldTrade = true & KHÔNG CÓ HARD BLOCK)
+    if (decision.shouldTrade && decision.confidence >= 60 && !decision.hardBlock) {
       _state.position = proposedDirection;
+      _state.marketState = proposedDirection === 'LONG' ? 'HOLD_LONG' : 'HOLD_SHORT';
+      _state.standAsideReason = null;
       _state.entryPrice = candle.close;
       _state.entryTime = candle.time;
       _state.entryIdx = allCandles.length - 1;
@@ -991,7 +1002,29 @@ async function processNewCandle(candle, allCandles, oiData, extraData = {}) {
       _state.lastNotiTime = now;
       console.log(`   ✅ [Scalper 1M] MỞ ${proposedDirection} @ ${candle.close} [Setup: ${setupInfo.label}] Confidence: ${decision.confidence}%`);
     } else {
-      console.log(`   ⏸️ [Scalper 1M] Nến ${candle.time}: Bỏ qua tín hiệu ${proposedDirection} (Confidence: ${decision.confidence}% < 60% hoặc rủi ro)`);
+      // VỊ THẾ RÕ RÀNG: ĐỨNG NGOÀI QUAN SÁT (STAND ASIDE)
+      _state.position = 'NONE';
+      _state.marketState = 'STAND_ASIDE';
+      _state.standAsideReason = decision.standAsideReason || 'Chưa đủ điều kiện 5 lớp xác nhận';
+      console.log(`   ⏸️ [Scalper 1M] Nến ${candle.time}: VỊ THẾ ĐỨNG NGOÀI QUAN SÁT (Confidence: ${decision.confidence}% | Lý do: ${_state.standAsideReason})`);
+
+      // Nếu phát hiện HARD BLOCK sát Hỗ trợ / Kháng cự: Gửi alert Stand Aside Trap Shield để trader kiên nhẫn
+      if (decision.hardBlock && (now - _state.lastStandAsideAlertTime > TRAP_SHIELD_COOLDOWN_MS)) {
+        _state.lastStandAsideAlertTime = now;
+        const standAsideMsg = proNotifier.formatStandAsideNotification({
+          candle,
+          direction: proposedDirection,
+          decision,
+          reason: decision.hardBlockReason,
+          marketStructureData,
+          indicators,
+          context,
+          pillarAnalysis,
+          liquidityInfo,
+        });
+        await sendDerivativesMessage(standAsideMsg);
+        console.log(`   🛡️ [Scalper 1M] Đã gửi thông báo ĐỨNG NGOÀI QUAN SÁT & CHẶN BẪY S/R!`);
+      }
     }
   }
 }
@@ -1436,7 +1469,10 @@ function buildOIBlock(oiData) {
 }
 
 function buildPositionBlock() {
-  if (_state.position === 'NONE') return '🔘 Không có vị thế';
+  if (_state.position === 'NONE') {
+    const reason = _state.standAsideReason ? `\n   Lý do: ${_state.standAsideReason}` : '';
+    return `⏸️ <b>ĐỨNG NGOÀI QUAN SÁT (Trống vị thế)</b>${reason}`;
+  }
   const dir = _state.position === 'LONG' ? '🟢 LONG' : '🔴 SHORT';
   const lastC = _state.processedCandles.length > 0 ? _state.processedCandles[_state.processedCandles.length - 1] : null;
   const floatingPnl = _state.position === 'LONG'
@@ -1874,35 +1910,51 @@ async function processNew5mCandle(candle5m, all5mCandles, oiData) {
     console.log(`   🚀 [5M Engine] RULE 1 BREAKOUT 5M: ${candle5m.time} | ${dir} | Vol ${candle5m.volume} (${(volRatioAvg * 100).toFixed(0)}% MA)`);
 
     const entry = candle5m.close;
-    const plan = tradeDecision.generateTradePlan(entry, dir, '5M');
+    const plan = tradeDecision.generateTradePlan(entry, dir, '5M', {
+      keyLevels: _state.lastMarketStructure?.levels,
+      liquidityMode: _state.lastLiquidityInfo?.mode,
+    });
 
-    if (_state.position === 'NONE') {
-      _state.position = dir;
-      _state.entryPrice = entry;
-      _state.entryTime = candle5m.time;
-      _state.entryVol = candle5m.volume;
-      _state.maxProfit = 0;
-      _state.breakevenActive = false;
-    }
+    const decision = tradeDecision.calculateConfidence({
+      candle: candle5m,
+      direction: dir,
+      indicators: indicators5m,
+      marketContext: _state.lastMarketContext,
+      marketStructureData: _state.lastMarketStructure,
+      pillarAnalysis: _state.lastPillarAnalysis,
+      liquidityInfo: _state.lastLiquidityInfo,
+    });
 
-    if (now - _state.last5mBreakoutAlertTime > ALERT_5M_COOLDOWN_MS) {
-      _state.last5mBreakoutAlertTime = now;
-      const decision = tradeDecision.calculateConfidence({
-        candle: candle5m,
-        direction: dir,
-        indicators: indicators5m,
-        marketContext: _state.lastMarketContext,
-      });
-      const breakoutMsg = proNotifier.format5mBreakoutSignal({
-        candle: candle5m,
-        direction: dir,
-        indicators: indicators5m,
-        oiData,
-        plan,
-        decision,
-        context: _state.lastMarketContext,
-      });
-      await sendDerivativesMessage(breakoutMsg);
+    if (decision.shouldTrade && decision.confidence >= 60 && !decision.hardBlock) {
+      if (_state.position === 'NONE') {
+        _state.position = dir;
+        _state.marketState = dir === 'LONG' ? 'HOLD_LONG' : 'HOLD_SHORT';
+        _state.standAsideReason = null;
+        _state.entryPrice = entry;
+        _state.entryTime = candle5m.time;
+        _state.entryVol = candle5m.volume;
+        _state.maxProfit = 0;
+        _state.breakevenActive = false;
+        _state.currentPlan = plan;
+      }
+
+      if (now - _state.last5mBreakoutAlertTime > ALERT_5M_COOLDOWN_MS) {
+        _state.last5mBreakoutAlertTime = now;
+        const breakoutMsg = proNotifier.format5mBreakoutSignal({
+          candle: candle5m,
+          direction: dir,
+          indicators: indicators5m,
+          oiData,
+          plan,
+          decision,
+          context: _state.lastMarketContext,
+        });
+        await sendDerivativesMessage(breakoutMsg);
+      }
+    } else {
+      _state.marketState = 'STAND_ASIDE';
+      _state.standAsideReason = decision.standAsideReason || 'Chưa đủ điều kiện 5 lớp xác nhận';
+      console.log(`   ⏸️ [5M Engine] VỊ THẾ: ĐỨNG NGOÀI QUAN SÁT (Confidence: ${decision.confidence}% | Lý do: ${_state.standAsideReason})`);
     }
     return;
   }
@@ -2053,6 +2105,9 @@ function stop() {
 function reset() {
   stop();
   _state.position = 'NONE';
+  _state.marketState = 'STAND_ASIDE';
+  _state.standAsideReason = 'Hệ thống đã reset, chờ nến mới...';
+  _state.lastStandAsideAlertTime = 0;
   _state.entryPrice = 0;
   _state.entryTime = '';
   _state.entryIdx = -1;

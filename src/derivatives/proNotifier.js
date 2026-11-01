@@ -513,7 +513,77 @@ function formatFomoWarning(params) {
   return msg;
 }
 
-// ─── 10. DAY PNL SUMMARY ─────────────────────────────────────
+// ─── 10. STAND ASIDE / TRAP SHIELD NOTIFICATION ────────────
+/**
+ * Thông báo vị thế: ĐỨNG NGOÀI QUAN SÁT (STAND ASIDE)
+ * Khi thị trường thiếu cơ sở, dính bẫy sát Hỗ trợ / Kháng cự, hoặc cạn thanh khoản
+ */
+function formatStandAsideNotification(params) {
+  const {
+    candle,
+    direction,            // Hướng tín hiệu bị từ chối ('SHORT' hoặc 'LONG')
+    decision,             // from calculateConfidence()
+    reason,               // Lý do từ chối vào lệnh
+    marketStructureData,
+    indicators,
+    context,
+    pillarAnalysis,
+    liquidityInfo,
+  } = params;
+
+  let msg = `⏸️ <b>TRẠNG THÁI: ĐỨNG NGOÀI QUAN SÁT (STAND ASIDE)</b>\n`;
+  msg += `🛡️ <b>PHÁT HIỆN BẪY: ${escapeHtml(reason || decision?.standAsideReason || 'Chưa đủ điều kiện 5 lớp xác nhận')}</b>\n`;
+  msg += `━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+
+  // 1. Vị trí giá & Key Levels
+  msg += `1️⃣ <b>VỊ TRÍ GIÁ & CẢN / HỖ TRỢ:</b>\n`;
+  if (candle) {
+    msg += `• Giá hiện tại: <b>${candle.close.toFixed(1)}</b> (Nến ${candle.time})\n`;
+  }
+  if (marketStructureData) {
+    if (marketStructureData.nearestSupport) {
+      const dist = Math.abs(candle.close - marketStructureData.nearestSupport.price).toFixed(1);
+      msg += `• Hỗ trợ gần nhất: <b>${marketStructureData.nearestSupport.price.toFixed(1)}</b> (Cách ${dist}đ) 🧱\n`;
+    }
+    if (marketStructureData.nearestResistance) {
+      const dist = Math.abs(marketStructureData.nearestResistance.price - candle.close).toFixed(1);
+      msg += `• Kháng cự gần nhất: <b>${marketStructureData.nearestResistance.price.toFixed(1)}</b> (Cách ${dist}đ) 🚧\n`;
+    }
+    if (marketStructureData.vwap) {
+      const vwapDiff = candle.close - marketStructureData.vwap;
+      msg += `• VWAP: <b>${marketStructureData.vwap.toFixed(1)}</b> (Độ lệch: <b>${vwapDiff >= 0 ? '+' : ''}${vwapDiff.toFixed(1)}đ</b>)\n`;
+    }
+  }
+  msg += '\n';
+
+  // 2. Cảnh báo kỹ thuật
+  msg += `2️⃣ <b>CẢNH BÁO RỦI RO:</b>\n`;
+  if (decision && decision.warnings && decision.warnings.length > 0) {
+    for (const w of decision.warnings.slice(0, 3)) {
+      msg += `• ${escapeHtml(w)}\n`;
+    }
+  } else {
+    msg += `• Thiếu dòng tiền xác nhận, biên độ biến động rủi ro cao\n`;
+  }
+  msg += '\n';
+
+  // 3. Giám sát 7 trụ
+  if (pillarAnalysis && pillarAnalysis.pillars) {
+    msg += `3️⃣ <b>7 TRỤ ĐIỀU TIẾT:</b>\n`;
+    msg += formatPillarsForNotification(pillarAnalysis) + '\n\n';
+  }
+
+  // 4. Lời khuyên Senior Trader
+  msg += `💡 <b>NGUYÊN TẮC QUẢN TRỊ VỐN:</b>\n`;
+  msg += `<i>"Tiền trong túi là tiền của mình. Cấm bán vào hỗ trợ, cấm mua vào kháng cự khi chưa có xác nhận phá vỡ. Kiên nhẫn đứng ngoài quan sát!"</i>\n\n`;
+
+  msg += `━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+  msg += `<i>⏱ VN30F v7.0 Stand Aside Shield | ${getVnTimeHHMMSS()}</i>`;
+
+  return msg;
+}
+
+// ─── 11. DAY PNL SUMMARY ─────────────────────────────────────
 function formatDayPnL(tradeLog) {
   if (!tradeLog || tradeLog.length === 0) return '';
   const totalPnl = tradeLog.reduce((s, t) => s + t.pnl, 0);
@@ -526,6 +596,7 @@ module.exports = {
   formatEntryNotification,
   formatExitNotification,
   formatTrapShieldAlert,
+  formatStandAsideNotification,
   formatPillarAlert,
   formatClimaxAlert,
   formatFlashCrashAlert,

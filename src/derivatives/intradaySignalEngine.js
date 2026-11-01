@@ -622,66 +622,88 @@ function makeAITraderDecision(h1, m15, m5, structure, liquidity, smartMoney, con
   if (_state.position === 'NONE') {
     const entryThreshold = 52;
 
+    // Kiểm tra vùng cản & hỗ trợ trước khi mở lệnh (Hard Filter chống bán vào hỗ trợ / mua vào kháng cự)
+    const isAtSupport = structure && structure.recentLow && (currentPrice >= structure.recentLow - 0.3 && currentPrice <= structure.recentLow + 1.8);
+    const isAtResist = structure && structure.recentHigh && (currentPrice <= structure.recentHigh + 0.3 && currentPrice >= structure.recentHigh - 1.8);
+
     if (bullScore >= entryThreshold && bullScore > bearScore * 1.3) {
-      // MỞ LONG MỚI
-      _state.position = 'LONG';
-      _state.status = 'OPEN_LONG';
-      _state.statusLabel = 'MỞ LONG';
-      _state.entryPrice = currentPrice;
-      _state.entryTime = timeStr;
-      _state.entryTimestamp = Date.now();
-      _state.stopLoss = +(currentPrice - 3.0).toFixed(1);
-      _state.trailingStop = _state.stopLoss;
-      _state.takeProfit1 = +(currentPrice + 5.0).toFixed(1);
-      _state.takeProfit2 = +(currentPrice + 10.0).toFixed(1);
-      _state.currentPnL = 0;
-      _state.maxPnL = 0;
-      _state.minPnL = 0;
-      _state.holdingBars = 1;
+      if (isAtResist && !structure.isBigLong) {
+        // Chặn MUA VÀO KHÁNG CỰ
+        actionDecision = 'STAND_ASIDE';
+        actionTitle = `⚪ ĐỨNG NGOÀI QUAN SÁT (SÁT CẢN ${structure.recentHigh.toFixed(1)})`;
+        actionAdvice = `Giá ${currentPrice} đang ngay sát cản/đỉnh ${structure.recentHigh.toFixed(1)} chưa có xác nhận vượt đỉnh. CẤM MUA ĐUỔI VÀO CẢN! Vị thế: Đứng ngoài quan sát.`;
+        _state.status = 'STAND_ASIDE';
+        _state.statusLabel = actionTitle;
+      } else {
+        // MỞ LONG MỚI
+        _state.position = 'LONG';
+        _state.status = 'OPEN_LONG';
+        _state.statusLabel = 'MỞ LONG';
+        _state.entryPrice = currentPrice;
+        _state.entryTime = timeStr;
+        _state.entryTimestamp = Date.now();
+        _state.stopLoss = +(currentPrice - 3.0).toFixed(1);
+        _state.trailingStop = _state.stopLoss;
+        _state.takeProfit1 = +(currentPrice + 5.0).toFixed(1);
+        _state.takeProfit2 = +(currentPrice + 10.0).toFixed(1);
+        _state.currentPnL = 0;
+        _state.maxPnL = 0;
+        _state.minPnL = 0;
+        _state.holdingBars = 1;
 
-      actionDecision = 'OPEN_LONG';
-      actionTitle = `🟢 MỞ LONG @ ${currentPrice}`;
-      actionAdvice = `Khớp mở vị thế LONG quanh ${currentPrice}. Tuân thủ kỷ luật SL -3đ.`;
-      tradePlan = {
-        action: 'MỞ LONG',
-        entry: currentPrice,
-        sl: _state.stopLoss,
-        tp1: _state.takeProfit1,
-        tp2: _state.takeProfit2,
-        trailing: _state.trailingStop,
-      };
+        actionDecision = 'OPEN_LONG';
+        actionTitle = `🟢 MỞ LONG @ ${currentPrice}`;
+        actionAdvice = `Khớp mở vị thế LONG quanh ${currentPrice}. Tuân thủ kỷ luật SL -3đ.`;
+        tradePlan = {
+          action: 'MỞ LONG',
+          entry: currentPrice,
+          sl: _state.stopLoss,
+          tp1: _state.takeProfit1,
+          tp2: _state.takeProfit2,
+          trailing: _state.trailingStop,
+        };
+      }
     } else if (bearScore >= entryThreshold && bearScore > bullScore * 1.3) {
-      // MỞ SHORT MỚI
-      _state.position = 'SHORT';
-      _state.status = 'OPEN_SHORT';
-      _state.statusLabel = 'MỞ SHORT';
-      _state.entryPrice = currentPrice;
-      _state.entryTime = timeStr;
-      _state.entryTimestamp = Date.now();
-      _state.stopLoss = +(currentPrice + 3.0).toFixed(1);
-      _state.trailingStop = _state.stopLoss;
-      _state.takeProfit1 = +(currentPrice - 5.0).toFixed(1);
-      _state.takeProfit2 = +(currentPrice - 10.0).toFixed(1);
-      _state.currentPnL = 0;
-      _state.maxPnL = 0;
-      _state.minPnL = 0;
-      _state.holdingBars = 1;
+      if (isAtSupport && !structure.isBigShort) {
+        // Chặn BÁN VÀO HỖ TRỢ
+        actionDecision = 'STAND_ASIDE';
+        actionTitle = `⚪ ĐỨNG NGOÀI QUAN SÁT (SÁT HỖ TRỢ ${structure.recentLow.toFixed(1)})`;
+        actionAdvice = `Giá ${currentPrice} đang ngay sát hỗ trợ/đáy ${structure.recentLow.toFixed(1)} chưa có xác nhận thủng đáy. CẤM BÁN VÀO HỖ TRỢ (tránh Short Squeeze / bẫy rút chân)! Vị thế: Đứng ngoài quan sát.`;
+        _state.status = 'STAND_ASIDE';
+        _state.statusLabel = actionTitle;
+      } else {
+        // MỞ SHORT MỚI
+        _state.position = 'SHORT';
+        _state.status = 'OPEN_SHORT';
+        _state.statusLabel = 'MỞ SHORT';
+        _state.entryPrice = currentPrice;
+        _state.entryTime = timeStr;
+        _state.entryTimestamp = Date.now();
+        _state.stopLoss = +(currentPrice + 3.0).toFixed(1);
+        _state.trailingStop = _state.stopLoss;
+        _state.takeProfit1 = +(currentPrice - 5.0).toFixed(1);
+        _state.takeProfit2 = +(currentPrice - 10.0).toFixed(1);
+        _state.currentPnL = 0;
+        _state.maxPnL = 0;
+        _state.minPnL = 0;
+        _state.holdingBars = 1;
 
-      actionDecision = 'OPEN_SHORT';
-      actionTitle = `🔴 MỞ SHORT @ ${currentPrice}`;
-      actionAdvice = `Khớp mở vị thế SHORT quanh ${currentPrice}. Tuân thủ kỷ luật SL +3đ.`;
-      tradePlan = {
-        action: 'MỞ SHORT',
-        entry: currentPrice,
-        sl: _state.stopLoss,
-        tp1: _state.takeProfit1,
-        tp2: _state.takeProfit2,
-        trailing: _state.trailingStop,
-      };
+        actionDecision = 'OPEN_SHORT';
+        actionTitle = `🔴 MỞ SHORT @ ${currentPrice}`;
+        actionAdvice = `Khớp mở vị thế SHORT quanh ${currentPrice}. Tuân thủ kỷ luật SL +3đ.`;
+        tradePlan = {
+          action: 'MỞ SHORT',
+          entry: currentPrice,
+          sl: _state.stopLoss,
+          tp1: _state.takeProfit1,
+          tp2: _state.takeProfit2,
+          trailing: _state.trailingStop,
+        };
+      }
     } else {
       actionDecision = 'STAND_ASIDE';
       actionTitle = '⚪ ĐỨNG NGOÀI QUAN SÁT';
-      actionAdvice = 'AI đang TRỐNG LỆNH. Hai phe giằng co hoặc cạn thanh khoản ➔ Kiên nhẫn chờ setup.';
+      actionAdvice = 'AI đang TRỐNG LỆNH. Hai phe giằng co hoặc cạn thanh khoản ➔ Kiên nhẫn chờ setup rõ ràng.';
       _state.status = 'STAND_ASIDE';
       _state.statusLabel = 'ĐỨNG NGOÀI QUAN SÁT';
     }
