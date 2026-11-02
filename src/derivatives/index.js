@@ -197,6 +197,15 @@ async function runPostATCJob() {
     const msg = await oiTracker.buildPostATCNotificationAsync();
     await sendDerivativesMessage(msg);
     console.log('   ✅ Derivatives Post-ATC [14h44] hoàn thành');
+
+    // Đồng bộ và gửi báo cáo tổng kết nhật ký giao dịch AI Trader trong ngày (Google Sheets + Telegram)
+    try {
+      await intradaySignalEngine.generateAndSendDailyReport();
+      console.log('   ✅ Báo cáo tổng kết nhật ký ngày AI Trader (Google Sheets + Telegram) hoàn thành');
+    } catch (e) {
+      console.error('   ⚠️ [Daily Trading Report] Lỗi:', e.message);
+    }
+
     return true;
   } catch (e) {
     console.error('   ❌ Derivatives Post-ATC [14h44] lỗi:', e.message);
@@ -249,6 +258,7 @@ module.exports = {
   runEveningPlanJob,
   // Intraday Signal v7.0
   runIntradaySignalJob,
+  generateAndSendDailyReport: intradaySignalEngine.generateAndSendDailyReport,
   resetIntradayState: intradaySignalEngine.resetIntradayState,
   // Tracker references
   oiTracker,

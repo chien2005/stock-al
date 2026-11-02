@@ -86,10 +86,13 @@ async function analyzePillars(f1mDirection = null, forceRefresh = false) {
 
     const price = parseFloat(item.lastPrice) || parseFloat(item.r) || 0;
     const ref = parseFloat(item.r) || price;
+    const ceil = parseFloat(item.c) || (ref * 1.07);
+    const floor = parseFloat(item.f) || (ref * 0.93);
+
+    // Tính chính xác % thay đổi realtime từ giá hiện tại so với tham chiếu
+    // (TUYỆT ĐỐI KHÔNG dùng item.changePc vì VPS API trả về số dương không mang dấu âm khi giảm)
     let changePct = 0;
-    if (item.changePc !== undefined && item.changePc !== null && item.changePc !== '') {
-      changePct = parseFloat(item.changePc);
-    } else if (ref > 0) {
+    if (ref > 0 && price > 0) {
       changePct = parseFloat((((price - ref) / ref) * 100).toFixed(2));
     }
 
@@ -98,7 +101,19 @@ async function analyzePillars(f1mDirection = null, forceRefresh = false) {
 
     let status = 'NEUTRAL';
     let emoji = '⚪';
-    if (changePct >= 1.5) {
+
+    // Nhận diện tím trần / xanh lơ sàn
+    if (price >= ceil - 0.05 && price > 0) {
+      status = 'CEILING';
+      emoji = '🟣';
+      strongBullCount++;
+      bullishCount++;
+    } else if (price <= floor + 0.05 && price > 0) {
+      status = 'FLOOR';
+      emoji = '🔵';
+      strongBearCount++;
+      bearishCount++;
+    } else if (changePct >= 1.5) {
       status = 'STRONG_BULL';
       emoji = '🚀';
       strongBullCount++;

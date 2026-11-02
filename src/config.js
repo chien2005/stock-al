@@ -114,6 +114,9 @@ const config = {
     whipsawCooldownMin: parseInt(process.env.DERIVATIVES_WHIPSAW_COOLDOWN || '30', 10),
   },
 
+  // Google Sheet Webhook for Trading Journal
+  googleSheetWebhookUrl: process.env.GOOGLE_SHEET_WEBHOOK_URL || '',
+
   // Version
   version: '2.5.0',
 };
