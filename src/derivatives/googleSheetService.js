@@ -285,3 +285,4 @@ module.exports = {
   loadTradeHistory,
   syncToGoogleSheets,
 };
+

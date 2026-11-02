@@ -115,7 +115,7 @@ const config = {
   },
 
   // Google Sheet Webhook for Trading Journal
-  googleSheetWebhookUrl: process.env.GOOGLE_SHEET_WEBHOOK_URL || '',
+  googleSheetWebhookUrl: process.env.GOOGLE_SHEET_WEBHOOK_URL || 'https://script.google.com/macros/s/AKfycbyHlkcu2GxNys1zzVc7HBvgFHrFlwFIDrfWkXRggncH2aKlpuIgyywxdBddd-aWYibn/exec',
 
   // Version
   version: '2.5.0',
