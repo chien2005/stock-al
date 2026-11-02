@@ -447,42 +447,18 @@ async function main() {
     console.log(`⏸️ [STANDBY] Instance ngoài ngày hoạt động (${config.activeDays}) — Chờ đến lượt xoay tua.`);
   }
 
-  // ─── SCHEDULE JOB 1: BÁO GIÁ (T2-T6, 10h) ────
-  cron.schedule(config.cronSchedule, () => {
-    if (!isCurrentInstanceActive()) return;
-    const now = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
-    console.log(`\n⏰ [Báo giá] Cron triggered: ${now}`);
-    runStockJob();
-  }, {
-    scheduled: true,
-    timezone: config.timezone,
-  });
-
-  // ─── SCHEDULE JOB 1a: BÁO GIÁ TRONG PHIÊN (T2-T6, 13h35/14h10/14h40) ────
-  const intradaySchedules = [
-    { cron: '35 13 * * 1-5', label: '13:35' },
-    { cron: '10 14 * * 1-5', label: '14:10' },
-    { cron: '40 14 * * 1-5', label: '14:40' },
-  ];
-  for (const schedule of intradaySchedules) {
-    cron.schedule(schedule.cron, () => {
-      if (!isCurrentInstanceActive()) return;
-      const now = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
-      console.log(`\n⏰ [Báo giá ${schedule.label}] Cron triggered: ${now}`);
-      runStockJob();
-    }, { scheduled: true, timezone: config.timezone });
-  }
-
-  // ─── SCHEDULE JOB 1b: BÁO GIÁ KẾT PHIÊN (T2-T6, 15h01) ────
+  // ─── SCHEDULE JOB 1: BÁO GIÁ CƠ SỞ (TỐI GIẢN: DUY NHẤT 15h01 KẾT PHIÊN) ────
+  // Đã lược bỏ các thông báo ban ngày (10h00, 13h35, 14h10, 14h40) để tránh loãng group cơ sở
   cron.schedule(config.cronCloseSchedule, () => {
     if (!isCurrentInstanceActive()) return;
     const now = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
-    console.log(`\n⏰ [Báo giá kết phiên] Cron triggered: ${now}`);
+    console.log(`\n⏰ [Báo giá kết phiên 15h01] Cron triggered: ${now}`);
     runStockJob();
   }, {
     scheduled: true,
     timezone: config.timezone,
   });
+  console.log('   📊 Báo giá Cơ sở: DUY NHẤT 15h01 Kết phiên (T2-T6)');
 
   // ─── SCHEDULE JOB 2: AI REPORT (T2-T6, 20h30) ─────────
   cron.schedule(config.cronAiSchedule, () => {
@@ -542,52 +518,9 @@ async function main() {
     syncActiveState();
   }, 5 * 60 * 1000);
 
-  // ─── START ALERT MONITOR (cảnh báo giao dịch bất thường) ───
-  startAlertMonitor();
-
   // ─── START VOLUME SCALPER v5.0 (chạy cả khi khởi động lại trong phiên) ───
   startVolumeScalper();
-
-  // Reset alert data mỗi ngày lúc 9:00 (trước phiên)
-  cron.schedule('0 9 * * 1-5', () => {
-    if (!isCurrentInstanceActive()) return;
-    resetDailyData();
-  }, { scheduled: true, timezone: config.timezone });
-
-  // ─── SCHEDULE: FLUSH GIAO DỊCH LỚN (11h, 13h35, 14h10, 14h40 T2-T6) ───
-  // Gom tất cả lệnh >= 5 tỷ rồi gửi tổng hợp 1 lần, tránh spam
-  const bigTradeFlushSchedules = [
-    { cron: '0 11 * * 1-5', label: '11:00' },
-    { cron: '35 13 * * 1-5', label: '13:35' },
-    { cron: '10 14 * * 1-5', label: '14:10' },
-    { cron: '40 14 * * 1-5', label: '14:40' },
-  ];
-
-  for (const schedule of bigTradeFlushSchedules) {
-    cron.schedule(schedule.cron, async () => {
-      if (!isCurrentInstanceActive()) return;
-      console.log(`\n📦 [BigTrade Flush ${schedule.label}] Cron triggered`);
-      try {
-        await flushBigTradeBuffer();
-      } catch (err) {
-        console.error(`📦 [BigTrade Flush ${schedule.label}] Lỗi:`, err.message);
-      }
-    }, { scheduled: true, timezone: config.timezone });
-  }
-  console.log('   📦 BigTrade Flush: 11:00 | 13:35 | 14:10 | 14:40 (T2-T6, ≥5 tỷ)');
-
-  // ─── SCHEDULE: WHALE TRACKER REPORT (T2-T6, 19h45) ───
-  cron.schedule('45 19 * * 1-5', async () => {
-    if (!isCurrentInstanceActive()) return;
-    const now = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
-    console.log(`\n🐋 [Whale Tracker] Cron triggered: ${now}`);
-    try {
-      await runWhaleTrackerReport();
-    } catch (err) {
-      console.error('🐋 [Whale Tracker] Lỗi:', err.message);
-    }
-  }, { scheduled: true, timezone: config.timezone });
-  console.log('   🐋 Whale Tracker: 19:45 (T2-T6)');
+  // Đã lược bỏ Alert Monitor, BigTrade Flush và Whale Tracker theo yêu cầu của user để tối giản group cơ sở
 
   // ─── SCHEDULE: DERIVATIVES — RESET & START VOLUME SCALPER 9h00 ───
   cron.schedule('0 9 * * 1-5', async () => {
@@ -970,7 +903,7 @@ async function main() {
   console.log('\n' + '─'.repeat(55));
   console.log(`🟢 VN Stock Bot v${config.version} đang chạy!`);
   console.log('');
-  console.log('   📊 Báo giá:     ' + config.cronSchedule + ` (${config.timezone})`);
+  console.log('   📊 Báo giá Cơ sở: DUY NHẤT 15h01 Kết phiên (' + config.cronCloseSchedule + `)`);
   console.log('   📊 Kết phiên:   ' + config.cronCloseSchedule + ` (${config.timezone})`);
   console.log('   🧠 AI Cuối phiên:' + config.cronAfterCloseSchedule + ` (${config.timezone})`);
   console.log('   🤖 AI Report:   ' + config.cronAiSchedule + ` (${config.timezone})`);
