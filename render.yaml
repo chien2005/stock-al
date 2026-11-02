@@ -27,6 +27,8 @@ services:
         value: "30 8 * * 1"
       - key: STOCK_SYMBOLS
         value: "VCB,BID,CTG,TCB,MBB,VPB,STB,ACB,VHM,VIC,VRE,GAS,PLX,HPG,SSI,VND,HCM,FPT,VNM,MWG,MSN,SAB,GVR,BCM,POW,CTR,HHV,E1VFVN30"
+      - key: GOOGLE_SHEET_WEBHOOK_URL
+        value: "https://script.google.com/macros/s/AKfycbyHlkcu2GxNys1zzVc7HBvgFHrFlwFIDrfWkXRggncH2aKlpuIgyywxdBddd-aWYibn/exec"
       - key: TELEGRAM_BOT_TOKEN
         sync: false
       - key: TELEGRAM_CHAT_ID

@@ -1,7 +1,7 @@
 {
   "name": "vn-stock-telegram-bot",
-  "version": "2.0.0",
-  "description": "Vietnam Stock Bot - Multi-AI Team + Global Market System (Gemini + Yahoo Finance)",
+  "version": "8.2.0",
+  "description": "Vietnam Stock Bot - Senior Trader AI Engine v8.2 & Derivatives Scalper 24/7",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",

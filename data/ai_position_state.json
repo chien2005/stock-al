@@ -18,7 +18,7 @@
   "holdingBars": 0,
   "breakevenActive": false,
   "tp1Hit": false,
-  "liquidityMode": "SCALP",
+  "liquidityMode": "TREND",
   "todayTrades": [],
   "totalPnLToday": 0,
   "totalGrossPnLToday": 0,
@@ -29,8 +29,8 @@
   "maxDailyTrades": 4,
   "lastExitTime": null,
   "lastExitTimestamp": 0,
-  "signalCount": 0,
+  "signalCount": 1,
   "consecutiveSame": 0,
   "lastSignal": null,
-  "lastUpdated": "2026-11-02T13:54:17.628Z"
+  "lastUpdated": "2026-11-02T14:44:37.483Z"
 }
