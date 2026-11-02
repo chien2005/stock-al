@@ -1,4 +1,80 @@
 {
-  "trades": [],
-  "dailySummaries": []
+  "trades": [
+    {
+      "id": 1,
+      "orderNum": 1,
+      "date": "2/11/2026",
+      "contract": "VN30F1M",
+      "type": "SHORT",
+      "entryTime": "09:30:15",
+      "entryPrice": 1818.5,
+      "exitTime": "10:15:22",
+      "exitPrice": 1811.5,
+      "grossPnL": 7,
+      "fee": 0.6,
+      "netPnL": 6.4,
+      "isWin": true,
+      "resultLabel": "TP (+6.4đ)",
+      "reason": "Chốt lời TP2 thuận thế hạ đỉnh",
+      "cumulativeDayNetPnL": 6.4,
+      "timestamp": 1793629691517
+    },
+    {
+      "id": 2,
+      "orderNum": 2,
+      "date": "2/11/2026",
+      "contract": "VN30F1M",
+      "type": "LONG",
+      "entryTime": "10:45:10",
+      "entryPrice": 1808,
+      "exitTime": "11:15:35",
+      "exitPrice": 1805.5,
+      "grossPnL": -2.5,
+      "fee": 0.6,
+      "netPnL": -3.1,
+      "isWin": false,
+      "resultLabel": "SL (-3.1đ)",
+      "reason": "Dính Stop Loss cắt lỗ",
+      "cumulativeDayNetPnL": 3.3,
+      "timestamp": 1793629694030
+    },
+    {
+      "id": 3,
+      "orderNum": 3,
+      "date": "2/11/2026",
+      "contract": "VN30F1M",
+      "type": "SHORT",
+      "entryTime": "13:35:05",
+      "entryPrice": 1812,
+      "exitTime": "14:15:18",
+      "exitPrice": 1805,
+      "grossPnL": 7,
+      "fee": 0.6,
+      "netPnL": 6.4,
+      "isWin": true,
+      "resultLabel": "TP (+6.4đ)",
+      "reason": "Chốt lời TP2 phá đáy phiên chiều",
+      "cumulativeDayNetPnL": 9.7,
+      "timestamp": 1793629696455
+    }
+  ],
+  "dailySummaries": [
+    {
+      "date": "02/11/2026",
+      "totalTrades": 3,
+      "winTrades": 2,
+      "lossTrades": 1,
+      "winRate": "0%",
+      "winRateDay": "0%",
+      "winRateWeek": "66.7%",
+      "winRateMonth": "66.7%",
+      "winRateAllTime": "66.7%",
+      "totalGrossPnL": 11.5,
+      "totalFees": 1.8,
+      "totalNetPnL": 9.7,
+      "cumulativeAllTimeNetPnL": 9.7,
+      "evaluation": "TP (+9.7đ)",
+      "timestamp": 1793629698704
+    }
+  ]
 }
