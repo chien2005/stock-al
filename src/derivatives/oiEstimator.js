@@ -123,11 +123,12 @@ function estimateTuDoanh(nnNet, actualTD) {
 function estimateCumulativePositions(history) {
   if (!history || history.length === 0) return [];
 
-  let cumulativeNN = 0;
-  let cumulativeTD = 0;
+  // Xác định mốc lũy kế khởi điểm nếu có
+  let cumulativeNN = history[0].cumulativeNN !== undefined ? history[0].cumulativeNN : 0;
+  let cumulativeTD = history[0].cumulativeTD !== undefined ? history[0].cumulativeTD : 0;
 
-  const results = history.map((session) => {
-    const nnNet = session.overnightNet || 0;
+  const results = history.map((session, idx) => {
+    const nnNet = session.overnightNet !== undefined ? session.overnightNet : (session.net || 0);
     const deltaOI = session.oiChange || 0;
     const totalVolume = session.volume || 0;
     const actualTD = session.tuDoanhOvernight || 0;
@@ -135,26 +136,26 @@ function estimateCumulativePositions(history) {
     // 1. Classify hành vi NN (chỉ để mô tả, KHÔNG thay đổi con số)
     const nnAction = classifyTradeAction(deltaOI, nnNet, totalVolume);
 
-    // 2. NN position delta = NN_net trực tiếp (100% chính xác)
-    const nnPositionDelta = nnNet;
-
-    // 3. TD: dùng data thực hoặc ước lượng
+    // 2. TD: dùng data thực hoặc ước lượng
     const tdEstimate = estimateTuDoanh(nnNet, actualTD);
-    const tdPositionDelta = tdEstimate.value;
 
-    // 4. Lũy kế
-    cumulativeNN += nnPositionDelta;
-    cumulativeTD += tdPositionDelta;
-    const cumulativeCrowd = -(cumulativeNN + cumulativeTD);
+    // 3. Lũy kế: Ưu tiên giá trị đã ghi nhận trong history, nếu chưa có thì cộng dồn liên tục
+    if (session.cumulativeNN !== undefined) {
+      cumulativeNN = session.cumulativeNN;
+      cumulativeTD = session.cumulativeTD !== undefined ? session.cumulativeTD : (cumulativeTD + tdEstimate.value);
+    } else if (idx > 0) {
+      cumulativeNN += nnNet;
+      cumulativeTD += tdEstimate.value;
+    }
 
-    // 5. Crowd phiên = -(NN + TD)
+    const cumulativeCrowd = session.cumulativeCrowd !== undefined ? session.cumulativeCrowd : -(cumulativeNN + cumulativeTD);
     const crowdDelta = -(nnNet + tdEstimate.value);
 
     return {
       ...session,
       nnAction,
-      nnPositionDelta,
-      tdPositionDelta,
+      nnPositionDelta: nnNet,
+      tdPositionDelta: tdEstimate.value,
       tdIsEstimated: tdEstimate.isEstimated,
       crowdDelta,
       cumulativeNN,
