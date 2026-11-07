@@ -15,6 +15,8 @@
 const fs = require('fs');
 const path = require('path');
 const googleSheetService = require('./googleSheetService');
+const dataFetcher = require('./dataFetcher');
+const { sendDerivativesMessage } = require('../telegramService');
 
 const DATA_DIR = path.join(__dirname, '..', '..', 'data');
 const STATE_FILE = path.join(DATA_DIR, 'ai_position_state.json');
@@ -548,6 +550,68 @@ function getPositionSummary() {
   };
 }
 
+/**
+ * Tổng kết và gửi Báo Cáo Nhật Ký Giao Dịch Cuối Ngày (14h44 Post-ATC)
+ * 1. Đóng vị thế mở nếu không đạt chuẩn Graduation (lãi < 15đ)
+ * 2. Ghi nhận tổng kết ngày vào Google Sheets & local JSON
+ * 3. Gửi báo cáo nhật ký giao dịch lên Telegram
+ */
+async function generateAndSendDailyTradingReport() {
+  const state = loadState();
+  const todayStr = getTodayVNString();
+  const nowTime = getNowVNTimeString();
+
+  // 1. Kiểm tra vị thế còn mở cuối phiên
+  if (state.position !== 'NONE' && state.entryPrice) {
+    if (state.graduatedOvernight && state.currentPnL >= 15.0) {
+      console.log(`   🎓 [DailyReport] Vị thế ${state.position} @ ${state.entryPrice} (+${state.currentPnL}đ) đạt chuẩn Graduation -> Giữ qua đêm.`);
+    } else {
+      let exitPrice = state.entryPrice;
+      try {
+        const fut = await dataFetcher.fetchRealtimeFuturesPrice();
+        if (fut && fut.price) exitPrice = fut.price;
+      } catch (e) {}
+      await closePosition({
+        exitPrice,
+        exitReason: 'Tất toán cuối ngày (ATC) bảo vệ an toàn tài khoản',
+        exitTime: nowTime,
+      });
+    }
+  }
+
+  // Tải lại state sau khi có thể đã đóng vị thế
+  const updatedState = loadState();
+  const trades = updatedState.todayTrades || [];
+  const totalTrades = trades.length;
+  const winTrades = updatedState.winTrades || 0;
+  const lossTrades = updatedState.lossTrades || 0;
+  const totalGrossPnL = updatedState.totalGrossPnLToday || 0;
+  const totalFees = +(totalTrades * FEE_PER_TRADE).toFixed(1);
+  const totalNetPnL = updatedState.totalNetPnLToday || 0;
+
+  const summary = {
+    date: todayStr,
+    totalTrades,
+    winTrades,
+    lossTrades,
+    totalGrossPnL,
+    totalFees,
+    totalNetPnL,
+  };
+
+  // 2. Ghi nhận Daily Summary vào Google Sheets & local JSON
+  const dailyRecord = await googleSheetService.logDailySummary(summary);
+
+  // 3. Format tin nhắn Telegram
+  const reportMsg = googleSheetService.formatDailyTradingReport(dailyRecord, trades);
+
+  // 4. Gửi Telegram
+  await sendDerivativesMessage(reportMsg);
+  console.log(`   📊 [Daily Report] Đã gửi báo cáo tổng kết ngày ${todayStr} lên Telegram & Google Sheets`);
+
+  return { summary: dailyRecord, trades };
+}
+
 module.exports = {
   FEE_PER_TRADE,
   loadState,
@@ -560,4 +624,6 @@ module.exports = {
   checkExpiryInfo,
   getTodayVNString,
   getNowVNTimeString,
+  generateAndSendDailyTradingReport,
 };
+

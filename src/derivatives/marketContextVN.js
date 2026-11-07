@@ -14,6 +14,12 @@ const dataFetcher = require('./dataFetcher');
 const pillarMonitor = require('./pillarMonitor');
 const oiTracker = require('./oiTracker');
 
+// ─── INTRADAY BASIS BASELINE TRACKER ─────────────────────────
+const _basisTracker = {
+  date: '',
+  samples: [], // Lưu các mẫu { time, basis, vn30Delta, f1mDelta }
+};
+
 async function analyzeVietnamMarketContext() {
   // Fetch đồng thời các nguồn dữ liệu realtime
   const [
@@ -42,26 +48,58 @@ async function analyzeVietnamMarketContext() {
   const vnidxPrev = vnindexPrice ? vnindexPrice.prevPrice : vnidx;
   const vnidxDelta = vnidx - vnidxPrev;
 
-  // 1. Phân tích Basis (F1M - VN30)
+  // 1. Phân tích Basis (F1M - VN30) theo đặc thù TTCK Việt Nam
+  // Nguyên tắc: Thị trường VN đa số giữ dương (+6 đến +8đ là bình thường, không có nhiều ý nghĩa)
+  // Chỉ cảnh giác khi:
+  //   a) VN30 tăng mà Basis chuyển âm / duy trì âm -> Bẫy Bò (Bull Trap), dấu hiệu sắp xả hàng, lực tăng sắp cạn!
+  //   b) Thế Big Short / Xu hướng giảm mà Basis âm sâu -> Áp lực bán tháo hoặc chuẩn bị Short Squeeze.
+  //   c) Đột ngột thay đổi lớn so với mức nền trung bình trong ngày.
   const basis = vn30 > 0 && f1m > 0 ? parseFloat((f1m - vn30).toFixed(2)) : 0;
-  let basisState = 'NORMAL';
-  let basisLabel = `Bình thường (${basis >= 0 ? '+' : ''}${basis}đ)`;
-  let basisWarning = null;
 
-  if (basis >= 7.0) {
-    basisState = 'EXTREME_POSITIVE';
-    basisLabel = `🔥 BASIS DƯƠNG RẤT CAO (+${basis}đ)`;
-    basisWarning = 'Phe Long hưng phấn quá đà, phái sinh chạy trước cơ sở. RỦI RO BẪY ĐU ĐỈNH LONG!';
-  } else if (basis <= -7.0) {
-    basisState = 'EXTREME_NEGATIVE';
-    basisLabel = `❄️ BASIS ÂM RẤT SÂU (${basis}đ)`;
-    basisWarning = 'Phe Short hoảng loạn ép chiết khấu quá đà. RỦI RO SHORT SQUEEZE (BẬT TĂNG NGƯỢC)!';
-  } else if (basis >= 3.0) {
-    basisState = 'POSITIVE';
-    basisLabel = `Thiên Long (+${basis}đ)`;
-  } else if (basis <= -3.0) {
-    basisState = 'NEGATIVE';
-    basisLabel = `Thiên Short (${basis}đ)`;
+  const todayStr = new Date().toLocaleDateString('vi-VN');
+  if (_basisTracker.date !== todayStr) {
+    _basisTracker.date = todayStr;
+    _basisTracker.samples = [];
+  }
+  _basisTracker.samples.push({ time: Date.now(), basis, vn30Delta, f1mDelta });
+  if (_basisTracker.samples.length > 100) _basisTracker.samples.shift();
+
+  const baselineBasis = _basisTracker.samples.length > 0
+    ? _basisTracker.samples.reduce((s, x) => s + x.basis, 0) / _basisTracker.samples.length
+    : basis;
+  const deltaFromBaseline = parseFloat((basis - baselineBasis).toFixed(1));
+
+  let basisState = 'NORMAL_POSITIVE';
+  let basisLabel = `Bình thường (${basis >= 0 ? '+' : ''}${basis}đ - Giữ dương chuẩn thị trường VN)`;
+  let basisWarning = null;
+  let isNotableAnomaly = false;
+
+  // Trường hợp 1: VN30 tăng nhưng Basis chuyển Âm hoặc duy trì Âm
+  if (vn30Delta > 0.3 && basis <= 0) {
+    basisState = 'BEARISH_DIVERGENCE_BULL_TRAP';
+    basisLabel = `⚠️ VN30 TĂNG NHƯNG BASIS ÂM (${basis}đ) ➔ BẪY BÒ / SẮP XẢ HÀNG`;
+    basisWarning = 'Cơ sở kéo tăng nhưng Phái sinh chiết khấu âm. Dòng tiền nghi ngờ, dấu hiệu sắp xả hàng (Bull Trap), lực tăng sắp cạn kiệt!';
+    isNotableAnomaly = true;
+  }
+  // Trường hợp 2: Thế Big Short / Giảm mạnh mà Basis âm sâu
+  else if ((f1mDelta < -1.0 || vn30Delta < -1.0) && basis <= -3.0) {
+    basisState = 'BIG_SHORT_PANIC_EXPANSION';
+    basisLabel = `❄️ THẾ GIẢM MẠNH + BASIS ÂM SÂU (${basis}đ) ➔ CẢNH GIÁC BÁN THÁO / SHORT SQUEEZE`;
+    basisWarning = 'Thế Short chủ đạo, Phái sinh chiết khấu âm sâu. Cảnh giác áp lực bán tháo hoặc chuẩn bị có cú nảy kỹ thuật giật quét Short Squeeze.';
+    isNotableAnomaly = true;
+  }
+  // Trường hợp 3: Đột ngột biến động lệch mạnh so với nền trung bình trong ngày
+  else if (_basisTracker.samples.length >= 5 && Math.abs(deltaFromBaseline) >= 4.0) {
+    basisState = 'BASIS_SUDDEN_SHIFT';
+    basisLabel = `⚡ BIẾN ĐỘNG BASIS BẤT THƯỜNG (${basis >= 0 ? '+' : ''}${basis}đ, lệch ${deltaFromBaseline > 0 ? '+' : ''}${deltaFromBaseline}đ so với nền ${baselineBasis.toFixed(1)}đ)`;
+    basisWarning = `Basis đột ngột thay đổi lớn ngoài vùng nền dao động trong ngày. Theo dõi phản ứng dòng tiền tay to.`;
+    isNotableAnomaly = true;
+  }
+  // Trường hợp 4: Basis âm đơn thuần (không có nhịp tăng)
+  else if (basis < 0) {
+    basisState = 'NEGATIVE_DISCOUNT';
+    basisLabel = `Chiết khấu âm nhẹ (${basis}đ)`;
+    basisWarning = 'Basis âm - phe Phái sinh đang thận trọng hơn cơ sở.';
   }
 
   // 2. Phân tích 7 Trụ Điều Tiết
@@ -119,6 +157,9 @@ async function analyzeVietnamMarketContext() {
       state: basisState,
       description: basisLabel,
       warning: basisWarning,
+      isNotableAnomaly,
+      deltaFromBaseline,
+      baselineBasis: parseFloat(baselineBasis.toFixed(1)),
     },
     pillars: {
       status: pillarStatus,

@@ -174,24 +174,24 @@ function evaluateEvents({
     }
   }
 
-  // 5. Bất thường Basis hoặc Dòng tiền Khối ngoại
-  if (marketContext && marketContext.basisContext) {
-    const basisVal = marketContext.basisContext.basis;
-    if (basisVal <= -7.0 && !isUnderCooldown('BASIS_EXTREME_NEGATIVE', 60 * 60 * 1000)) {
+  // 5. Bất thường Basis theo đặc thù TTCK Việt Nam
+  // (Chỉ cảnh giác khi Basis âm, hoặc khi VN30 tăng mà Basis âm - bẫy bò sắp xả hàng, hoặc lệch mạnh ngoài nền ngày)
+  if (marketContext && marketContext.basisContext && marketContext.basisContext.isNotableAnomaly) {
+    const bc = marketContext.basisContext;
+    const cooldownKey = `BASIS_${bc.state}`;
+
+    if (!isUnderCooldown(cooldownKey, 60 * 60 * 1000)) {
       events.push({
-        type: 'BASIS_STRETCH',
-        key: 'BASIS_EXTREME_NEGATIVE',
+        type: 'BASIS_ANOMALY',
+        key: cooldownKey,
         priority: 4,
-        title: '⚡ BẤT THƯỜNG BASIS: CHIẾT KHẤU ÂM NẶNG (≤ -7đ) — ĐỀ PHÒNG SPRING',
-        details: { basisVal, description: marketContext.basisContext.description },
-      });
-    } else if (basisVal >= 7.0 && !isUnderCooldown('BASIS_EXTREME_POSITIVE', 60 * 60 * 1000)) {
-      events.push({
-        type: 'BASIS_STRETCH',
-        key: 'BASIS_EXTREME_POSITIVE',
-        priority: 4,
-        title: '⚡ BẤT THƯỜNG BASIS: FOMO DƯƠNG CAO (≥ +7đ) — ĐỀ PHÒNG UPTHRUST',
-        details: { basisVal, description: marketContext.basisContext.description },
+        title: bc.description,
+        details: {
+          basisVal: bc.basis,
+          state: bc.state,
+          warning: bc.warning,
+          description: bc.description,
+        },
       });
     }
   }
@@ -257,6 +257,22 @@ function formatEventNotification({
     msg += `• Vùng S/R: <b>[${event.details.zone.low} - ${event.details.zone.high}]</b> (${event.details.zone.timeframe})\n`;
     msg += `• Số lần kiểm tra: <b>${event.details.zone.touchCount} lần</b> | Trạng thái: <b>${event.details.zone.lifecycle}</b>\n`;
     msg += `• <b>HÀNH ĐỘNG:</b> Kiên nhẫn chờ nến M15 đóng cửa xác nhận phản ứng hoặc Bẫy Reclaim. Tuyệt đối không fomo bắt dao rơi!\n\n`;
+  } else if (event.type === 'BASIS_ANOMALY') {
+    const b = event.details;
+    msg += `⚡ <b>BẢN CHẤT DỊ BIỆT BASIS:</b>\n`;
+    msg += `• Basis hiện tại: <b>${b.basisVal >= 0 ? '+' : ''}${b.basisVal}đ</b>\n`;
+    msg += `• Cảnh báo: <b>${b.warning}</b>\n`;
+    msg += `• <b>HÀNH ĐỘNG:</b> Giữ kỷ luật quản trị vốn. Không fomo mua đuổi khi cơ sở kéo trụ xả phái sinh, hoặc đề phòng quét Short Squeeze khi Basis âm sâu.\n\n`;
+  }
+
+  // 2.5. Thông tin lệnh tự động vừa mở (nếu có)
+  if (notificationData.executedTrade) {
+    const t = notificationData.executedTrade;
+    msg += `🎯 <b>LỆNH VÀO TỰ ĐỘNG AI COPILOT:</b>\n`;
+    msg += `• Trạng thái: <b>ĐÃ MỞ ${t.position} @ ${t.entryPrice}</b>\n`;
+    msg += `• Cắt lỗ (SL): <b>${t.stopLoss}đ</b> | Mục tiêu 1 (TP1): <b>${t.takeProfit1}đ</b> | TP2: <b>${t.takeProfit2}đ</b>\n`;
+    msg += `• Tỷ lệ R:R: <b>≥ 1:3</b> | Lý do: <i>${t.entryReason}</i>\n`;
+    msg += `• 📊 <i>Lệnh sẽ tự động theo dõi Trailing Stop và đẩy kết quả lên Google Sheets khi đóng.</i>\n\n`;
   }
 
   // 3. Bình luận sâu từ AI Copilot (nếu có)
@@ -299,3 +315,4 @@ module.exports = {
   isUnderCooldown,
   markEventSent,
 };
+

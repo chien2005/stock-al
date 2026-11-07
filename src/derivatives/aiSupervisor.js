@@ -223,6 +223,97 @@ async function runSupervisorTick(options = {}) {
       };
     }
 
+    // 7.5. TỰ ĐỘNG THỰC THI LỆNH PAPER TRADING KHI CÓ SETUP CHUẨN:
+    let executedTrade = null;
+    const isMarket = dataFetcher.isMarketHours();
+
+    if (!positionEval.hasPosition && isMarket) {
+      const topEvt = eventResult.topEvent;
+      if (topEvt && topEvt.type === 'TRAP_RECLAIM_CONFIRMED') {
+        const trap = topEvt.details;
+        if (trap.type === 'BEAR_TRAP_RECLAIM' && trendAnalysis?.forbiddenAction !== 'FORBID_LONG') {
+          const sl = +(trap.zone.low - 2.5).toFixed(1);
+          const tp1 = +(currentPrice + 15.0).toFixed(1);
+          const tp2 = +(currentPrice + 30.0).toFixed(1);
+          const reason = `Bear Trap Reclaim M15 tại vùng [${trap.zone.low} - ${trap.zone.high}]`;
+          const res = positionRiskAssistant.openPosition({
+            position: 'LONG',
+            entryPrice: currentPrice,
+            stopLoss: sl,
+            takeProfit1: tp1,
+            takeProfit2: tp2,
+            entryReason: reason,
+          });
+          if (res.success) {
+            executedTrade = { position: 'LONG', entryPrice: currentPrice, stopLoss: sl, takeProfit1: tp1, takeProfit2: tp2, entryReason: reason };
+          }
+        } else if (trap.type === 'BULL_TRAP_REJECT' && trendAnalysis?.forbiddenAction !== 'FORBID_SHORT') {
+          const sl = +(trap.zone.high + 2.5).toFixed(1);
+          const tp1 = +(currentPrice - 15.0).toFixed(1);
+          const tp2 = +(currentPrice - 30.0).toFixed(1);
+          const reason = `Bull Trap Reject M15 tại vùng [${trap.zone.low} - ${trap.zone.high}]`;
+          const res = positionRiskAssistant.openPosition({
+            position: 'SHORT',
+            entryPrice: currentPrice,
+            stopLoss: sl,
+            takeProfit1: tp1,
+            takeProfit2: tp2,
+            entryReason: reason,
+          });
+          if (res.success) {
+            executedTrade = { position: 'SHORT', entryPrice: currentPrice, stopLoss: sl, takeProfit1: tp1, takeProfit2: tp2, entryReason: reason };
+          }
+        }
+      } else if (topEvt && topEvt.type === 'ZONE_SUPPORT_APPROACH' && trendAnalysis?.masterRegime !== 'BEARISH_SWING_REGIME') {
+        const rel = zoneAnalysis?.relativePosition;
+        if (rel && rel.distanceToSupport <= 1.0) {
+          const sl = +(rel.nearestSupport.low - 2.5).toFixed(1);
+          const tp1 = +(currentPrice + 15.0).toFixed(1);
+          const tp2 = +(currentPrice + 30.0).toFixed(1);
+          const reason = `Bắt Swing Long tại Vùng Hỗ Trợ D1/H1 [${rel.nearestSupport.low} - ${rel.nearestSupport.high}]`;
+          const res = positionRiskAssistant.openPosition({
+            position: 'LONG',
+            entryPrice: currentPrice,
+            stopLoss: sl,
+            takeProfit1: tp1,
+            takeProfit2: tp2,
+            entryReason: reason,
+          });
+          if (res.success) {
+            executedTrade = { position: 'LONG', entryPrice: currentPrice, stopLoss: sl, takeProfit1: tp1, takeProfit2: tp2, entryReason: reason };
+          }
+        }
+      } else if (topEvt && topEvt.type === 'ZONE_RESISTANCE_APPROACH' && trendAnalysis?.masterRegime !== 'BULLISH_SWING_REGIME') {
+        const rel = zoneAnalysis?.relativePosition;
+        if (rel && rel.distanceToResistance <= 1.0) {
+          const sl = +(rel.nearestResistance.high + 2.5).toFixed(1);
+          const tp1 = +(currentPrice - 15.0).toFixed(1);
+          const tp2 = +(currentPrice - 30.0).toFixed(1);
+          const reason = `Bắt Swing Short tại Vùng Kháng Cự D1/H1 [${rel.nearestResistance.low} - ${rel.nearestResistance.high}]`;
+          const res = positionRiskAssistant.openPosition({
+            position: 'SHORT',
+            entryPrice: currentPrice,
+            stopLoss: sl,
+            takeProfit1: tp1,
+            takeProfit2: tp2,
+            entryReason: reason,
+          });
+          if (res.success) {
+            executedTrade = { position: 'SHORT', entryPrice: currentPrice, stopLoss: sl, takeProfit1: tp1, takeProfit2: tp2, entryReason: reason };
+          }
+        }
+      }
+
+      if (executedTrade) {
+        positionEval.hasPosition = true;
+        positionEval.position = executedTrade.position;
+        positionEval.entryPrice = executedTrade.entryPrice;
+        positionEval.stopLoss = executedTrade.stopLoss;
+        positionEval.trailingStop = executedTrade.stopLoss;
+        positionEval.statusText = `Vừa mở ${executedTrade.position} @ ${executedTrade.entryPrice} (SL: ${executedTrade.stopLoss})`;
+      }
+    }
+
     // 8. Nếu có sự kiện hoặc Checkpoint ➔ Gọi Gemini AI tạo phân tích ngắn gọn và gửi Telegram
     const memoryContext = aiMemory.getMemoryContext();
     const aiCommentary = await generateAICommentary({
@@ -243,6 +334,7 @@ async function runSupervisorTick(options = {}) {
       marketContext,
       positionEval,
       aiCommentary,
+      executedTrade,
     });
 
     // Nếu là checkpoint Post-ATC thì lưu tóm tắt phiên vào bộ nhớ
