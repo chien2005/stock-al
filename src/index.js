@@ -425,10 +425,10 @@ async function main() {
         await sendDerivativesMessage(
           `🔮 <b>VN Stock Bot v${config.version} đã kết nối! (Nhóm Phái Sinh VN30F)</b>\n` +
           `🕐 ${startupTime}\n` +
-          `📊 Chế độ: <b>Senior Trader AI Trading v8.0 (Quản trị Vị thế Realtime)</b>\n` +
+          `📊 Chế độ: <b>AI Supervisor & Operations Copilot v9.0 (Swing & Multi-TF)</b>\n` +
           `📅 Ngày hoạt động: <b>${config.activeDays}</b> (ACTIVE)\n` +
-          `⚡ <b>MỚI:</b> AI Trading Realtime như người thật: Ghi nhớ vị thế, note PnL âm/dương, 11 trạng thái lệnh\n` +
-          `⏰ Khung giờ Intraday (5p/lần): Sáng 09:10-11:30 (29 noti) & Chiều 13:05-14:20 (16 noti)\n` +
+          `🛡️ <b>MÔ HÌNH MỚI:</b> AI Giám sát Đa khung (Monthly ➔ M1), Quản trị Vùng Cực Trị & Rủi ro Sóng Lớn\n` +
+          `🎯 <b>Chiến lược:</b> Bỏ Scalp 1M/5M bào mòn vốn ➔ Giám sát Đảo chiều Cấu trúc & Hỗ trợ Vận hành Vị thế (Zero-Spam)\n` +
           `⚡ Xung lực sau cắt margin (Smart Money soi ATC/ATO): 14h25\n` +
           `⚡ Pre-ATC (Vào ATC hay không? Smart Money NN + TD): 14h29\n` +
           `🌙 Post-ATC (Cầm qua đêm hay Đóng?): 14h44\n` +
@@ -519,7 +519,7 @@ async function main() {
   }, 5 * 60 * 1000);
 
   // ─── START VOLUME SCALPER v5.0 (chạy cả khi khởi động lại trong phiên) ───
-  startVolumeScalper();
+  // startVolumeScalper(); // DECOMMISSIONED: Chấm dứt scalping 1M gây nhiễu và lỗ 2 đầu
   // Đã lược bỏ Alert Monitor, BigTrade Flush và Whale Tracker theo yêu cầu của user để tối giản group cơ sở
 
   // ─── SCHEDULE: DERIVATIVES — RESET & START VOLUME SCALPER 9h00 ───
@@ -529,7 +529,7 @@ async function main() {
     console.log('\n🔮 [VN30F v6.0] Reset daily state & start Senior Trader AI Scalper');
     try { 
       resetDerivativesState();
-      startVolumeScalper();
+      // startVolumeScalper(); // DECOMMISSIONED: Chấm dứt scalping 1M gây nhiễu và lỗ 2 đầu
     } catch (err) { console.error('🔮 [Derivatives Reset] Lỗi:', err.message); }
   }, { scheduled: true, timezone: config.timezone });
 
@@ -732,7 +732,8 @@ async function main() {
     { cron: '20 14 * * 1-5', label: '14:20' },
   ];
 
-  for (const schedule of [...intradayMorningSchedules, ...intradayAfternoonSchedules]) {
+  // DECOMMISSIONED: Đã dừng toàn bộ 45 cron spam 5p/lần theo yêu cầu
+  if (false) for (const schedule of [...intradayMorningSchedules, ...intradayAfternoonSchedules]) {
     cron.schedule(schedule.cron, async () => {
       if (!isCurrentInstanceActive()) return;
       if (!isWeekday()) return;

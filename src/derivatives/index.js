@@ -221,9 +221,10 @@ function resetDerivativesState() {
   console.log('   🔄 Derivatives state reset v7.0');
 }
 
-// ─── VOLUME SCALPER CONTROLS ─────────────────────────────────
+// ─── VOLUME SCALPER CONTROLS (DECOMMISSIONED v9.0) ───────────
 function startVolumeScalper() {
-  volumeScalper.start();
+  // DECOMMISSIONED: Đã dừng scalper 1M/5M để tránh dắt mũi 2 đầu và bào mòn tài khoản
+  console.log('   🛑 [VolumeScalper] Decommissioned. Scalping 1M is disabled in v9.0.');
 }
 
 function stopVolumeScalper() {
@@ -236,10 +237,10 @@ async function runEveningPlanJob() {
   return eveningPlanEngine.runEveningPlanJob();
 }
 
-// ─── INTRADAY SIGNAL JOB (15p/lần trong phiên) ──────────────
+// ─── INTRADAY SIGNAL JOB (DECOMMISSIONED SPAM v9.0) ──────────
 async function runIntradaySignalJob() {
-  if (!isCurrentInstanceActive()) return;
-  return intradaySignalEngine.runIntradaySignal();
+  // DECOMMISSIONED: Đã dừng phát tín hiệu 5p/lần gây lỗ -31đ
+  return;
 }
 
 // ─── EXPORTS ─────────────────────────────────────────────────
