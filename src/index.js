@@ -35,7 +35,23 @@ const { startBotHandler, stopBotHandler } = require('./botHandler');
 const { startAlertMonitor, stopAlertMonitor, resetDailyData, flushBigTradeBuffer } = require('./alertService');
 const { runSmartMoneyReport } = require('./smartMoneyReport');
 const { runWhaleTrackerReport } = require('./whaleTracker');
-const { runAIDerivativesJob, runDerivativesOIJob, runMarginCutoffJob, runPreATCJob, runPostATCJob, resetDerivativesState, startVolumeScalper, stopVolumeScalper, runEveningPlanJob, runIntradaySignalJob, resetIntradayState } = require('./derivatives');
+const {
+  runSupervisorTick,
+  runSupervisorMorningJob,
+  runSupervisorMiddayJob,
+  runSupervisorPostATCJob,
+  runAIDerivativesJob,
+  runDerivativesOIJob,
+  runMarginCutoffJob,
+  runPreATCJob,
+  runPostATCJob,
+  resetDerivativesState,
+  startVolumeScalper,
+  stopVolumeScalper,
+  runEveningPlanJob,
+  runIntradaySignalJob,
+  resetIntradayState,
+} = require('./derivatives');
 
 // ─── Thời điểm khởi động (cho health check) ─────────────
 const startedAt = new Date();
@@ -536,43 +552,52 @@ async function main() {
   // Senior Trader AI Scalper v6.0: Market Context, Trap Shield v6.0, VSA patterns, Confidence scoring, 1M/5M
   console.log('   🔮 VN30F v6.0: Senior Trader AI Agent (Context + Trap Shield + VSA + Pro Notifier)');
 
-  // ─── SCHEDULE: AI DERIVATIVES FORECAST (9h22, 10h22 & 13h50, T2-T6) ───
-  cron.schedule('22 9 * * 1-5', async () => {
+  // ─── SCHEDULE: AI SUPERVISOR STRATEGIC CHECKPOINTS (08h45, 11h30 T2-T6) ───
+  cron.schedule('45 8 * * 1-5', async () => {
     if (!isWeekday()) return;
-    if (isDuplicate('aiDerivativesMorning')) return;
-    console.log(`\n🤖 [Senior Trader AI Morning v6.0] Cron triggered`);
+    if (isDuplicate('supervisorMorning_0845')) return;
+    console.log('\n🏛️ [AI Supervisor Morning 08h45] Cron triggered');
     try {
-      await runAIDerivativesJob('morning');
-      jobLastSuccess['aiDerivativesMorning'] = Date.now();
+      await runSupervisorMorningJob();
+      jobLastSuccess['supervisorMorning_0845'] = Date.now();
     } catch (err) {
-      console.error('🤖 [AI Derivatives Morning] Lỗi:', err.message);
+      console.error('🏛️ [AI Supervisor Morning] Lỗi:', err.message);
     }
   }, { scheduled: true, timezone: config.timezone });
 
-  cron.schedule('22 10 * * 1-5', async () => {
+  // 2. Tổng kết trưa (11h30): Rà soát cấu trúc phiên sáng & bẫy thanh khoản
+  cron.schedule('30 11 * * 1-5', async () => {
     if (!isWeekday()) return;
-    if (isDuplicate('aiDerivativesMidMorning')) return;
-    console.log(`\n🤖 [Senior Trader AI Mid-Morning v6.0] Cron triggered`);
+    if (isDuplicate('supervisorMidday_1130')) return;
+    console.log('\n🏛️ [AI Supervisor Midday 11h30] Cron triggered');
     try {
-      await runAIDerivativesJob('midmorning');
-      jobLastSuccess['aiDerivativesMidMorning'] = Date.now();
+      await runSupervisorMiddayJob();
+      jobLastSuccess['supervisorMidday_1130'] = Date.now();
     } catch (err) {
-      console.error('🤖 [AI Derivatives Mid-Morning] Lỗi:', err.message);
+      console.error('🏛️ [AI Supervisor Midday] Lỗi:', err.message);
     }
   }, { scheduled: true, timezone: config.timezone });
 
-  cron.schedule('50 13 * * 1-5', async () => {
+  // 3. Background Supervisor Tick (5 phút/lần: 09:05-11:25 & 13:05-14:40)
+  // VẬN HÀNH NGẦM HOÀN TOÀN IM LẶNG: Chỉ phát thông báo khi có BIẾN CỐ CẤU TRÚC hoặc BẪY RECLAIM!
+  cron.schedule('*/5 9-11,13-14 * * 1-5', async () => {
+    if (!isCurrentInstanceActive()) return;
     if (!isWeekday()) return;
-    if (isDuplicate('aiDerivativesAfternoon')) return;
-    console.log(`\n🤖 [Senior Trader AI Afternoon v6.0] Cron triggered`);
+
+    const nowVN = new Date(new Date().getTime() + (new Date().getTimezoneOffset() * 60000) + (3600000 * 7));
+    const currentMin = nowVN.getHours() * 60 + nowVN.getMinutes();
+    const isMorning = currentMin >= 9 * 60 && currentMin <= 11 * 60 + 30;
+    const isAfternoon = currentMin >= 13 * 60 && currentMin <= 14 * 60 + 45;
+    if (!isMorning && !isAfternoon) return;
+
     try {
-      await runAIDerivativesJob('afternoon');
-      jobLastSuccess['aiDerivativesAfternoon'] = Date.now();
+      await runSupervisorTick();
     } catch (err) {
-      console.error('🤖 [AI Derivatives Afternoon] Lỗi:', err.message);
+      console.error('🕵️ [AI Supervisor Tick] Lỗi:', err.message);
     }
   }, { scheduled: true, timezone: config.timezone });
-  console.log('   🤖 AI Derivatives Forecast: 9:22, 10:22 & 13:50 (T2-T6)');
+
+  console.log('   🏛️ AI Supervisor v9.0: Checkpoints 08:45, 11:30 & Giám sát ngầm chống nhiễu (T2-T6)');
 
   // ─── SCHEDULE: DERIVATIVES MARGIN CUTOFF & SMART MONEY (14h25 T2-T6) ────
   // Đo xung lực sau khi cắt margin xong (14h00 - 14h20), soi 5-10p cuối Smart Money nhồi Long/Short cho ATC & ATO

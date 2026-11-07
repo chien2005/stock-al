@@ -1,5 +1,5 @@
 {
-  "lastUpdated": "2026-11-04T13:52:06.772Z",
+  "lastUpdated": "2026-11-07T03:27:32.058Z",
   "history": [
     {
       "date": "16/10/2026",
@@ -149,6 +149,28 @@
       "totalOI": 35131,
       "f1mOI": 32265,
       "oiChange": 381,
+      "f1mPrice": 1862,
+      "vn30Price": 1862.07,
+      "basis": -0.07,
+      "volume": 201401,
+      "positionState": "NEUTRAL"
+    },
+    {
+      "date": "5/11/2026",
+      "totalOI": 35131,
+      "f1mOI": 32265,
+      "oiChange": 0,
+      "f1mPrice": 1862,
+      "vn30Price": 1862.07,
+      "basis": -0.07,
+      "volume": 201401,
+      "positionState": "NEUTRAL"
+    },
+    {
+      "date": "6/11/2026",
+      "totalOI": 35131,
+      "f1mOI": 32265,
+      "oiChange": 0,
       "f1mPrice": 1862,
       "vn30Price": 1862.07,
       "basis": -0.07,

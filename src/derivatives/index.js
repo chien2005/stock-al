@@ -237,6 +237,41 @@ async function runEveningPlanJob() {
   return eveningPlanEngine.runEveningPlanJob();
 }
 
+// ─── AI SUPERVISOR & OPERATIONS COPILOT (v9.0) ───────────────
+const aiSupervisor = require('./aiSupervisor');
+const realtimeDataEngine = require('./realtimeDataEngine');
+const trendEngine = require('./trendEngine');
+const zoneManager = require('./zoneManager');
+const marketContextVN = require('./marketContextVN');
+const aiMemory = require('./aiMemory');
+const positionRiskAssistant = require('./positionRiskAssistant');
+const eventNotifier = require('./eventNotifier');
+
+// ─── SUPERVISOR CHECKPOINTS ──────────────────────────────────
+async function runSupervisorMorningJob() {
+  if (!isCurrentInstanceActive()) return;
+  return aiSupervisor.runSupervisorTick({
+    isCheckpoint: true,
+    checkpointName: 'CHIẾN LƯỢC ĐẦU PHIÊN (08h45)',
+  });
+}
+
+async function runSupervisorMiddayJob() {
+  if (!isCurrentInstanceActive()) return;
+  return aiSupervisor.runSupervisorTick({
+    isCheckpoint: true,
+    checkpointName: 'TỔNG KẾT PHIÊN SÁNG (11h30)',
+  });
+}
+
+async function runSupervisorPostATCJob() {
+  if (!isCurrentInstanceActive()) return;
+  return aiSupervisor.runSupervisorTick({
+    isCheckpoint: true,
+    checkpointName: 'TỔNG KẾT PHIÊN & GRADUATION (14h45)',
+  });
+}
+
 // ─── INTRADAY SIGNAL JOB (DECOMMISSIONED SPAM v9.0) ──────────
 async function runIntradaySignalJob() {
   // DECOMMISSIONED: Đã dừng phát tín hiệu 5p/lần gây lỗ -31đ
@@ -245,7 +280,25 @@ async function runIntradaySignalJob() {
 
 // ─── EXPORTS ─────────────────────────────────────────────────
 module.exports = {
-  // Volume Scalper v5.0
+  // AI Supervisor v9.0 (Swing & Multi-TF Copilot)
+  aiSupervisor,
+  runSupervisorTick: aiSupervisor.runSupervisorTick,
+  runSupervisorMorningJob,
+  runSupervisorMiddayJob,
+  runSupervisorPostATCJob,
+  openPosition: positionRiskAssistant.openPosition,
+  closePosition: positionRiskAssistant.closePosition,
+  evaluatePosition: positionRiskAssistant.evaluatePosition,
+  getPositionSummary: positionRiskAssistant.getPositionSummary,
+  // Core Engines
+  realtimeDataEngine,
+  trendEngine,
+  zoneManager,
+  marketContextVN,
+  aiMemory,
+  positionRiskAssistant,
+  eventNotifier,
+  // Volume Scalper v5.0 (Decommissioned)
   startVolumeScalper,
   stopVolumeScalper,
   resetDerivativesState,
@@ -274,5 +327,6 @@ module.exports = {
   getDerivativesState: () => ({
     scalper: volumeScalper.getState(),
     intradaySignal: intradaySignalEngine.getState(),
+    supervisorPosition: positionRiskAssistant.loadState(),
   }),
 };

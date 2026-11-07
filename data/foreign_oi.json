@@ -1,5 +1,5 @@
 {
-  "lastUpdated": "2026-11-04T13:52:06.771Z",
+  "lastUpdated": "2026-11-07T03:27:32.058Z",
   "history": [
     {
       "date": "16/10/2026",
@@ -141,6 +141,28 @@
       "cumulativeTD": 1450,
       "cumulativeCrowd": 2697,
       "crowdOvernight": -294
+    },
+    {
+      "date": "5/11/2026",
+      "buy": 6105,
+      "sell": 5652,
+      "overnightNet": 453,
+      "tuDoanhOvernight": -159,
+      "crowdOvernight": -294,
+      "cumulativeNN": -3694,
+      "cumulativeTD": 1291,
+      "cumulativeCrowd": 2403
+    },
+    {
+      "date": "6/11/2026",
+      "buy": 6105,
+      "sell": 5652,
+      "overnightNet": 453,
+      "tuDoanhOvernight": -159,
+      "crowdOvernight": -294,
+      "cumulativeNN": -3241,
+      "cumulativeTD": 1132,
+      "cumulativeCrowd": 2109
     }
   ]
 }

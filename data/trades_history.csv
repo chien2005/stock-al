@@ -1,4 +1,5 @@
-﻿Ngày,Lệnh #,Loại lệnh,Giờ vào (HH:mm:ss),Giá vào,Giờ ra (HH:mm:ss),Giá ra,Lãi/Lỗ thô,Phí (0.6đ),LÃI/LỖ THỰC (Net),Đánh giá (TP/SL),Tổng ngày đến lúc này,Lý do đóng lệnh
+Ngày,Lệnh #,Loại lệnh,Giờ vào (HH:mm:ss),Giá vào,Giờ ra (HH:mm:ss),Giá ra,Lãi/Lỗ thô,Phí (0.6đ),LÃI/LỖ THỰC (Net),Đánh giá (TP/SL),Tổng ngày đến lúc này,Lý do đóng lệnh
 "2/11/2026","Lệnh #1","SHORT","09:30:15","1818.5","10:15:22","1811.5","+7.0đ","-0.6đ","+6.4đ","TP (+6.4đ)","+6.4đ","Chốt lời TP2 thuận thế hạ đỉnh"
 "2/11/2026","Lệnh #2","LONG","10:45:10","1808.0","11:15:35","1805.5","-2.5đ","-0.6đ","-3.1đ","SL (-3.1đ)","+3.3đ","Dính Stop Loss cắt lỗ"
 "2/11/2026","Lệnh #3","SHORT","13:35:05","1812.0","14:15:18","1805.0","+7.0đ","-0.6đ","+6.4đ","TP (+6.4đ)","+9.7đ","Chốt lời TP2 phá đáy phiên chiều"
+
