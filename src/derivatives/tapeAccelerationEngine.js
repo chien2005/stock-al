@@ -2,10 +2,10 @@
  * ╔═══════════════════════════════════════════════════════════════╗
  * ║   ⚡ VN30F — Tape Reading & Volume Acceleration Engine        ║
  * ╠═══════════════════════════════════════════════════════════════╣
- * ║  THEO DÕI GIA TỐC VOLUME, TỐC ĐỘ GIÁ & BĂNG CHUYỀN LỆNH TAPE   ║
+ * ║  THEO DÕI GIA TỐC VOLUME, TỐC ĐỘ GIÁ & QUY TẮC BẢO VỆ 3 NẾN    ║
  * ║                                                                ║
  * ║  1. GIA TỐC DỒN DẬP (Monochrome Surge / High Velocity Burst):  ║
- * ║     10s-35s đầu nến vol tăng vun vút (≥1500 HĐ hoặc ≥60 HĐ/s),  ║
+ * ║     10s-35s đầu nến vol tăng vun vút (≥1400 HĐ hoặc ≥50 HĐ/s),  ║
  * ║     thuần 1 màu xanh hoặc đỏ, biên độ giá dồn dập ≥1.2đ         ║
  * ║     ➔ Lực Long/Short dứt khoát áp đảo, thuận thế đẩy tiếp.     ║
  * ║                                                                ║
@@ -14,16 +14,18 @@
  * ║     cuối nến bất ngờ giật lật màu ngược lại                    ║
  * ║     ➔ Cao trào bị hấp thụ / Lái giật kill S-L ➔ CẤM ĐUỔI LỆNH. ║
  * ║                                                                ║
- * ║  3. ĐÓNG NẾN RÚT RÂU TẠI CỰC TRỊ SÓNG NGẮN (Local Wave Peak/Low)║
- * ║     • Sau đà tăng dốc ngắn hạn lên đỉnh: rút râu trên ≥1.2đ    ║
- * ║       hoặc nến đóng đỏ vol lớn ➔ CẤM ĐU LONG, NGUY CƠ SẬP.     ║
- * ║     • Sau đà giảm dốc ngắn hạn xuống đáy: rút chân râu dưới    ║
- * ║       ≥1.2đ hoặc đóng xanh dưới đáy ➔ CẤM BÁN ĐÁY, SHORT SQUEEZE║
- * ║     • Doji nhấp nháy xanh đỏ liên tục đóng nến cân bằng        ║
- * ║       ➔ Thị trường giằng co, đứng ngoài quan sát.              ║
+ * ║  3. QUY TẮC BẢO VỆ 3 NẾN LIỀN KỀ & VỊ TRÍ KHUNG NGÀY:          ║
+ * ║     • Vị trí khung ngày: Đỉnh ngày, Đáy ngày, hay Giữa chừng.  ║
+ * ║       (Giữa chừng rất dễ là bẫy giũ hàng để kéo/xả tiếp 20-30đ)║
+ * ║     • Nến 1: Xuất hiện rút râu / đảo màu ➔ CẢNH BÁO QUAN SÁT,  ║
+ * ║       TUYỆT ĐỐI CẤM MỞ LỆNH ĐU THEO CÂY NÀY (Dao 2 lưỡi)!      ║
+ * ║     • Nến 2: Kiểm tra nhịp Retest (Có vượt đỉnh / thủng đáy    ║
+ * ║       không? Nếu vượt/thủng ➔ VÔ HIỆU HÓA BẪY GIẢ).            ║
+ * ║     • Nến 3: Đóng nến xác nhận bứt phá/phá vỡ nền vi mô         ║
+ * ║       ➔ MỚI ĐỦ ĐIỀU KIỆN AN TOÀN ĐỂ MỞ LỆNH HOẶC CHỐT VỊ THẾ!  ║
  * ║                                                                ║
- * ║  4. Khung giờ giám sát ngầm liên tục:                          ║
- * ║     Sáng: 09h00 - 11h30 | Chiều: 13h00 - 14h30                 ║
+ * ║  4. Bối cảnh Thanh khoản (<16k tỷ Sideway vs ≥16k tỷ Big Trend)║
+ * ║     và Yếu tố Khung giờ (Sóng sáng vs Giờ Call Margin 13h45)   ║
  * ╚═══════════════════════════════════════════════════════════════╝
  */
 
@@ -64,6 +66,10 @@ const _state = {
   hasFiredSurgeThisBar: false,
   hasFiredFlipThisBar: false,
 
+  // 3-Candle Confirmation Pipeline
+  // pendingSetups: array of { id, type: 'PEAK_REJECTION'|'TROUGH_ABSORPTION', step: 1|2, bar1, bar2, location, session, createdAt }
+  pendingSetups: [],
+
   // Global cooldown timestamps
   lastSurgeAlertTime: 0,
   lastFlipAlertTime: 0,
@@ -97,11 +103,104 @@ function isMonitoringHours() {
   return isMorning || isAfternoon;
 }
 
+// ─── 0. PHÂN TÍCH VỊ TRÍ KHUNG NGÀY (DAY STRUCTURE LOCATION) ──
+function analyzeDayLocation(candle, allCandles) {
+  if (!allCandles || allCandles.length === 0) {
+    return {
+      dayHigh: candle.high,
+      dayLow: candle.low,
+      dayRange: 0,
+      distToHigh: 0,
+      distToLow: 0,
+      type: 'MID_RANGE',
+      badge: '⚪ VÙNG GIỮA CHỪNG SÓNG NGÀY (MID-RANGE)',
+      warning: 'Cảnh giác rút râu giữa chừng: Rất dễ là nhịp nghỉ tích lũy để kéo/xả tiếp 20-30đ!',
+      isExtremeLocation: false,
+    };
+  }
+
+  const dayHigh = Math.max(...allCandles.map(c => c.high));
+  const dayLow = Math.min(...allCandles.map(c => c.low));
+  const dayRange = parseFloat((dayHigh - dayLow).toFixed(1));
+
+  const distToHigh = parseFloat((dayHigh - candle.high).toFixed(1));
+  const distToLow = parseFloat((candle.low - dayLow).toFixed(1));
+
+  let type = 'MID_RANGE';
+  let badge = '⚠️ VÙNG GIỮA CHỪNG SÓNG NGÀY (MID-RANGE)';
+  let warning = 'Giá đang ở giữa chừng sóng ngày. Rút râu giữa chừng thường chỉ là nhịp nghỉ/chốt lời tạm thời của Trend, rất dễ retest rồi tăng/giảm tiếp 20-30đ!';
+  let isExtremeLocation = false;
+
+  if (distToHigh <= 1.0) {
+    type = 'AT_DAY_HIGH';
+    badge = `🎯 ĐẮC ĐỊA: SÁT ĐỈNH CAO NHẤT NGÀY (Day High ${dayHigh.toFixed(1)})`;
+    warning = 'Vị trí cản uy tín cao nhất phiên hôm nay. Khả năng đảo chiều thực sự có trọng lượng.';
+    isExtremeLocation = true;
+  } else if (distToLow <= 1.0) {
+    type = 'AT_DAY_LOW';
+    badge = `🎯 ĐẮC ĐỊA: SÁT ĐÁY THẤP NHẤT NGÀY (Day Low ${dayLow.toFixed(1)})`;
+    warning = 'Vị trí hỗ trợ uy tín cao nhất phiên hôm nay. Lực cầu hấp thụ tại đáy có trọng lượng.';
+    isExtremeLocation = true;
+  } else if (distToHigh <= 2.5) {
+    type = 'NEAR_DAY_HIGH';
+    badge = `⛰️ VÙNG CẬN ĐỈNH NGÀY (Cách Day High ${distToHigh}đ)`;
+    warning = 'Gần đỉnh ngày, có áp lực bán cản trở nhất định.';
+    isExtremeLocation = true;
+  } else if (distToLow <= 2.5) {
+    type = 'NEAR_DAY_LOW';
+    badge = `🌊 VÙNG CẬN ĐÁY NGÀY (Cách Day Low ${distToLow}đ)`;
+    warning = 'Gần đáy ngày, có lực cầu đỡ giá nhất định.';
+    isExtremeLocation = true;
+  }
+
+  return {
+    dayHigh,
+    dayLow,
+    dayRange,
+    distToHigh,
+    distToLow,
+    type,
+    badge,
+    warning,
+    isExtremeLocation,
+  };
+}
+
+// ─── 0B. PHÂN TÍCH KHUNG GIỜ & RỦI RO BIG TREND ───────────────
+function analyzeSessionContext(hhmm) {
+  let sessionName = 'TRONG PHIÊN';
+  let isBigTrendRiskHours = false;
+  let timingAdvice = '';
+
+  if (hhmm >= '09:00' && hhmm < '09:30') {
+    sessionName = 'ATO & MỞ CỬA SÁNG (09:00 - 09:30)';
+    timingAdvice = 'Sóng mở cửa còn nhiễu cung cầu, Lái test lực. Rút râu đầu phiên cần thận trọng bẫy thử thách.';
+  } else if (hhmm >= '09:30' && hhmm < '11:00') {
+    sessionName = 'SÓNG SÁNG CHÍNH THỨC (09:30 - 11:00)';
+    timingAdvice = 'Khung giờ xu hướng buổi sáng. Dòng tiền xác lập hướng đi rõ nét.';
+  } else if (hhmm >= '11:00' && hhmm <= '11:30') {
+    sessionName = 'CHỐT LỜI CUỐI SÁNG (11:00 - 11:30)';
+    timingAdvice = 'Thanh khoản bắt đầu hạ nhiệt, giằng co giữ biên.';
+  } else if (hhmm >= '13:00' && hhmm < '13:45') {
+    sessionName = 'TÍCH LŨY ĐẦU CHIỀU (13:00 - 13:45)';
+    timingAdvice = 'Xây nền kiểm tra lại lượng hàng phiên sáng trước khi vào pha quyết định.';
+  } else if (hhmm >= '13:45' && hhmm <= '14:25') {
+    sessionName = '⚡ GIỜ VÀNG CALL MARGIN & XUNG LỰC BIG TREND (13:45 - 14:25)';
+    isBigTrendRiskHours = true;
+    timingAdvice = '⚠️ CỰC KỲ NGUY HIỂM: Khung giờ biến động khốc liệt nhất ngày! Nếu đang có Big Long/Big Short, TUYỆT ĐỐI KHÔNG ĐU NGƯỢC PHA (tránh bị bỏ rơi âm 20-30đ)!';
+  } else if (hhmm > '14:25') {
+    sessionName = 'ATC & ĐÓNG CỬA (14:25 - 14:35)';
+    timingAdvice = 'ATC định hình giá đóng cửa ngày.';
+  }
+
+  return {
+    sessionName,
+    isBigTrendRiskHours,
+    timingAdvice,
+  };
+}
+
 // ─── 1. FAST TICK HANDLER (XỬ LÝ MỖI 5 GIÂY) ────────────────
-/**
- * Gọi từ fastTickCycle() trong volumeScalper.js mỗi 5 giây
- * @param {Object} tick { price, lot, prevPrice, high, low, time }
- */
 async function onFastTick(tick) {
   if (!isCurrentInstanceActive()) return;
   if (!isMonitoringHours()) return;
@@ -123,7 +222,6 @@ async function onFastTick(tick) {
     _state.hasFiredFlipThisBar = false;
   }
 
-  // Nếu chưa có barOpenPrice hoặc barOpenLot
   if (_state.barOpenPrice === null) _state.barOpenPrice = tick.price;
   if (_state.barOpenLot === null && tick.lot) _state.barOpenLot = tick.lot;
 
@@ -175,7 +273,6 @@ async function checkAccelerationSurge(secondInBar, accumulatedVol, priceDelta, c
   const isVolHeavy = accumulatedVol >= SURGE_MIN_VOL || volSpeed >= SURGE_MIN_SPEED;
   if (!isVolHeavy) return;
 
-  // Kiểm tra nến có thuần 1 màu không (không nhấp nháy cản)
   const nonNeutralTicks = _state.intraTicks.filter(t => t.color !== 'NEUTRAL');
   if (nonNeutralTicks.length < 2) return;
 
@@ -183,10 +280,8 @@ async function checkAccelerationSurge(secondInBar, accumulatedVol, priceDelta, c
   const matchingTicks = nonNeutralTicks.filter(t => t.color === targetColor);
   const colorConsistency = matchingTicks.length / nonNeutralTicks.length;
 
-  // Độ thuần nhất màu >= 85%
   if (colorConsistency < 0.85) return;
 
-  // ĐÃ XÁC NHẬN GIA TỐC DỒN DẬP!
   _state.hasFiredSurgeThisBar = true;
   _state.lastSurgeAlertTime = now;
 
@@ -236,7 +331,6 @@ async function checkLastSecondFlip(secondInBar, accumulatedVol, priceDelta, curr
   const now = Date.now();
   if (now - _state.lastFlipAlertTime < COOLDOWN_FLIP_MS) return;
 
-  // Lấy các tick trong 40s đầu nến
   const earlyTicks = _state.intraTicks.filter(t => t.sec <= FLIP_FIRST_PERIOD_SECONDS && t.color !== 'NEUTRAL');
   if (earlyTicks.length < 4) return;
 
@@ -247,20 +341,15 @@ async function checkLastSecondFlip(secondInBar, accumulatedVol, priceDelta, curr
   const wasPredominantlyRed = (redEarlyCount / totalEarly) >= 0.70;
   const wasPredominantlyGreen = (greenEarlyCount / totalEarly) >= 0.70;
 
-  // Tìm mức giá cực trị trong 40s đầu
   const earlyPrices = earlyTicks.map(t => t.price);
   const minEarlyPrice = Math.min(...earlyPrices);
   const maxEarlyPrice = Math.max(...earlyPrices);
 
-  // Trường hợp 1: Đầu nến ĐỎ ép giá sâu, nhưng giây cuối bị quét thốc lên XANH
   const isRedToGreenFlip = wasPredominantlyRed && priceDelta >= 0.2 && (currentPrice - minEarlyPrice >= FLIP_MIN_REVERSAL_PTS);
-
-  // Trường hợp 2: Đầu nến XANH kéo giá cao, nhưng giây cuối bị dập sập xuống ĐỎ
   const isGreenToRedFlip = wasPredominantlyGreen && priceDelta <= -0.2 && (maxEarlyPrice - currentPrice >= FLIP_MIN_REVERSAL_PTS);
 
   if (!isRedToGreenFlip && !isGreenToRedFlip) return;
 
-  // ĐÃ XÁC NHẬN BẪY LẬT MÀU GIÂY CUỐI!
   _state.hasFiredFlipThisBar = true;
   _state.lastFlipAlertTime = now;
 
@@ -308,28 +397,212 @@ async function checkLastSecondFlip(secondInBar, accumulatedVol, priceDelta, curr
 // ─── 2. CANDLE CLOSED HANDLER (XỬ LÝ KHI NẾN 1 PHÚT ĐÓNG) ─────
 /**
  * Gọi từ processNewCandle() trong volumeScalper.js khi 1 nến 1p đóng hoàn chỉnh
+ * ÁP DỤNG QUY TẮC BẢO VỆ 3 NẾN LIỀN KỀ & ĐÁNH GIÁ VỊ TRÍ KHUNG NGÀY
  * @param {Object} candle Nến vừa đóng hoàn chỉnh
  * @param {Array} allCandles Danh sách nến đã đóng trong phiên
  * @param {Object} oiData Dữ liệu OI từ dataFetcher
+ * @param {Object} extraData Dữ liệu phụ trợ (liquidityInfo, etc.)
  */
-async function onCandleClosed(candle, allCandles, oiData) {
+async function onCandleClosed(candle, allCandles, oiData, extraData = {}) {
   if (!isCurrentInstanceActive()) return;
   if (!isMonitoringHours()) return;
   if (!candle || !allCandles || allCandles.length < 5) return;
 
   const now = Date.now();
   const timeStr = getVnTimeHHMMSS();
+  const currentHHMM = getVnTimeHHMM();
 
-  // Tính râu nến và thân nến
+  // Phân tích vị trí trong khung ngày và bối cảnh khung giờ
+  const location = analyzeDayLocation(candle, allCandles);
+  const session = analyzeSessionContext(currentHHMM);
+
+  const liquidityInfo = extraData.liquidityInfo || null;
+  const isHighLiquidity = liquidityInfo ? !liquidityInfo.isLowLiquidity : false;
+  const liquidityLabel = isHighLiquidity
+    ? '🔥 THANH KHOẢN TỐT (≥ 16k tỷ) — Nguy cơ Big Trend'
+    : '💧 THANH KHOẢN THẤP (< 16k tỷ) — Ưu tiên Sideway biên';
+
+  // ═════════════════════════════════════════════════════════════
+  // PHẦN A: XỬ LÝ CÁC PENDING SETUP ĐANG QUAN SÁT (NẾN 2 VÀ NẾN 3)
+  // ═════════════════════════════════════════════════════════════
+  if (_state.pendingSetups.length > 0) {
+    const activeSetup = _state.pendingSetups[0];
+
+    // ─── BƯỚC 2: QUAN SÁT NẾN 2 (RETEST BAR) ───
+    if (activeSetup.step === 1) {
+      if (activeSetup.type === 'PEAK_REJECTION') {
+        const bar1High = activeSetup.bar1.high;
+
+        // KỊCH BẢN 2A: PHỦ ĐỊNH — NẾN 2 VƯỢT ĐỈNH (BULL CONTINUATION)
+        if (candle.high > bar1High + 0.3) {
+          let msg = `❌ <b>[VÔ HIỆU HÓA BẪY ĐỈNH] NẾN 2 VƯỢT ĐỈNH — ĐÀ TĂNG TIẾP DIỄN!</b>\n`;
+          msg += `🕐 <i>${timeStr} | F1M: <b>${candle.close.toFixed(1)}</b></i>\n`;
+          msg += `━━━━━━━━━━━━━━━━━━━━\n\n`;
+
+          msg += `📊 <b>KẾT QUẢ QUAN SÁT CÂY NẾN THỨ 2:</b>\n`;
+          msg += `  • Đỉnh Nến 1: <b>${bar1High.toFixed(1)}</b> (cú rút râu trước đó)\n`;
+          msg += `  • Nến 2 Retest: Vượt đỉnh lên <b>${candle.high.toFixed(1)}</b> (+${(candle.high - bar1High).toFixed(1)}đ)!\n`;
+          msg += `  • Đóng nến 2: <b>${candle.isGreen ? '🟢 XANH' : '🔴 Đỏ'} @ ${candle.close.toFixed(1)}</b> | Vol: <b>${candle.volume.toLocaleString()} HĐ</b>\n\n`;
+
+          msg += `🧠 <b>GIẢI MÃ SENIOR TRADER:</b>\n`;
+          msg += `  👉 Cú rút râu của Nến 1 chỉ là <b>nhịp nghỉ / chốt lời tạm thời</b> của sóng tăng. Cầu mua gom dồi dào đã đẩy nến 2 vượt đỉnh, xu hướng tăng tiếp diễn!\n`;
+          msg += `  🛡️ <i>Kỷ luật 3 nến: Tuyệt đối không mở Short chặn đầu khi chưa có xác nhận đã bảo vệ bạn không bị bỏ rơi âm nặng tài khoản!</i>\n\n`;
+
+          msg += `📋 <b>HÀNH ĐỘNG:</b>\n`;
+          msg += `  • <b>TIẾP TỤC BẢO TOÀN VỊ THẾ LONG</b> nếu đang có hàng sẵn.\n`;
+          msg += `  • <b>TUYỆT ĐỐI CẤM SHORT CẢN TÀU!</b> Chờ cấu trúc rõ ràng hơn.\n`;
+          msg += `━━━━━━━━━━━━━━━━━━━━\n`;
+          msg += `<i>🛡️ Tape & Acceleration Engine | Senior Trader v6.0</i>`;
+
+          console.log(`   ❌ [Tape Engine] Vô hiệu hóa bẫy đỉnh: Nến 2 vượt đỉnh ${bar1High} -> ${candle.high}`);
+          await sendDerivativesMessage(msg);
+          _state.pendingSetups = [];
+          return;
+        } else {
+          // KỊCH BẢN 2B: NẾN 2 RETEST THẤT BẠI (HẠ ĐỈNH VI MÔ) -> CHUYỂN BƯỚC 3
+          activeSetup.bar2 = candle;
+          activeSetup.step = 2;
+          console.log(`   ⏱️ [Tape Engine] Setup Đỉnh: Nến 2 retest không qua đỉnh (${candle.high} <= ${bar1High}). Chờ nến 3 xác nhận.`);
+          return;
+        }
+      } else if (activeSetup.type === 'TROUGH_ABSORPTION') {
+        const bar1Low = activeSetup.bar1.low;
+
+        // KỊCH BẢN 2A: PHỦ ĐỊNH — NẾN 2 THỦNG ĐÁY (BEAR CONTINUATION)
+        if (candle.low < bar1Low - 0.3) {
+          let msg = `❌ <b>[VÔ HIỆU HÓA TẠO ĐÁY] NẾN 2 THỦNG ĐÁY — ĐÀ XẢ TIẾP DIỄN!</b>\n`;
+          msg += `🕐 <i>${timeStr} | F1M: <b>${candle.close.toFixed(1)}</b></i>\n`;
+          msg += `━━━━━━━━━━━━━━━━━━━━\n\n`;
+
+          msg += `📊 <b>KẾT QUẢ QUAN SÁT CÂY NẾN THỨ 2:</b>\n`;
+          msg += `  • Đáy Nến 1: <b>${bar1Low.toFixed(1)}</b> (cú rút chân trước đó)\n`;
+          msg += `  • Nến 2 Retest: Đè thủng đáy về <b>${candle.low.toFixed(1)}</b> (-${(bar1Low - candle.low).toFixed(1)}đ)!\n`;
+          msg += `  • Đóng nến 2: <b>🔴 ĐỎ @ ${candle.close.toFixed(1)}</b> | Vol: <b>${candle.volume.toLocaleString()} HĐ</b>\n\n`;
+
+          msg += `🧠 <b>GIẢI MÃ SENIOR TRADER:</b>\n`;
+          msg += `  👉 Cú rút chân nến 1 chỉ là <b>bẫy nảy hồi kỹ thuật yếu ớt (Dead-cat bounce)</b>. Cung bán tháo vẫn áp đảo đè thủng đáy.\n`;
+          msg += `  🛡️ <i>Kỷ luật 3 nến: Tuyệt đối không bắt dao rơi Long khi chưa đủ 3 nến xác nhận đã giúp bạn tránh bị kẹp Long âm 20-30đ!</i>\n\n`;
+
+          msg += `📋 <b>HÀNH ĐỘNG:</b>\n`;
+          msg += `  • <b>TIẾP TỤC NẮM GIỮ SHORT</b> nếu đang có vị thế Short.\n`;
+          msg += `  • <b>TUYỆT ĐỐI CẤM BẮT ĐÁY LONG!</b> Sóng giảm vẫn đang làm chủ.\n`;
+          msg += `━━━━━━━━━━━━━━━━━━━━\n`;
+          msg += `<i>🛡️ Tape & Acceleration Engine | Senior Trader v6.0</i>`;
+
+          console.log(`   ❌ [Tape Engine] Vô hiệu hóa bẫy đáy: Nến 2 thủng đáy ${bar1Low} -> ${candle.low}`);
+          await sendDerivativesMessage(msg);
+          _state.pendingSetups = [];
+          return;
+        } else {
+          // KỊCH BẢN 2B: NẾN 2 GIỮ ĐƯỢC ĐÁY (NÂNG ĐÁY VI MÔ) -> CHUYỂN BƯỚC 3
+          activeSetup.bar2 = candle;
+          activeSetup.step = 2;
+          console.log(`   ⏱️ [Tape Engine] Setup Đáy: Nến 2 test đáy thành công (${candle.low} >= ${bar1Low}). Chờ nến 3 xác nhận.`);
+          return;
+        }
+      }
+    }
+
+    // ─── BƯỚC 3: QUAN SÁT NẾN 3 (CONFIRMATION BAR) ───
+    else if (activeSetup.step === 2) {
+      if (activeSetup.type === 'PEAK_REJECTION') {
+        const bar1High = activeSetup.bar1.high;
+        const bar2High = activeSetup.bar2.high;
+        const confirmCondition = !candle.isGreen && (candle.close < activeSetup.bar2.open || candle.close < activeSetup.bar1.close - 0.3);
+
+        if (candle.high > bar1High + 0.3) {
+          // Nến 3 vượt đỉnh -> Phủ định
+          _state.pendingSetups = [];
+          return;
+        }
+
+        if (confirmCondition) {
+          // ĐÃ XÁC NHẬN ĐỦ 3 NẾN LIỀN KỀ TẠO ĐỈNH!
+          let msg = `🎯 <b>[XÁC NHẬN ĐỦ 3 NẾN LIỀN KỀ] ĐẢO CHIỀU TẠI ĐỈNH XÁC LẬP!</b>\n`;
+          msg += `🕐 <i>${timeStr} | F1M: <b>${candle.close.toFixed(1)}</b></i>\n`;
+          msg += `━━━━━━━━━━━━━━━━━━━━\n\n`;
+
+          msg += `📊 <b>TỔ HỢP 3 CÂY NẾN ĐẢO CHIỀU HOÀN HẢO:</b>\n`;
+          msg += `  • <b>Nến 1:</b> Rút râu từ chối đỉnh cao nhất <b>${bar1High.toFixed(1)}</b> (Vol: ${activeSetup.bar1.volume.toLocaleString()} HĐ)\n`;
+          msg += `  • <b>Nến 2:</b> Retest thất bại hạ đỉnh <b>${bar2High.toFixed(1)} < ${bar1High.toFixed(1)}</b> (Cạn cầu)\n`;
+          msg += `  • <b>Nến 3:</b> Đóng <b>🔴 ĐỎ XÁC NHẬN @ ${candle.close.toFixed(1)}</b> phá vỡ nền vi mô! (Vol: ${candle.volume.toLocaleString()} HĐ)\n\n`;
+
+          msg += `📍 <b>BỐI CẢNH THỊ TRƯỜNG & KHUNG NGÀY:</b>\n`;
+          msg += `  • Vị trí khung ngày: <b>${activeSetup.location.badge}</b>\n`;
+          msg += `  • Môi trường: <i>${activeSetup.liquidityLabel}</i>\n`;
+          msg += `  • Khung giờ: <i>${activeSetup.session.sessionName}</i>\n\n`;
+
+          msg += `📋 <b>HÀNH ĐỘNG CHUẨN SENIOR TRADER:</b>\n`;
+          msg += `  👉 <b>ĐÃ ĐỦ ĐIỀU KIỆN KỶ LUẬT 3 NẾN AN TOÀN ĐỂ HÀNH ĐỘNG:</b>\n`;
+          msg += `  • Đang giữ LONG ➔ <b>CHỐT SẠCH LỜI LONG HOẶC HẠ TỶ TRỌNG NGAY!</b>\n`;
+          msg += `  • Có thể mở SHORT thăm dò thuận thế hạ đỉnh.\n`;
+          msg += `  🛑 <b>Cắt lỗ (SL) tuyệt đối:</b> <b>${(bar1High + 0.5).toFixed(1)}đ</b> (ngay trên đỉnh nến 1, rủi ro SL cực nhỏ chỉ 1.5-2đ)!\n`;
+          msg += `━━━━━━━━━━━━━━━━━━━━\n`;
+          msg += `<i>🛡️ Tape & Acceleration Engine | Senior Trader v6.0</i>`;
+
+          console.log(`   🎯 [Tape Engine] XÁC NHẬN ĐỦ 3 NẾN ĐẢO CHIỀU TẠI ĐỈNH @ ${candle.close}`);
+          await sendDerivativesMessage(msg);
+        } else {
+          console.log(`   ⚪ [Tape Engine] Nến 3 không đủ điều kiện xác nhận đảo chiều đỉnh. Hủy setup.`);
+        }
+        _state.pendingSetups = [];
+        return;
+      } else if (activeSetup.type === 'TROUGH_ABSORPTION') {
+        const bar1Low = activeSetup.bar1.low;
+        const bar2Low = activeSetup.bar2.low;
+        const confirmCondition = candle.isGreen && (candle.close > activeSetup.bar2.open || candle.close > activeSetup.bar1.close + 0.3);
+
+        if (candle.low < bar1Low - 0.3) {
+          // Nến 3 thủng đáy -> Phủ định
+          _state.pendingSetups = [];
+          return;
+        }
+
+        if (confirmCondition) {
+          // ĐÃ XÁC NHẬN ĐỦ 3 NẾN LIỀN KỀ TẠO ĐÁY!
+          let msg = `🎯 <b>[XÁC NHẬN ĐỦ 3 NẾN LIỀN KỀ] TẠO ĐÁY THỰC SỰ XÁC LẬP!</b>\n`;
+          msg += `🕐 <i>${timeStr} | F1M: <b>${candle.close.toFixed(1)}</b></i>\n`;
+          msg += `━━━━━━━━━━━━━━━━━━━━\n\n`;
+
+          msg += `📊 <b>TỔ HỢP 3 CÂY NẾN TẠO ĐÁY HOÀN HẢO:</b>\n`;
+          msg += `  • <b>Nến 1:</b> Rút chân gom hàng tại đáy <b>${bar1Low.toFixed(1)}</b> (Vol: ${activeSetup.bar1.volume.toLocaleString()} HĐ)\n`;
+          msg += `  • <b>Nến 2:</b> Test đáy thành công nâng đáy <b>${bar2Low.toFixed(1)} > ${bar1Low.toFixed(1)}</b> (Cạn cung)\n`;
+          msg += `  • <b>Nến 3:</b> Đóng <b>🟢 XANH XÁC NHẬN @ ${candle.close.toFixed(1)}</b> bứt phá nền vi mô! (Vol: ${candle.volume.toLocaleString()} HĐ)\n\n`;
+
+          msg += `📍 <b>BỐI CẢNH THỊ TRƯỜNG & KHUNG NGÀY:</b>\n`;
+          msg += `  • Vị trí khung ngày: <b>${activeSetup.location.badge}</b>\n`;
+          msg += `  • Môi trường: <i>${activeSetup.liquidityLabel}</i>\n`;
+          msg += `  • Khung giờ: <i>${activeSetup.session.sessionName}</i>\n\n`;
+
+          msg += `📋 <b>HÀNH ĐỘNG CHUẨN SENIOR TRADER:</b>\n`;
+          msg += `  👉 <b>ĐÃ ĐỦ ĐIỀU KIỆN KỶ LUẬT 3 NẾN AN TOÀN ĐỂ HÀNH ĐỘNG:</b>\n`;
+          msg += `  • Đang giữ SHORT ➔ <b>CHỐT SẠCH LÃI SHORT / KHÓA LÃI TOÀN BỘ!</b>\n`;
+          msg += `  • Có thể mở LONG thăm dò thuận sóng nâng đáy.\n`;
+          msg += `  🛑 <b>Cắt lỗ (SL) tuyệt đối:</b> <b>${(bar1Low - 0.5).toFixed(1)}đ</b> (ngay dưới đáy nến 1, rủi ro SL cực nhỏ chỉ 1.5-2đ)!\n`;
+          msg += `━━━━━━━━━━━━━━━━━━━━\n`;
+          msg += `<i>🛡️ Tape & Acceleration Engine | Senior Trader v6.0</i>`;
+
+          console.log(`   🎯 [Tape Engine] XÁC NHẬN ĐỦ 3 NẾN TẠO ĐÁY @ ${candle.close}`);
+          await sendDerivativesMessage(msg);
+        } else {
+          console.log(`   ⚪ [Tape Engine] Nến 3 không đủ điều kiện xác nhận tạo đáy. Hủy setup.`);
+        }
+        _state.pendingSetups = [];
+        return;
+      }
+    }
+  }
+
+  // ═════════════════════════════════════════════════════════════
+  // PHẦN B: PHÁT HIỆN SETUP BAR MỚI (NẾN 1 - WATCHLIST / WARNING)
+  // ═════════════════════════════════════════════════════════════
   const body = Math.abs(candle.close - candle.open);
   const upperWick = candle.high - Math.max(candle.open, candle.close);
   const lowerWick = Math.min(candle.open, candle.close) - candle.low;
 
-  // Lấy 5 nến gần nhất trước cây này để xác định xu hướng sóng ngắn (Local Wave)
   const recentSlice = allCandles.slice(-6, -1);
   if (recentSlice.length < 3) return;
 
-  const recentCloses = recentSlice.map(c => c.close);
   const recentHighs = recentSlice.map(c => c.high);
   const recentLows = recentSlice.map(c => c.low);
 
@@ -366,64 +639,110 @@ async function onCandleClosed(candle, allCandles, oiData) {
     }
   }
 
-  // ─── KIỂM TRA 3B: RÚT RÂU TRÊN ĐỈNH SAU ĐÀ TĂNG DỐC (LOCAL WAVE PEAK) ───
-  // Điều kiện: Vừa có nhịp tăng >= 2.5đ, nến hiện tại ở đỉnh sóng, xuất hiện râu trên dài hoặc đóng nến đỏ
+  // ─── KIỂM TRA 3B: PHÁT HIỆN NẾN 1 RÚT RÂU TRÊN ĐỈNH (LOCAL WAVE PEAK) ───
   const isAtLocalPeak = (candle.high >= localWaveHigh - 0.3) && (waveUpAmplitude >= WAVE_EXTREME_PTS);
   const isPeakRejection = isAtLocalPeak && (upperWick >= WICK_REJECTION_MIN || (!candle.isGreen && upperWick >= 0.8));
 
   if (isPeakRejection && (now - _state.lastPeakAlertTime > COOLDOWN_EXTREME_MS)) {
     _state.lastPeakAlertTime = now;
-    let msg = `🔴 <b>[CẢN TRỞ ĐÀ TĂNG TRÊN ĐỈNH] RÚT RÂU BỊ DỘI BÁN VOL LỚN!</b>\n`;
+
+    // Lưu vào Pipeline 3 nến
+    _state.pendingSetups = [{
+      id: Date.now(),
+      type: 'PEAK_REJECTION',
+      step: 1,
+      bar1: candle,
+      bar2: null,
+      location,
+      session,
+      liquidityLabel,
+      createdAt: now,
+    }];
+
+    let msg = `⚠️ <b>[TÍN HIỆU CÂY 1: RÚT RÂU ĐỈNH] VÀO CHẾ ĐỘ QUAN SÁT 3 NẾN!</b>\n`;
     msg += `🕐 <i>${timeStr} | F1M: <b>${candle.close.toFixed(1)}</b></i>\n`;
     msg += `━━━━━━━━━━━━━━━━━━━━\n\n`;
 
-    msg += `⛰️ <b>VỊ TRÍ: ĐỈNH NHỊP TĂNG NGẮN HẠN (Local Wave Peak):</b>\n`;
-    msg += `  • Biên độ nhịp tăng vừa qua: <b>+${waveUpAmplitude.toFixed(1)}đ</b> (từ ${localWaveLow.toFixed(1)} ➔ ${candle.high.toFixed(1)})\n`;
-    msg += `  • Hành vi nến tại đỉnh: Nhấp nháy cản, xuất hiện <b>Râu trên dài ${upperWick.toFixed(1)}đ</b>\n`;
-    msg += `  • Đóng nến: <b>${candle.isGreen ? '🟢 Xanh rút râu cản' : '🔴 ĐỎ BỊ DỘI XẢ'}</b> | Vol: <b>${candle.volume.toLocaleString()} HĐ</b>\n\n`;
+    msg += `⛰️ <b>ĐẶC ĐIỂM CÂY NẾN THỨ NHẤT (NẾN 1):</b>\n`;
+    msg += `  • Nhịp tăng vừa qua: <b>+${waveUpAmplitude.toFixed(1)}đ</b> (từ ${localWaveLow.toFixed(1)} ➔ ${candle.high.toFixed(1)})\n`;
+    msg += `  • Râu trên bị dội bán: <b>${upperWick.toFixed(1)}đ</b> | Đóng nến: <b>${candle.isGreen ? '🟢 Xanh rút râu' : '🔴 ĐỎ BỊ DỘI XẢ'}</b>\n`;
+    msg += `  • Khối lượng khớp: <b>${candle.volume.toLocaleString()} HĐ</b>\n\n`;
 
-    msg += `🧠 <b>GIẢI MÃ TÂM LÝ & DÒNG TIỀN:</b>\n`;
-    msg += `  👉 Lực mua đu Long bị chặn đứng tại vùng cản ngắn hạn. Phe Bán dội hàng phân phối mạnh khiến nến không giữ được đỉnh, đà tăng suy yếu rõ rệt!\n\n`;
+    msg += `📍 <b>VỊ TRÍ KHUNG NGÀY & BỐI CẢNH:</b>\n`;
+    msg += `  • Vị trí: <b>${location.badge}</b>\n`;
+    msg += `  • Đánh giá: <i>${location.warning}</i>\n`;
+    msg += `  • Môi trường: <b>${liquidityLabel}</b>\n`;
+    msg += `  • Khung giờ: <b>${session.sessionName}</b>\n\n`;
 
-    msg += `📋 <b>HÀNH ĐỘNG CỦA SENIOR TRADER:</b>\n`;
-    msg += `  • <b>TUYỆT ĐỐI CẤM MUA ĐU LONG TRÊN ĐỈNH!</b> Tránh bẫy đu đỉnh giá cao.\n`;
-    msg += `  • Đang giữ LONG ➔ <b>CHỐT LỜI NGAY / KHÓA LÃI BẢO TOÀN THÀNH QUẢ!</b>\n`;
-    msg += `  • Canh nhịp kiểm tra lại (retest) hoặc chờ xác nhận đảo chiều để mở SHORT!\n`;
+    if (!location.isExtremeLocation && isHighLiquidity) {
+      msg += `🚨 <b>CẢNH BÁO ĐẶC BIỆT (CHỐNG BẪY ĐU NGƯỢC PHA):</b>\n`;
+      msg += `  • Giá đang ở <b>GIỮA CHỪNG</b> trong môi trường thanh khoản lớn! Cú rút râu này rất dễ chỉ là nhịp chốt lời tạm thời để kéo tiếp 20-30đ vào chiều!\n`;
+      msg += `  • <b>TUYỆT ĐỐI KHÔNG SHORT ĐU ĐUỔI! CẤM CHẶN ĐẦU TÀU HỎA!</b>\n\n`;
+    }
+
+    msg += `🛡️ <b>KỶ LUẬT SENIOR TRADER — CẤM ĐU VÀO LỆNH NGAY CÂY NÀY:</b>\n`;
+    msg += `  👉 <b>ĐÂY LÀ CON DAO 2 LƯỠI!</b> Bắt buộc phải quan sát thêm <b>2 CÂY NẾN TIẾP THEO:</b>\n`;
+    msg += `  • <b>Nến 2:</b> Quan sát nhịp Retest đỉnh. Nếu vượt đỉnh ➔ Hủy bẫy, trend tăng tiếp diễn!\n`;
+    msg += `  • <b>Nến 3:</b> Chờ nến đỏ dứt khoát xác nhận thủng nền vi mô ➔ Lúc đó mới mở lệnh an toàn!\n`;
+    msg += `  • Hành động tức thì: <b>CẤM ĐU LONG MUA THÊM</b>, cân nhắc chặn lãi bảo vệ vốn.\n`;
     msg += `━━━━━━━━━━━━━━━━━━━━\n`;
     msg += `<i>🛡️ Tape & Acceleration Engine | Senior Trader v6.0</i>`;
 
-    console.log(`   🔴 [Tape Engine] Phát hiện Rút râu cản đỉnh Local Peak: Râu trên ${upperWick}đ, Vol: ${candle.volume}`);
+    console.log(`   ⚠️ [Tape Engine] Phát hiện Nến 1 Peak Rejection @ ${candle.close}. Vào chế độ quan sát 3 nến.`);
     await sendDerivativesMessage(msg);
     return;
   }
 
-  // ─── KIỂM TRA 3C: RÚT CHÂN DƯỚI ĐÁY SAU ĐÀ GIẢM DỐC (LOCAL WAVE TROUGH) ───
-  // Điều kiện: Vừa có nhịp giảm >= 2.5đ, nến hiện tại ở đáy sóng, xuất hiện râu dưới dài hoặc đóng nến xanh
+  // ─── KIỂM TRA 3C: PHÁT HIỆN NẾN 1 RÚT CHÂN DƯỚI ĐÁY (LOCAL WAVE TROUGH) ───
   const isAtLocalTrough = (candle.low <= localWaveLow + 0.3) && (waveDownAmplitude >= WAVE_EXTREME_PTS);
   const isTroughAbsorption = isAtLocalTrough && (lowerWick >= WICK_REJECTION_MIN || (candle.isGreen && lowerWick >= 0.8));
 
   if (isTroughAbsorption && (now - _state.lastTroughAlertTime > COOLDOWN_EXTREME_MS)) {
     _state.lastTroughAlertTime = now;
-    let msg = `🟢 <b>[CẦU HẤP THỤ ĐÁY] RÚT CHÂN SAU PHA ĐẠP VOL LỚN!</b>\n`;
+
+    // Lưu vào Pipeline 3 nến
+    _state.pendingSetups = [{
+      id: Date.now(),
+      type: 'TROUGH_ABSORPTION',
+      step: 1,
+      bar1: candle,
+      bar2: null,
+      location,
+      session,
+      liquidityLabel,
+      createdAt: now,
+    }];
+
+    let msg = `⚠️ <b>[TÍN HIỆU CÂY 1: RÚT CHÂN ĐÁY] VÀO CHẾ ĐỘ QUAN SÁT 3 NẾN!</b>\n`;
     msg += `🕐 <i>${timeStr} | F1M: <b>${candle.close.toFixed(1)}</b></i>\n`;
     msg += `━━━━━━━━━━━━━━━━━━━━\n\n`;
 
-    msg += `🌊 <b>VỊ TRÍ: ĐÁY NHỊP GIẢM NGẮN HẠN (Local Wave Trough):</b>\n`;
-    msg += `  • Biên độ nhịp giảm vừa qua: <b>-${waveDownAmplitude.toFixed(1)}đ</b> (từ ${localWaveHigh.toFixed(1)} ➔ ${candle.low.toFixed(1)})\n`;
-    msg += `  • Hành vi nến tại đáy: Xuất hiện <b>Râu dưới dài ${lowerWick.toFixed(1)}đ</b> gom hàng\n`;
-    msg += `  • Đóng nến: <b>${candle.isGreen ? '🟢 XANH RÚT CHÂN HẤP THỤ' : '🔴 Đỏ chững đà giảm'}</b> | Vol: <b>${candle.volume.toLocaleString()} HĐ</b>\n\n`;
+    msg += `🌊 <b>ĐẶC ĐIỂM CÂY NẾN THỨ NHẤT (NẾN 1):</b>\n`;
+    msg += `  • Nhịp giảm vừa qua: <b>-${waveDownAmplitude.toFixed(1)}đ</b> (từ ${localWaveHigh.toFixed(1)} ➔ ${candle.low.toFixed(1)})\n`;
+    msg += `  • Râu dưới hấp thụ: <b>${lowerWick.toFixed(1)}đ</b> | Đóng nến: <b>${candle.isGreen ? '🟢 XANH RÚT CHÂN' : '🔴 Đỏ chững đà'}</b>\n`;
+    msg += `  • Khối lượng khớp: <b>${candle.volume.toLocaleString()} HĐ</b>\n\n`;
 
-    msg += `🧠 <b>GIẢI MÃ TÂM LÝ & DÒNG TIỀN:</b>\n`;
-    msg += `  👉 Sau pha Short xả mạnh vol lớn, lực bán đã bị hấp thụ hoàn toàn tại vùng đáy ngắn hạn. Dòng tiền gom đỡ giá quyết liệt, nguy cơ nảy sóng hồi (Short Squeeze) rất cao!\n\n`;
+    msg += `📍 <b>VỊ TRÍ KHUNG NGÀY & BỐI CẢNH:</b>\n`;
+    msg += `  • Vị trí: <b>${location.badge}</b>\n`;
+    msg += `  • Đánh giá: <i>${location.warning}</i>\n`;
+    msg += `  • Môi trường: <b>${liquidityLabel}</b>\n`;
+    msg += `  • Khung giờ: <b>${session.sessionName}</b>\n\n`;
 
-    msg += `📋 <b>HÀNH ĐỘNG CỦA SENIOR TRADER:</b>\n`;
-    msg += `  • <b>TUYỆT ĐỐI CẤM BÁN ĐÁY / CẤM SHORT ĐUỔI!</b> Tránh bẫy bán đúng đáy.\n`;
-    msg += `  • Đang giữ SHORT ➔ <b>CHỐT LỜI NGAY / KHÓA LÃI!</b>\n`;
-    msg += `  • Đề phòng nhịp bật hồi kỹ thuật quét thủng các lệnh Short đuổi muộn!\n`;
+    if (!location.isExtremeLocation && isHighLiquidity) {
+      msg += `🚨 <b>CẢNH BÁO ĐẶC BIỆT (CHỐNG BẮT ĐÁY NGƯỢC PHA):</b>\n`;
+      msg += `  • Giá đang ở <b>GIỮA CHỪNG</b> trong môi trường thanh khoản lớn! Cú rút chân này rất dễ chỉ là nảy kỹ thuật tạm thời trước khi xả tiếp 20-30đ vào chiều!\n`;
+      msg += `  • <b>TUYỆT ĐỐI KHÔNG BẮT ĐÁY LONG SỚM! CẤM CẢN TÀU BIG SHORT!</b>\n\n`;
+    }
+
+    msg += `🛡️ <b>KỶ LUẬT SENIOR TRADER — CẤM ĐU VÀO LỆNH NGAY CÂY NÀY:</b>\n`;
+    msg += `  👉 <b>ĐÂY LÀ CON DAO 2 LƯỠI!</b> Bắt buộc phải quan sát thêm <b>2 CÂY NẾN TIẾP THEO:</b>\n`;
+    msg += `  • <b>Nến 2:</b> Quan sát nhịp Retest đáy. Nếu thủng đáy ➔ Hủy bẫy, đà xả tiếp diễn!\n`;
+    msg += `  • <b>Nến 3:</b> Chờ nến xanh dứt khoát xác nhận bứt phá nền vi mô ➔ Lúc đó mới mở lệnh an toàn!\n`;
+    msg += `  • Hành động tức thì: <b>CẤM BÁN ĐÁY SHORT ĐUỔI</b>, cân nhắc chặn lãi Short bảo vệ vốn.\n`;
     msg += `━━━━━━━━━━━━━━━━━━━━\n`;
     msg += `<i>🛡️ Tape & Acceleration Engine | Senior Trader v6.0</i>`;
 
-    console.log(`   🟢 [Tape Engine] Phát hiện Cầu hấp thụ đáy Local Trough: Râu dưới ${lowerWick}đ, Vol: ${candle.volume}`);
+    console.log(`   ⚠️ [Tape Engine] Phát hiện Nến 1 Trough Absorption @ ${candle.close}. Vào chế độ quan sát 3 nến.`);
     await sendDerivativesMessage(msg);
     return;
   }
@@ -440,6 +759,7 @@ function reset() {
   _state.lastTickColor = null;
   _state.hasFiredSurgeThisBar = false;
   _state.hasFiredFlipThisBar = false;
+  _state.pendingSetups = [];
   _state.lastSurgeAlertTime = 0;
   _state.lastFlipAlertTime = 0;
   _state.lastPeakAlertTime = 0;
