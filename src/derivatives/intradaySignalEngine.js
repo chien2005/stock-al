@@ -496,13 +496,25 @@ function analyze5mTimeframe(m5Data, m15Signal) {
     entryConfidence = 30;
     description = `Nến 5p Doji (range ${latestCandle.range.toFixed(1)}đ) ➔ Do dự, chờ`;
   } else if (latestCandle.lowerWick > latestCandle.body * 2 && latestCandle.isGreen) {
-    entrySignal = 'LONG_ENTRY';
-    entryConfidence = 60;
-    description = `Pin bar đáy 5p (râu dưới ${latestCandle.lowerWick.toFixed(1)}đ) ➔ Cầu bắt đáy`;
+    if (m15Signal === 'BEARISH') {
+      entrySignal = 'STAND_ASIDE';
+      entryConfidence = 30;
+      description = `Nến rút chân râu dưới ${latestCandle.lowerWick.toFixed(1)}đ nhưng 15p Downtrend ➔ CẤM BẮT ĐÁY (Tránh bẫy dao rơi)`;
+    } else {
+      entrySignal = 'LONG_ENTRY';
+      entryConfidence = 60;
+      description = `Pin bar đáy 5p (râu dưới ${latestCandle.lowerWick.toFixed(1)}đ) ➔ Cầu bắt đáy`;
+    }
   } else if (latestCandle.upperWick > latestCandle.body * 2 && !latestCandle.isGreen) {
-    entrySignal = 'SHORT_ENTRY';
-    entryConfidence = 60;
-    description = `Pin bar đỉnh 5p (râu trên ${latestCandle.upperWick.toFixed(1)}đ) ➔ Cung dội bán`;
+    if (m15Signal === 'BULLISH') {
+      entrySignal = 'STAND_ASIDE';
+      entryConfidence = 30;
+      description = `Nến bắn râu trên ${latestCandle.upperWick.toFixed(1)}đ nhưng 15p Uptrend ➔ CẤM SHORT CẢN TÀU (Tránh bẫy bứt phá)`;
+    } else {
+      entrySignal = 'SHORT_ENTRY';
+      entryConfidence = 60;
+      description = `Pin bar đỉnh 5p (râu trên ${latestCandle.upperWick.toFixed(1)}đ) ➔ Cung dội bán`;
+    }
   } else {
     description = `5p chưa có tín hiệu bứt phá ➔ Quan sát thêm`;
   }
@@ -743,21 +755,28 @@ async function makeAITraderDecision(m15, m5, m1, structure, liquidity, smartMone
     const entryThreshold = 52;
     const isAtSupport = structure && structure.recentLow && (currentPrice >= structure.recentLow - 0.3 && currentPrice <= structure.recentLow + 1.8);
     const isAtResist = structure && structure.recentHigh && (currentPrice <= structure.recentHigh + 0.3 && currentPrice >= structure.recentHigh - 1.8);
-    const isDowntrend = m15.signal === 'BEARISH' && structure.isLowerHighs;
-    const isUptrend = m15.signal === 'BULLISH' && structure.isHigherLows;
+    const isDowntrend = m15.signal === 'BEARISH' || (structure && (structure.isLowerHighs || structure.isLowerLows || structure.highLowStructure === 'DOWNTREND'));
+    const isUptrend = m15.signal === 'BULLISH' || (structure && (structure.isHigherHighs || structure.isHigherLows || structure.highLowStructure === 'UPTREND'));
+    const hasNegativeBasis = contextInfo?.basis && contextInfo.basis.basis < -1.0;
 
     // MỞ LONG
     if (bullScore >= entryThreshold && bullScore > bearScore * 1.3) {
-      if (isAtResist && !structure.isBigLong) {
+      if (isAtResist && !structure?.isBigLong) {
         actionDecision = 'STAND_ASIDE';
-        actionTitle = `⚪ ĐỨNG NGOÀI (CẤM ĐU ĐỈNH SÁT CẢN ${structure.recentHigh.toFixed(1)})`;
-        actionAdvice = `Giá ${currentPrice} đang ngay sát cản/đỉnh ${structure.recentHigh.toFixed(1)} chưa có xác nhận bứt phá. CẤM MUA ĐU ĐỈNH! Chờ vượt cản hoặc chỉnh về hỗ trợ.`;
+        actionTitle = `⚪ ĐỨNG NGOÀI (CẤM ĐU ĐỈNH SÁT CẢN ${structure?.recentHigh?.toFixed(1) || ''})`;
+        actionAdvice = `Giá ${currentPrice} đang ngay sát cản/đỉnh ${structure?.recentHigh?.toFixed(1) || ''} chưa có xác nhận bứt phá. CẤM MUA ĐU ĐỈNH! Chờ vượt cản hoặc chỉnh về hỗ trợ.`;
         _state.status = 'STAND_ASIDE';
         _state.statusLabel = actionTitle;
-      } else if (isDowntrend && !structure.isBigLong) {
+      } else if (isDowntrend && !structure?.isBigLong) {
         actionDecision = 'STAND_ASIDE';
         actionTitle = `⚪ ĐỨNG NGOÀI (CẤM BẮT ĐÁY KHI TREND GIẢM)`;
-        actionAdvice = `Xu hướng 15p vẫn là DOWNTREND hạ đỉnh. CẤM BẮT ĐÁY LONG ngược xu hướng (tránh bẫy bull-trap / dao rơi)!`;
+        actionAdvice = `Xu hướng 15p đang là DOWNTREND hoặc cấu trúc hạ đỉnh/hạ đáy. TUYỆT ĐỐI CẤM BẮT ĐÁY LONG ngược xu hướng (tránh bẫy bull-trap / dao rơi)!`;
+        _state.status = 'STAND_ASIDE';
+        _state.statusLabel = actionTitle;
+      } else if (hasNegativeBasis) {
+        actionDecision = 'STAND_ASIDE';
+        actionTitle = `⚪ ĐỨNG NGOÀI (BASIS F1 ÂM ${contextInfo.basis.basis}đ)`;
+        actionAdvice = `Basis F1 đang âm (${contextInfo.basis.basis}đ) phản ánh phe Short áp đảo và nguy cơ bẫy tăng/xả hàng. Không mở LONG khi Basis âm!`;
         _state.status = 'STAND_ASIDE';
         _state.statusLabel = actionTitle;
       } else {
@@ -801,10 +820,10 @@ async function makeAITraderDecision(m15, m5, m1, structure, liquidity, smartMone
         actionAdvice = `Giá ${currentPrice} đang ngay sát hỗ trợ/đáy ${structure.recentLow.toFixed(1)} chưa có xác nhận thủng đáy. CẤM BÁN THÁO VÀO ĐÁY (tránh bẫy Short Squeeze / rút chân)!`;
         _state.status = 'STAND_ASIDE';
         _state.statusLabel = actionTitle;
-      } else if (isUptrend && !structure.isBigShort) {
+      } else if (isUptrend && !structure?.isBigShort) {
         actionDecision = 'STAND_ASIDE';
         actionTitle = `⚪ ĐỨNG NGOÀI (CẤM SHORT CẢN TÀU KHI TREND TĂNG)`;
-        actionAdvice = `Xu hướng 15p vẫn là UPTREND nâng đỉnh nâng đáy. CẤM SHORT CẢN TÀU ngược dòng tiền lớn!`;
+        actionAdvice = `Xu hướng 15p đang là UPTREND hoặc cấu trúc nâng đỉnh/nâng đáy. TUYỆT ĐỐI CẤM SHORT CẢN TÀU ngược dòng tiền lớn!`;
         _state.status = 'STAND_ASIDE';
         _state.statusLabel = actionTitle;
       } else {

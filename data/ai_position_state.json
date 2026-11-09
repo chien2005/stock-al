@@ -1,5 +1,5 @@
 {
-  "date": "7/11/2026",
+  "date": "9/11/2026",
   "position": "NONE",
   "status": "STAND_ASIDE",
   "statusLabel": "ĐỨNG NGOÀI QUAN SÁT",
@@ -18,8 +18,7 @@
   "holdingBars": 0,
   "breakevenActive": false,
   "tp1Hit": false,
-  "graduatedOvernight": false,
-  "graduationReason": "",
+  "liquidityMode": "SCALP",
   "todayTrades": [],
   "totalPnLToday": 0,
   "totalGrossPnLToday": 0,
@@ -30,5 +29,8 @@
   "maxDailyTrades": 4,
   "lastExitTime": null,
   "lastExitTimestamp": 0,
-  "lastUpdated": "2026-11-07T11:16:30.000Z"
+  "signalCount": 0,
+  "consecutiveSame": 0,
+  "lastSignal": null,
+  "lastUpdated": "2026-11-09T13:08:06.559Z"
 }

@@ -168,6 +168,8 @@ const _state = {
   lastTripleTopAlertTime: 0,
   lastSwingAlertTime: 0,
   lastConfirmedPeak: null,       // { time, high, close }
+  lastSwingLowAlertTime: 0,      // Cooldown cảnh báo Swing Low
+  lastConfirmedTrough: null,     // { time, low, close }
   last5mClimaxAlertTime: 0,      // Cooldown cảnh báo 5M Climax
   last5mContAlertTime: 0,        // Cooldown cảnh báo 5M Continuation
   last5mBreakoutAlertTime: 0,    // Cooldown cảnh báo 5M Breakout
@@ -695,6 +697,9 @@ async function processNewCandle(candle, allCandles, oiData, extraData = {}) {
 
   // 11. Check cấu trúc Đỉnh Sau vs Đỉnh Trước (Swing Highs)
   await checkSwingHighStructure(candle, allCandles);
+
+  // 11b. Check cấu trúc Đáy Sau vs Đáy Trước (Swing Lows)
+  await checkSwingLowStructure(candle, allCandles);
 
   // 12. Check MA Crossover
   await checkMACrossover(allCandles, indicators, oiData);
@@ -1284,6 +1289,48 @@ async function checkSwingHighStructure(candle, allCandles) {
       }
     }
     _state.lastConfirmedPeak = newPeak;
+  }
+}
+
+// ─── CHECK CẤU TRÚC ĐÁY SAU VS ĐÁY TRƯỚC (HIGHER / LOWER LOW) ──
+async function checkSwingLowStructure(candle, allCandles) {
+  if (allCandles.length < 5) return;
+  const idx = allCandles.length - 1;
+
+  // Kiểm tra nến áp chót (idx - 1) có phải đáy swing cục bộ được xác nhận không
+  const prevC = allCandles[idx - 1];
+  const prePrevC = allCandles[idx - 2];
+
+  if (prevC.low < prePrevC.low && prevC.low < candle.low && prevC.volume >= 800) {
+    const newTrough = { time: prevC.time, low: prevC.low, close: prevC.close };
+
+    if (_state.lastConfirmedTrough && _state.lastConfirmedTrough.time !== newTrough.time) {
+      const diff = newTrough.low - _state.lastConfirmedTrough.low;
+      const now = Date.now();
+
+      if (diff <= -0.5 && _state.position === 'SHORT' && now - (_state.lastSwingLowAlertTime || 0) > SWING_COOLDOWN_MS) {
+        // Đáy sau THẤP HƠN đáy trước (Lower Low) -> TIẾP TỤC GIỮ SHORT
+        _state.lastSwingLowAlertTime = now;
+        let msg = `📉 <b>[CẤU TRÚC THỊ TRƯỜNG] ĐÁY SAU THẤP HƠN ĐÁY TRƯỚC (Lower Low)</b>\n`;
+        msg += `🕐 ${getVnTimeHHMMSS()} | F1M: <b>${candle.close.toFixed(1)}</b>\n`;
+        msg += `🌊 Đáy mới: <b>${newTrough.low.toFixed(1)}</b> (${newTrough.time}) < Đáy cũ: <b>${_state.lastConfirmedTrough.low.toFixed(1)}</b> (${_state.lastConfirmedTrough.time}) [${diff.toFixed(1)}đ]\n\n`;
+        msg += `💡 <i>Cấu trúc Downtrend tiếp diễn vững chắc → <b>TIẾP TỤC GIỮ VỊ THẾ SHORT!</b></i>\n`;
+        msg += `━━━━━━━━━━━━━━━━━━━━\n`;
+        msg += `<i>🔮 VN30F v6.0 | Senior Trader AI Agent</i>`;
+        await sendDerivativesMessage(msg);
+      } else if (diff >= 0.5 && now - (_state.lastSwingLowAlertTime || 0) > SWING_COOLDOWN_MS) {
+        // Đáy sau CAO HƠN đáy trước (Higher Low) -> Cảnh báo đảo chiều / Phe Mua nâng đáy
+        _state.lastSwingLowAlertTime = now;
+        let msg = `📈 <b>[CẤU TRÚC THỊ TRƯỜNG] ĐÁY SAU CAO HƠN ĐÁY TRƯỚC (Higher Low)</b>\n`;
+        msg += `🕐 ${getVnTimeHHMMSS()} | F1M: <b>${candle.close.toFixed(1)}</b>\n`;
+        msg += `🌊 Đáy mới: <b>${newTrough.low.toFixed(1)}</b> (${newTrough.time}) > Đáy cũ: <b>${_state.lastConfirmedTrough.low.toFixed(1)}</b> (${_state.lastConfirmedTrough.time}) [+${diff.toFixed(1)}đ]\n\n`;
+        msg += `💡 <i>Phe Mua đang nâng đáy dần. Cân nhắc chốt SHORT / Đứng ngoài / Tìm điểm LONG!</i>\n`;
+        msg += `━━━━━━━━━━━━━━━━━━━━\n`;
+        msg += `<i>🔮 VN30F v6.0 | Senior Trader AI Agent</i>`;
+        await sendDerivativesMessage(msg);
+      }
+    }
+    _state.lastConfirmedTrough = newTrough;
   }
 }
 
@@ -2128,6 +2175,8 @@ function reset() {
   _state.lastTripleTopAlertTime = 0;
   _state.lastSwingAlertTime = 0;
   _state.lastConfirmedPeak = null;
+  _state.lastSwingLowAlertTime = 0;
+  _state.lastConfirmedTrough = null;
   _state.last5mClimaxAlertTime = 0;
   _state.last5mContAlertTime = 0;
   _state.last5mBreakoutAlertTime = 0;

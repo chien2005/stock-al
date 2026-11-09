@@ -200,7 +200,7 @@ async function runPostATCJob() {
 
     // Đồng bộ và gửi báo cáo tổng kết nhật ký giao dịch AI Trader trong ngày (Google Sheets + Telegram)
     try {
-      await positionRiskAssistant.generateAndSendDailyTradingReport();
+      await intradaySignalEngine.generateAndSendDailyReport();
       console.log('   ✅ Báo cáo tổng kết nhật ký ngày AI Trader (Google Sheets + Telegram) hoàn thành');
     } catch (e) {
       console.error('   ⚠️ [Daily Trading Report] Lỗi:', e.message);
@@ -221,10 +221,9 @@ function resetDerivativesState() {
   console.log('   🔄 Derivatives state reset v7.0');
 }
 
-// ─── VOLUME SCALPER CONTROLS (DECOMMISSIONED v9.0) ───────────
+// ─── VOLUME SCALPER CONTROLS ─────────────────────────────────
 function startVolumeScalper() {
-  // DECOMMISSIONED: Đã dừng scalper 1M/5M để tránh dắt mũi 2 đầu và bào mòn tài khoản
-  console.log('   🛑 [VolumeScalper] Decommissioned. Scalping 1M is disabled in v9.0.');
+  volumeScalper.start();
 }
 
 function stopVolumeScalper() {
@@ -237,68 +236,15 @@ async function runEveningPlanJob() {
   return eveningPlanEngine.runEveningPlanJob();
 }
 
-// ─── AI SUPERVISOR & OPERATIONS COPILOT (v9.0) ───────────────
-const aiSupervisor = require('./aiSupervisor');
-const realtimeDataEngine = require('./realtimeDataEngine');
-const trendEngine = require('./trendEngine');
-const zoneManager = require('./zoneManager');
-const marketContextVN = require('./marketContextVN');
-const aiMemory = require('./aiMemory');
-const positionRiskAssistant = require('./positionRiskAssistant');
-const eventNotifier = require('./eventNotifier');
-
-// ─── SUPERVISOR CHECKPOINTS ──────────────────────────────────
-async function runSupervisorMorningJob() {
-  if (!isCurrentInstanceActive()) return;
-  return aiSupervisor.runSupervisorTick({
-    isCheckpoint: true,
-    checkpointName: 'CHIẾN LƯỢC ĐẦU PHIÊN (08h45)',
-  });
-}
-
-async function runSupervisorMiddayJob() {
-  if (!isCurrentInstanceActive()) return;
-  return aiSupervisor.runSupervisorTick({
-    isCheckpoint: true,
-    checkpointName: 'TỔNG KẾT PHIÊN SÁNG (11h30)',
-  });
-}
-
-async function runSupervisorPostATCJob() {
-  if (!isCurrentInstanceActive()) return;
-  return aiSupervisor.runSupervisorTick({
-    isCheckpoint: true,
-    checkpointName: 'TỔNG KẾT PHIÊN & GRADUATION (14h45)',
-  });
-}
-
-// ─── INTRADAY SIGNAL JOB (DECOMMISSIONED SPAM v9.0) ──────────
+// ─── INTRADAY SIGNAL JOB (15p/lần trong phiên) ──────────────
 async function runIntradaySignalJob() {
-  // DECOMMISSIONED: Đã dừng phát tín hiệu 5p/lần gây lỗ -31đ
-  return;
+  if (!isCurrentInstanceActive()) return;
+  return intradaySignalEngine.runIntradaySignal();
 }
 
 // ─── EXPORTS ─────────────────────────────────────────────────
 module.exports = {
-  // AI Supervisor v9.0 (Swing & Multi-TF Copilot)
-  aiSupervisor,
-  runSupervisorTick: aiSupervisor.runSupervisorTick,
-  runSupervisorMorningJob,
-  runSupervisorMiddayJob,
-  runSupervisorPostATCJob,
-  openPosition: positionRiskAssistant.openPosition,
-  closePosition: positionRiskAssistant.closePosition,
-  evaluatePosition: positionRiskAssistant.evaluatePosition,
-  getPositionSummary: positionRiskAssistant.getPositionSummary,
-  // Core Engines
-  realtimeDataEngine,
-  trendEngine,
-  zoneManager,
-  marketContextVN,
-  aiMemory,
-  positionRiskAssistant,
-  eventNotifier,
-  // Volume Scalper v5.0 (Decommissioned)
+  // Volume Scalper v5.0
   startVolumeScalper,
   stopVolumeScalper,
   resetDerivativesState,
@@ -312,7 +258,7 @@ module.exports = {
   runEveningPlanJob,
   // Intraday Signal v7.0
   runIntradaySignalJob,
-  generateAndSendDailyReport: positionRiskAssistant.generateAndSendDailyTradingReport,
+  generateAndSendDailyReport: intradaySignalEngine.generateAndSendDailyReport,
   resetIntradayState: intradaySignalEngine.resetIntradayState,
   // Tracker references
   oiTracker,
@@ -327,6 +273,5 @@ module.exports = {
   getDerivativesState: () => ({
     scalper: volumeScalper.getState(),
     intradaySignal: intradaySignalEngine.getState(),
-    supervisorPosition: positionRiskAssistant.loadState(),
   }),
 };

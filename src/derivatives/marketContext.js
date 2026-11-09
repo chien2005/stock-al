@@ -141,16 +141,14 @@ function getSessionRiskMultiplier(timeHHMM) {
 /**
  * Phân tích độ lệch Basis giữa F1M và VN30 Index
  * 
- * Basis = F1M - VN30 Index
- * Premium (Basis > 0): Thị trường kỳ vọng tăng
- * Discount (Basis < 0): Thị trường kỳ vọng giảm
- * 
- * Ngưỡng:
- * - |Basis| < 1.0: Cân bằng
- * - |Basis| 1.0-3.0: Nghiêng nhẹ
- * - |Basis| > 3.0: Lệch mạnh → Cảnh báo mean reversion
+ * Thực tế thị trường VN30F:
+ * - Đa số cả ngày Basis duy trì dương (+3 đến +8đ) là trạng thái bình thường, gần như không có giá trị dự báo tăng.
+ * - Chỉ CẢNH GIÁC khi Basis ÂM:
+ *   + Khi VN30 tăng mà Basis chuyển âm/duy trì âm: Dấu hiệu sắp xả hàng, bull trap, lực tăng cạn kiệt.
+ *   + Khi xu hướng giảm / big short: F1 âm basis xác nhận phe Short dồn lực đè bán khốc liệt.
+ * - Cảnh giác khi Basis đột biến bất thường ngoài biên (+9đ trở lên).
  */
-function analyzeBasis(f1mPrice, vn30Price) {
+function analyzeBasis(f1mPrice, vn30Price, vn30Change = 0) {
   if (!f1mPrice || !vn30Price) return null;
 
   const basis = f1mPrice - vn30Price;
@@ -160,24 +158,29 @@ function analyzeBasis(f1mPrice, vn30Price) {
   let description = '';
   let sentiment = 'NEUTRAL';
   let warning = '';
+  let isBearishAlert = false;
 
-  if (absBasis < 1.0) {
-    description = 'Cân bằng (thị trường giằng co)';
+  if (basis < 0) {
+    if (vn30Change > 0) {
+      description = `Discount ${basis.toFixed(1)}đ (F1 Âm khi VN30 Tăng) ➔ ⚠️ BẪY BULL TRAP / SẮP XẢ HÀNG`;
+      sentiment = 'BEARISH_DIVERGENCE';
+      warning = '⚠️ CẢNH GIÁC: VN30 tăng nhưng Basis F1 chuyển âm/duy trì âm. Dấu hiệu sắp xả hàng, bull trap rủi ro cao!';
+      isBearishAlert = true;
+    } else {
+      description = `Discount ${basis.toFixed(1)}đ (F1 chiết khấu âm) ➔ 🔴 ÁP LỰC ĐÈ BÁN / THUẬN SHORT`;
+      sentiment = 'BEARISH';
+      warning = '⚠️ Basis F1 ÂM trong thế giảm: Phe Short đang áp đảo, cảnh giác quán tính giảm tiếp!';
+      isBearishAlert = true;
+    }
+  } else if (basis >= 0 && basis <= 9.0) {
+    // Vùng thông thường ở TTCK VN (+3 đến +8đ): Giữ dương gần như không có ý nghĩa dự báo
+    description = `Dương +${basis.toFixed(1)}đ (Biên bình thường +3~+8đ)`;
     sentiment = 'NEUTRAL';
-  } else if (basis > 0 && basis <= 3.0) {
-    description = `Premium +${basis.toFixed(1)}đ (kỳ vọng tăng nhẹ)`;
-    sentiment = 'BULLISH';
-  } else if (basis > 3.0) {
-    description = `Premium cao +${basis.toFixed(1)}đ`;
-    sentiment = 'BULLISH_EXTREME';
-    warning = '⚠️ Basis Premium quá cao → Risk mean reversion đạp về!';
-  } else if (basis < 0 && basis >= -3.0) {
-    description = `Discount ${basis.toFixed(1)}đ (kỳ vọng giảm nhẹ)`;
-    sentiment = 'BEARISH';
-  } else if (basis < -3.0) {
-    description = `Discount sâu ${basis.toFixed(1)}đ`;
-    sentiment = 'BEARISH_EXTREME';
-    warning = '⚠️ Basis Discount quá sâu → Risk bật ngược hồi phục!';
+  } else {
+    // Basis dương đột biến ngoài khoảng bình thường
+    description = `Premium cao đột biến +${basis.toFixed(1)}đ`;
+    sentiment = 'ANOMALY_HIGH';
+    warning = '⚠️ Basis dương đột biến ngoài khoảng thông thường (> +9đ) ➔ Cảnh giác kéo giật cục bộ!';
   }
 
   return {
@@ -186,10 +189,10 @@ function analyzeBasis(f1mPrice, vn30Price) {
     description,
     sentiment,
     warning,
-    isBullish: sentiment.startsWith('BULLISH'),
-    isBearish: sentiment.startsWith('BEARISH'),
-    isExtreme: sentiment.includes('EXTREME'),
-    text: `Basis: ${basis >= 0 ? '+' : ''}${basis.toFixed(1)}đ (${basisPct >= 0 ? '+' : ''}${basisPct.toFixed(2)}%) — ${description}`,
+    isBullish: false, // Giữ dương bình thường không coi là tín hiệu Bullish
+    isBearish: isBearishAlert,
+    isExtreme: basis < -3.0 || basis > 10.0,
+    text: `Basis: ${basis >= 0 ? '+' : ''}${basis.toFixed(1)}đ — ${description}`,
   };
 }
 
