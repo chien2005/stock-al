@@ -20,6 +20,7 @@ const { sendDerivativesMessage } = require('../telegramService');
 const dataFetcher = require('./dataFetcher');
 const oiTracker = require('./oiTracker');
 const volumeScalper = require('./volumeScalper');
+const tapeAccelerationEngine = require('./tapeAccelerationEngine');
 const eveningPlanEngine = require('./eveningPlanEngine');
 const intradaySignalEngine = require('./intradaySignalEngine');
 const pillarMonitor = require('./pillarMonitor');
@@ -216,6 +217,7 @@ async function runPostATCJob() {
 // ─── RESET DAILY ─────────────────────────────────────────────
 function resetDerivativesState() {
   volumeScalper.reset();
+  tapeAccelerationEngine.reset();
   dataFetcher.resetDailyCache();
   intradaySignalEngine.resetIntradayState();
   console.log('   🔄 Derivatives state reset v7.0');
@@ -270,6 +272,7 @@ module.exports = {
   // Compatibility
   fetchOHLCV: dataFetcher.fetchOHLCV,
   pillarMonitor,
+  tapeAccelerationEngine,
   getDerivativesState: () => ({
     scalper: volumeScalper.getState(),
     intradaySignal: intradaySignalEngine.getState(),

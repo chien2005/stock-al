@@ -201,7 +201,16 @@ let _activeDerivSymbol = '41I1GA000';
 async function fetchRealtimeFuturesPrice() {
   // Ưu tiên 1: Snapshot phái sinh realtime từ VPS (nhanh, chính xác từng giây)
   try {
-    const sym = _activeDerivSymbol || '41I1GA000';
+    if (!_activeDerivSymbol || _activeDerivSymbol === '41I1GA000') {
+      try {
+        const mapRes = await axios.get(VPS_PS_LIST_MAP, { headers: HEADERS, timeout: 3000 });
+        if (Array.isArray(mapRes.data) && mapRes.data.length > 0) {
+          const f1mItem = mapRes.data.find(d => (d.CHART_CODE || '') === 'VN30F1M');
+          if (f1mItem) _activeDerivSymbol = f1mItem.SYMBOL;
+        }
+      } catch (e) {}
+    }
+    const sym = _activeDerivSymbol || '41I1GB000';
     const res = await axios.get(`${VPS_PS_SNAPSHOT}/${sym}`, { headers: HEADERS, timeout: 3000 });
     if (res.data && Array.isArray(res.data) && res.data.length > 0 && res.data[0].lastPrice) {
       const d = res.data[0];
@@ -212,6 +221,9 @@ async function fetchRealtimeFuturesPrice() {
         prevPrice: r,
         high: d.highPrice ? parseFloat(d.highPrice) : p,
         low: d.lowPrice ? parseFloat(d.lowPrice) : p,
+        lot: parseInt(d.lot || '0'),
+        lastVolume: parseInt(d.lastVolume || '0'),
+        symbol: d.sym,
       };
     }
   } catch (e) { /* fail silently, fallback to history */ }

@@ -23,15 +23,16 @@ const marketStructure = require('./marketStructure');
 const flowEngine = require('./flowEngine');
 const pillarMonitor = require('./pillarMonitor');
 const intradaySignalEngine = require('./intradaySignalEngine');
+const tapeAccelerationEngine = require('./tapeAccelerationEngine');
 const { sendDerivativesMessage } = require('../telegramService');
 const { config, isCurrentInstanceActive } = require('../config');
 
 // ─── CONSTANTS ───────────────────────────────────────────────
 const POLL_INTERVAL_MS = 60 * 1000;       // 60 giây (Nến 1p)
-const FAST_TICK_INTERVAL_MS = 5 * 1000;   // 5 giây (Bắt Flash Crash realtime)
-const START_TIME = '09:15';               // Bỏ qua 15 phút đầu phiên (ATO noise & thăm dò)
+const FAST_TICK_INTERVAL_MS = 5 * 1000;   // 5 giây (Bắt Flash Crash & Gia tốc Realtime)
+const START_TIME = '09:00';               // Giám sát toàn phiên từ 09:00
 const STOP_ENTRY_TIME = '14:20';          // Không mở mới sau 14:20
-const END_TIME = '14:30';                 // Dừng poll nến 1p
+const END_TIME = '14:35';                 // Dừng poll nến 1p sau ATC
 
 // Base Volume thresholds (Fallback khi chưa có data thanh khoản realtime)
 const VOL_ENTRY_MIN = 2000;               // Vol tối thiểu cơ sở
@@ -1408,6 +1409,9 @@ async function fastTickCycle() {
 
     _state.priceTicks.push({ time: now, price: currentPrice });
 
+    // Gọi Tape Reading & Volume Acceleration Engine xử lý gia tốc dồn dập & bẫy lật màu
+    tapeAccelerationEngine.onFastTick({ ...futuresPrice, time: now }).catch(e => console.error('   ⚠️ [TapeEngine] tick error:', e.message));
+
     // Giữ tick trong vòng 70 giây gần nhất
     const cutoff = now - 70 * 1000;
     _state.priceTicks = _state.priceTicks.filter(t => t.time >= cutoff);
@@ -2084,6 +2088,8 @@ async function pollCycle() {
               pillarAnalysis,
               liquidityInfo,
             });
+            // Kiểm tra Tape Engine: Rút râu đỉnh/đáy cực trị sóng ngắn & Doji cân bằng
+            await tapeAccelerationEngine.onCandleClosed(target1m, closed1m, oiData).catch(e => console.error('   ⚠️ [TapeEngine] candle error:', e.message));
           }
         }
       }
@@ -2186,6 +2192,7 @@ function reset() {
   _state.lastPillarAnalysis = null;
   _state.lastMarketStructure = null;
   _state.lastLiquidityInfo = null;
+  tapeAccelerationEngine.reset();
   console.log('   🔄 Volume Scalper v7.0: State reset');
 }
 
