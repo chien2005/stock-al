@@ -1,5 +1,5 @@
 {
-  "date": "9/11/2026",
+  "date": null,
   "position": "NONE",
   "status": "STAND_ASIDE",
   "statusLabel": "ĐỨNG NGOÀI QUAN SÁT",
@@ -32,5 +32,5 @@
   "signalCount": 0,
   "consecutiveSame": 0,
   "lastSignal": null,
-  "lastUpdated": "2026-11-09T13:08:06.559Z"
+  "lastUpdated": null
 }

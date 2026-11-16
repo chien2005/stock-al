@@ -518,9 +518,10 @@ async function buildEveningPlanNotification() {
     dataFetcher.fetchRealtimeVNINDEXPrice(),
   ]);
 
-  const f1mPrice = futuresPrice ? futuresPrice.price : null;
-  const vn30PriceVal = vn30Price ? vn30Price.price : null;
-  const vnindexVal = vnindexPrice ? vnindexPrice.price : null;
+  const lastKnown = dataFetcher.getLastKnownPrices ? dataFetcher.getLastKnownPrices() : {};
+  const f1mPrice = (futuresPrice && futuresPrice.price) || (dailyF1M?.c ? dailyF1M.c[dailyF1M.c.length - 1] : null) || lastKnown.f1m;
+  const vn30PriceVal = (vn30Price && vn30Price.price) || (dailyVN30?.c ? dailyVN30.c[dailyVN30.c.length - 1] : null) || lastKnown.vn30;
+  const vnindexVal = (vnindexPrice && vnindexPrice.price) || lastKnown.vnindex;
 
   // Build weekly candles từ raw data
   let weeklyCandles = [];

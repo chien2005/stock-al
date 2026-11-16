@@ -56,9 +56,10 @@ async function runAIDerivativesJob(session) {
       dataFetcher.fetchRealtimeVNINDEXPrice(),
     ]);
 
-    const f1mPrice = futuresPrice ? futuresPrice.price : null;
-    const vn30PriceVal = vn30Price ? vn30Price.price : null;
-    const vnindexVal = vnindexPrice ? vnindexPrice.price : null;
+    const lastKnown = dataFetcher.getLastKnownPrices ? dataFetcher.getLastKnownPrices() : {};
+    const f1mPrice = (futuresPrice && futuresPrice.price) || lastKnown.f1m;
+    const vn30PriceVal = (vn30Price && vn30Price.price) || lastKnown.vn30;
+    const vnindexVal = (vnindexPrice && vnindexPrice.price) || lastKnown.vnindex;
 
     // Volume Scalper state
     const scalperState = volumeScalper.getState();

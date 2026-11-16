@@ -594,8 +594,9 @@ async function buildOIEveningNotificationAsync(session = 'evening') {
         totalOIChange = totalOI - prevSession.totalOI;
       }
 
-      const f1mPrice = futuresPrice ? futuresPrice.price : 0;
-      const vn30PriceVal = vn30Price ? vn30Price.price : 0;
+      const lastKnown = dataFetcher.getLastKnownPrices ? dataFetcher.getLastKnownPrices() : {};
+      const f1mPrice = (futuresPrice && futuresPrice.price) || lastKnown.f1m || 0;
+      const vn30PriceVal = (vn30Price && vn30Price.price) || lastKnown.vn30 || 0;
       const basis = f1mPrice && vn30PriceVal ? parseFloat((f1mPrice - vn30PriceVal).toFixed(2)) : 0;
 
       // Tính tự doanh: dùng data file nếu có, nếu không ước lượng
@@ -1152,20 +1153,22 @@ async function buildPreATCNotificationAsync(simulatedData = null) {
   const fmtSign = (num) => (num > 0 ? `+${fmt(num)}` : fmt(num));
   const fmtSignDec = (num, d = 1) => (num > 0 ? `+${fmtDec(num, d)}` : fmtDec(num, d));
 
+  const lastKnown = dataFetcher.getLastKnownPrices ? dataFetcher.getLastKnownPrices() : {};
+
   // Market prices
-  const f1mPrice = futuresPrice ? futuresPrice.price : 0;
-  const f1mPrev = futuresPrice ? futuresPrice.prevPrice : 0;
+  const f1mPrice = (futuresPrice && futuresPrice.price) || lastKnown.f1m || 0;
+  const f1mPrev = (futuresPrice && futuresPrice.prevPrice) || lastKnown.f1mPrev || f1mPrice;
   const f1mChange = f1mPrice && f1mPrev ? (f1mPrice - f1mPrev) : 0;
   const f1mChangePct = f1mPrev ? ((f1mChange / f1mPrev) * 100).toFixed(2) : '0';
 
-  const vn30Val = vn30Price ? vn30Price.price : 0;
-  const vn30Prev = vn30Price ? vn30Price.prevPrice : 0;
+  const vn30Val = (vn30Price && vn30Price.price) || lastKnown.vn30 || 0;
+  const vn30Prev = (vn30Price && vn30Price.prevPrice) || lastKnown.vn30Prev || vn30Val;
   const vn30Change = vn30Val && vn30Prev ? (vn30Val - vn30Prev) : 0;
 
   const basis = f1mPrice && vn30Val ? parseFloat((f1mPrice - vn30Val).toFixed(2)) : 0;
 
-  const vnidxVal = vnindexPrice ? vnindexPrice.price : 0;
-  const vnidxPrev = vnindexPrice ? vnindexPrice.prevPrice : 0;
+  const vnidxVal = (vnindexPrice && vnindexPrice.price) || lastKnown.vnindex || 0;
+  const vnidxPrev = (vnindexPrice && vnindexPrice.prevPrice) || lastKnown.vnindexPrev || vnidxVal;
   const vnidxChange = vnidxVal && vnidxPrev ? (vnidxVal - vnidxPrev) : 0;
 
   // Realtime OI & Foreign
@@ -1383,18 +1386,20 @@ async function buildPostATCNotificationAsync(simulatedData = null) {
   const fmtSign = (num) => (num > 0 ? `+${fmt(num)}` : fmt(num));
   const fmtSignDec = (num, d = 1) => (num > 0 ? `+${fmtDec(num, d)}` : fmtDec(num, d));
 
-  const f1mPrice = futuresPrice ? futuresPrice.price : 0;
-  const f1mPrev = futuresPrice ? futuresPrice.prevPrice : 0;
+  const lastKnown = dataFetcher.getLastKnownPrices ? dataFetcher.getLastKnownPrices() : {};
+
+  const f1mPrice = (futuresPrice && futuresPrice.price) || lastKnown.f1m || 0;
+  const f1mPrev = (futuresPrice && futuresPrice.prevPrice) || lastKnown.f1mPrev || f1mPrice;
   const f1mChange = f1mPrice && f1mPrev ? (f1mPrice - f1mPrev) : 0;
 
-  const vn30Val = vn30Price ? vn30Price.price : 0;
-  const vn30Prev = vn30Price ? vn30Price.prevPrice : 0;
+  const vn30Val = (vn30Price && vn30Price.price) || lastKnown.vn30 || 0;
+  const vn30Prev = (vn30Price && vn30Price.prevPrice) || lastKnown.vn30Prev || vn30Val;
   const vn30Change = vn30Val && vn30Prev ? (vn30Val - vn30Prev) : 0;
 
   const basis = f1mPrice && vn30Val ? parseFloat((f1mPrice - vn30Val).toFixed(2)) : 0;
 
-  const vnidxVal = vnindexPrice ? vnindexPrice.price : 0;
-  const vnidxPrev = vnindexPrice ? vnindexPrice.prevPrice : 0;
+  const vnidxVal = (vnindexPrice && vnindexPrice.price) || lastKnown.vnindex || 0;
+  const vnidxPrev = (vnindexPrice && vnindexPrice.prevPrice) || lastKnown.vnindexPrev || vnidxVal;
   const vnidxChange = vnidxVal && vnidxPrev ? (vnidxVal - vnidxPrev) : 0;
 
   const foreignBuy = realtimeOI ? (realtimeOI.foreignBuy || 0) : 0;

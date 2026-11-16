@@ -690,23 +690,38 @@ function generateTradePlan(entry, direction, timeframe = '1M', options = {}) {
   const isLong = direction === 'LONG';
 
   // 1. Tính toán khoảng cách SL dựa trên Key Level gần nhất hoặc ATR
-  // Giới hạn an toàn: SL tối thiểu 1.8đ, tối đa 2.8đ MTL (chuẩn Playbook phái sinh VN)
-  let slDistance = Math.max(1.8, Math.min(2.8, parseFloat((atr * 1.1).toFixed(1))));
+  // Chuẩn nâng cấp: SL tối đa 5.0đ (Hard cap), tối ưu trong vùng 3.5 - 4.5đ gần cản/hỗ trợ/sideway/nến break
+  let slDistance = 4.0; // Mặc định 4.0đ (nằm giữa 3.5 - 4.5đ)
 
-  // Nếu có Key Level gần đó, đặt SL ngoài mức đó 0.6đ buffer
+  // Nếu có Key Level gần đó, đặt SL ngoài mức đó 0.4đ buffer
   if (keyLevels && keyLevels.length > 0) {
     if (isLong) {
       const nearestSupport = keyLevels.filter(l => l.price < entry).sort((a, b) => b.price - a.price)[0];
-      if (nearestSupport && (entry - nearestSupport.price) <= 2.8) {
-        slDistance = Math.max(1.8, Math.min(2.8, parseFloat((entry - nearestSupport.price + 0.6).toFixed(1))));
+      if (nearestSupport) {
+        const rawDist = parseFloat((entry - nearestSupport.price + 0.4).toFixed(1));
+        if (rawDist >= 3.5 && rawDist <= 4.5) {
+          slDistance = rawDist;
+        } else if (rawDist < 3.5) {
+          slDistance = Math.min(4.0, Math.max(3.5, rawDist + 0.6));
+        } else {
+          slDistance = Math.min(5.0, rawDist);
+        }
       }
     } else {
       const nearestResist = keyLevels.filter(l => l.price > entry).sort((a, b) => a.price - b.price)[0];
-      if (nearestResist && (nearestResist.price - entry) <= 2.8) {
-        slDistance = Math.max(1.8, Math.min(2.8, parseFloat((nearestResist.price - entry + 0.6).toFixed(1))));
+      if (nearestResist) {
+        const rawDist = parseFloat((nearestResist.price - entry + 0.4).toFixed(1));
+        if (rawDist >= 3.5 && rawDist <= 4.5) {
+          slDistance = rawDist;
+        } else if (rawDist < 3.5) {
+          slDistance = Math.min(4.0, Math.max(3.5, rawDist + 0.6));
+        } else {
+          slDistance = Math.min(5.0, rawDist);
+        }
       }
     }
   }
+  slDistance = Math.max(3.0, Math.min(5.0, slDistance)); // Tuyệt đối không quá 5đ
 
   // 2. Tính toán TP1 và TP2 theo chế độ thanh khoản
   let tp1Distance = 0;

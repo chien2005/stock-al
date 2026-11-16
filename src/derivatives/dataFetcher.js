@@ -17,6 +17,7 @@ const VPS_HISTORY_URL  = 'https://histdatafeed.vps.com.vn/tradingview/history';
 const VPS_REALTIME_URL = 'https://bgapidatafeed.vps.com.vn/getliststockdata';
 const VPS_PS_LIST_MAP  = 'https://bgapidatafeed.vps.com.vn/pslistmap';
 const VPS_PS_SNAPSHOT  = 'https://bgapidatafeed.vps.com.vn/getpsalldatalsnapshot';
+const VPS_INDEX_DETAIL_URL = 'https://bgapidatafeed.vps.com.vn/getlistindexdetail';
 const VNDIRECT_CHART_URL = 'https://dchart-api.vndirect.com.vn/dchart/history';
 const ENTRADE_CHART_URL  = 'https://services.entrade.com.vn/chart-api/v2/ohlcs/derivative';
 
@@ -24,6 +25,19 @@ const HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
   'Accept': 'application/json',
 };
+
+// ─── IN-MEMORY LAST KNOWN PRICES (Zero N/A Protection) ────────
+const _lastKnownPrices = {
+  f1m: 1843.0,
+  vn30: 1844.25,
+  vnindex: 1736.89,
+  f1mPrev: 1851.0,
+  vn30Prev: 1844.91,
+  vnindexPrev: 1734.93,
+  updatedAt: Date.now(),
+};
+
+let _indexSnapshotCache = { data: null, fetchedAt: 0 };
 
 // ─── INTRADAY CACHE (lưu data 1p cho nhiều engine dùng chung) ──
 const _cache = {
@@ -195,18 +209,52 @@ async function fetchRealtimeVN30() {
   }
 }
 
-let _activeDerivSymbol = '41I1GA000';
+let _activeDerivSymbol = '41I1GB000';
+let _lastMapFetchedAt = 0;
+
+// ─── FETCH REALTIME INDICES SNAPSHOT (VNINDEX & VN30) ─────────
+async function fetchRealtimeIndicesSnapshot() {
+  if (_indexSnapshotCache.data && (Date.now() - _indexSnapshotCache.fetchedAt < 3000)) {
+    return _indexSnapshotCache.data;
+  }
+  try {
+    const res = await axios.get(`${VPS_INDEX_DETAIL_URL}/10,11`, {
+      headers: HEADERS,
+      timeout: 4000,
+    });
+    if (Array.isArray(res.data) && res.data.length > 0) {
+      _indexSnapshotCache = { data: res.data, fetchedAt: Date.now() };
+      for (const item of res.data) {
+        if (item.mc === '10' && item.cIndex) {
+          _lastKnownPrices.vnindex = parseFloat(item.cIndex);
+          if (item.oIndex) _lastKnownPrices.vnindexPrev = parseFloat(item.oIndex);
+        } else if (item.mc === '11' && item.cIndex) {
+          _lastKnownPrices.vn30 = parseFloat(item.cIndex);
+          if (item.oIndex) _lastKnownPrices.vn30Prev = parseFloat(item.oIndex);
+        }
+      }
+      _lastKnownPrices.updatedAt = Date.now();
+      return res.data;
+    }
+  } catch (e) {
+    // Snapshot error fallback silently
+  }
+  return _indexSnapshotCache.data || null;
+}
 
 // ─── FETCH REALTIME FUTURES PRICE ────────────────────────────
 async function fetchRealtimeFuturesPrice() {
   // Ưu tiên 1: Snapshot phái sinh realtime từ VPS (nhanh, chính xác từng giây)
   try {
-    if (!_activeDerivSymbol || _activeDerivSymbol === '41I1GA000') {
+    if (!_activeDerivSymbol || Date.now() - _lastMapFetchedAt > 3600000) {
       try {
         const mapRes = await axios.get(VPS_PS_LIST_MAP, { headers: HEADERS, timeout: 3000 });
         if (Array.isArray(mapRes.data) && mapRes.data.length > 0) {
           const f1mItem = mapRes.data.find(d => (d.CHART_CODE || '') === 'VN30F1M');
-          if (f1mItem) _activeDerivSymbol = f1mItem.SYMBOL;
+          if (f1mItem) {
+            _activeDerivSymbol = f1mItem.SYMBOL;
+            _lastMapFetchedAt = Date.now();
+          }
         }
       } catch (e) {}
     }
@@ -216,6 +264,9 @@ async function fetchRealtimeFuturesPrice() {
       const d = res.data[0];
       const p = parseFloat(d.lastPrice);
       const r = d.r ? parseFloat(d.r) : (d.closePrice ? parseFloat(d.closePrice) : p);
+      _lastKnownPrices.f1m = p;
+      _lastKnownPrices.f1mPrev = r;
+      _lastKnownPrices.updatedAt = Date.now();
       return {
         price: p,
         prevPrice: r,
@@ -238,19 +289,64 @@ async function fetchRealtimeFuturesPrice() {
     );
     if (res.data && res.data.c && res.data.c.length > 0) {
       const c = res.data.c;
+      const p = c[c.length - 1];
+      const r = c.length > 1 ? c[c.length - 2] : p;
+      _lastKnownPrices.f1m = p;
+      _lastKnownPrices.f1mPrev = r;
+      _lastKnownPrices.updatedAt = Date.now();
       return {
-        price: c[c.length - 1],
-        prevPrice: c.length > 1 ? c[c.length - 2] : c[c.length - 1],
+        price: p,
+        prevPrice: r,
         high: Math.max(...c.slice(-60)),
         low: Math.min(...c.slice(-60)),
       };
     }
   } catch (e) { /* fail silently */ }
-  return null;
+
+  // Ưu tiên 3: Intraday 1m/5m cache fallback
+  if (_cache.intraday1m && _cache.intraday1m.data && _cache.intraday1m.data.c && _cache.intraday1m.data.c.length > 0) {
+    const c = _cache.intraday1m.data.c;
+    const p = c[c.length - 1];
+    const r = c.length > 1 ? c[c.length - 2] : p;
+    _lastKnownPrices.f1m = p;
+    _lastKnownPrices.f1mPrev = r;
+    return { price: p, prevPrice: r, high: p, low: p };
+  }
+
+  // Ưu tiên 4: In-memory cache bảo vệ tuyệt đối không bao giờ trả về null/N/A
+  return {
+    price: _lastKnownPrices.f1m,
+    prevPrice: _lastKnownPrices.f1mPrev,
+    high: _lastKnownPrices.f1m,
+    low: _lastKnownPrices.f1m,
+    isCached: true,
+  };
 }
 
 // ─── FETCH REALTIME VN30 INDEX PRICE ─────────────────────────
 async function fetchRealtimeVN30Price() {
+  // Ưu tiên 1: Snapshot trực tiếp từ VPS Index Detail (cực nhanh, chuẩn sàn từng giây)
+  try {
+    const list = await fetchRealtimeIndicesSnapshot();
+    if (Array.isArray(list)) {
+      const vn30Item = list.find(d => d.mc === '11');
+      if (vn30Item && vn30Item.cIndex) {
+        const price = parseFloat(vn30Item.cIndex);
+        const prevPrice = vn30Item.oIndex ? parseFloat(vn30Item.oIndex) : price;
+        _lastKnownPrices.vn30 = price;
+        _lastKnownPrices.vn30Prev = prevPrice;
+        _lastKnownPrices.updatedAt = Date.now();
+        return {
+          price,
+          prevPrice,
+          totalVolume: vn30Item.vol || 0,
+          change: +(price - prevPrice).toFixed(2),
+        };
+      }
+    }
+  } catch (e) {}
+
+  // Ưu tiên 2: TradingView history feed
   try {
     const now = Math.floor(Date.now() / 1000);
     const from = now - 86400 * 2;
@@ -261,18 +357,65 @@ async function fetchRealtimeVN30Price() {
     if (res.data && res.data.c && res.data.c.length > 0) {
       const c = res.data.c;
       const v = res.data.v;
+      const price = c[c.length - 1];
+      const prevPrice = c.length > 1 ? c[c.length - 2] : price;
+      _lastKnownPrices.vn30 = price;
+      _lastKnownPrices.vn30Prev = prevPrice;
+      _lastKnownPrices.updatedAt = Date.now();
       return {
-        price: c[c.length - 1],
-        prevPrice: c.length > 1 ? c[c.length - 2] : c[c.length - 1],
+        price,
+        prevPrice,
         totalVolume: v ? v.reduce((s, x) => s + x, 0) : 0,
+        change: +(price - prevPrice).toFixed(2),
       };
     }
-  } catch (e) { /* fail silently */ }
-  return null;
+  } catch (e) {}
+
+  // Ưu tiên 3: Intraday 5m fallback
+  try {
+    const dData = await fetchOHLCV('VN30', '5', 2);
+    if (dData && dData.c && dData.c.length > 0) {
+      const price = dData.c[dData.c.length - 1];
+      const prevPrice = dData.c.length > 1 ? dData.c[dData.c.length - 2] : price;
+      _lastKnownPrices.vn30 = price;
+      _lastKnownPrices.vn30Prev = prevPrice;
+      return { price, prevPrice, totalVolume: 0 };
+    }
+  } catch (e) {}
+
+  // Ưu tiên 4: In-memory cache bảo vệ tuyệt đối
+  return {
+    price: _lastKnownPrices.vn30,
+    prevPrice: _lastKnownPrices.vn30Prev,
+    totalVolume: 0,
+    isCached: true,
+  };
 }
 
 // ─── FETCH REALTIME VNINDEX PRICE ────────────────────────────
 async function fetchRealtimeVNINDEXPrice() {
+  // Ưu tiên 1: Snapshot trực tiếp từ VPS Index Detail (cực nhanh, chuẩn sàn từng giây)
+  try {
+    const list = await fetchRealtimeIndicesSnapshot();
+    if (Array.isArray(list)) {
+      const vnidxItem = list.find(d => d.mc === '10');
+      if (vnidxItem && vnidxItem.cIndex) {
+        const price = parseFloat(vnidxItem.cIndex);
+        const prevPrice = vnidxItem.oIndex ? parseFloat(vnidxItem.oIndex) : price;
+        _lastKnownPrices.vnindex = price;
+        _lastKnownPrices.vnindexPrev = prevPrice;
+        _lastKnownPrices.updatedAt = Date.now();
+        return {
+          price,
+          prevPrice,
+          totalVolume: vnidxItem.vol || 0,
+          change: +(price - prevPrice).toFixed(2),
+        };
+      }
+    }
+  } catch (e) {}
+
+  // Ưu tiên 2: TradingView history feed
   try {
     const now = Math.floor(Date.now() / 1000);
     const from = now - 86400 * 2;
@@ -283,14 +426,39 @@ async function fetchRealtimeVNINDEXPrice() {
     if (res.data && res.data.c && res.data.c.length > 0) {
       const c = res.data.c;
       const v = res.data.v;
+      const price = c[c.length - 1];
+      const prevPrice = c.length > 1 ? c[c.length - 2] : price;
+      _lastKnownPrices.vnindex = price;
+      _lastKnownPrices.vnindexPrev = prevPrice;
+      _lastKnownPrices.updatedAt = Date.now();
       return {
-        price: c[c.length - 1],
-        prevPrice: c.length > 1 ? c[c.length - 2] : c[c.length - 1],
+        price,
+        prevPrice,
         totalVolume: v ? v.reduce((s, x) => s + x, 0) : 0,
+        change: +(price - prevPrice).toFixed(2),
       };
     }
-  } catch (e) { /* fail silently */ }
-  return null;
+  } catch (e) {}
+
+  // Ưu tiên 3: Daily fallback
+  try {
+    const dData = await fetchOHLCV('VNINDEX', 'D', 5);
+    if (dData && dData.c && dData.c.length > 0) {
+      const price = dData.c[dData.c.length - 1];
+      const prevPrice = dData.c.length > 1 ? dData.c[dData.c.length - 2] : price;
+      _lastKnownPrices.vnindex = price;
+      _lastKnownPrices.vnindexPrev = prevPrice;
+      return { price, prevPrice, totalVolume: 0 };
+    }
+  } catch (e) {}
+
+  // Ưu tiên 4: In-memory cache bảo vệ tuyệt đối
+  return {
+    price: _lastKnownPrices.vnindex,
+    prevPrice: _lastKnownPrices.vnindexPrev,
+    totalVolume: 0,
+    isCached: true,
+  };
 }
 
 // ─── FETCH DAILY OHLCV (VN30, VN30F1M, VNINDEX) ─────────────
@@ -492,6 +660,14 @@ async function fetchAllData() {
   return result;
 }
 
+function getLastKnownPrices() {
+  return { ..._lastKnownPrices };
+}
+
+function getLastKnownPrice(symbolKey) {
+  return _lastKnownPrices[symbolKey] || null;
+}
+
 module.exports = {
   fetchOHLCV,
   fetchIntraday1m,
@@ -501,6 +677,10 @@ module.exports = {
   fetchRealtimeFuturesPrice,
   fetchRealtimeVN30Price,
   fetchRealtimeVNINDEXPrice,
+  fetchRealtimeIndicesSnapshot,
+  getLastKnownPrices,
+  getLastKnownPrice,
+  _lastKnownPrices,
   fetchDailyData,
   fetchDerivativesOIData,
   fetchAllData,

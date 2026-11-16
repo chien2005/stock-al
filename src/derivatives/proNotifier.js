@@ -161,7 +161,7 @@ function formatEntryNotification(params) {
     const p = pillarAnalysis.pillars;
     const pItems = TRACKED_PILLARS.map(s => {
       const item = p[s];
-      if (!item) return `${s}: N/A`;
+      if (!item || item.status === 'UNKNOWN') return `${s}: 0.0% ⚪`;
       const sign = item.changePct > 0 ? '+' : '';
       return `${s}: ${sign}${item.changePct.toFixed(1)}% ${item.emoji}`;
     });

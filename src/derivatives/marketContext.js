@@ -270,6 +270,16 @@ function analyzeSupplyDemand(oiData) {
  * Gọi hàm này trước MỌI quyết định giao dịch
  */
 function buildMarketContext(f1mPrice, vn30Price, oiData, timeHHMM) {
+  // Fallback prices từ memory cache nếu thiếu dữ liệu
+  if (!f1mPrice || !vn30Price) {
+    try {
+      const dataFetcher = require('./dataFetcher');
+      const lastKnown = dataFetcher.getLastKnownPrices();
+      if (!f1mPrice && lastKnown.f1m) f1mPrice = lastKnown.f1m;
+      if (!vn30Price && lastKnown.vn30) vn30Price = lastKnown.vn30;
+    } catch (e) {}
+  }
+
   const session = getCurrentSession(timeHHMM);
   const basis = analyzeBasis(f1mPrice, vn30Price);
   const supplyDemand = analyzeSupplyDemand(oiData);
@@ -297,6 +307,8 @@ function buildMarketContext(f1mPrice, vn30Price, oiData, timeHHMM) {
   else if (sentimentScore <= -10) overallSentiment = 'LEAN_BEARISH';
 
   return {
+    f1mPrice,
+    vn30Price,
     session,
     basis,
     supplyDemand,

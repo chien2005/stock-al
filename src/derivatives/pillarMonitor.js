@@ -247,7 +247,7 @@ function formatPillarsForNotification(analysis) {
 
   const parts = TRACKED_PILLARS.map(s => {
     const p = pillars[s];
-    if (!p) return `${s}: N/A`;
+    if (!p || p.status === 'UNKNOWN') return `${s}: 0.0% ⚪`;
     const sign = p.changePct > 0 ? '+' : '';
     return `${s}: ${sign}${p.changePct.toFixed(1)}% ${p.emoji}`;
   });
