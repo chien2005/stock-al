@@ -425,9 +425,9 @@ async function main() {
         await sendDerivativesMessage(
           `🔮 <b>VN Stock Bot v${config.version} đã kết nối! (Nhóm Phái Sinh VN30F)</b>\n` +
           `🕐 ${startupTime}\n` +
-          `📊 Chế độ: <b>Senior Trader AI Trading v8.0 (Quản trị Vị thế Realtime)</b>\n` +
+          `📊 Chế độ: <b>Radar Fibonacci & Cung Cầu Realtime v9.0</b>\n` +
           `📅 Ngày hoạt động: <b>${config.activeDays}</b> (ACTIVE)\n` +
-          `⚡ <b>MỚI:</b> AI Trading Realtime như người thật: Ghi nhớ vị thế, note PnL âm/dương, 11 trạng thái lệnh\n` +
+          `⚡ <b>MỚI:</b> Nhận diện Thế & Cấu trúc thị trường ngay dòng đầu, Bản đồ Fibonacci Cung/Cầu sắp quét tới, Cảnh báo VSA Kiệt bán / Kéo cố & Chống 50/50 tài xỉu!\n` +
           `⏰ Khung giờ Intraday (5p/lần): Sáng 09:10-11:30 (29 noti) & Chiều 13:05-14:20 (16 noti)\n` +
           `⚡ Xung lực sau cắt margin (Smart Money soi ATC/ATO): 14h25\n` +
           `⚡ Pre-ATC (Vào ATC hay không? Smart Money NN + TD): 14h29\n` +
@@ -881,12 +881,12 @@ async function main() {
   });
 
   // ─── SELF-PING: Chống Render Free Tier ngủ (tự ping mỗi 8 phút) ──
-  const RENDER_URL = process.env.RENDER_EXTERNAL_URL || process.env.RENDER_SERVICE_URL;
+  const RENDER_URL = process.env.RENDER_EXTERNAL_URL || process.env.RENDER_SERVICE_URL || process.env.PING_URL;
   if (RENDER_URL || process.env.RENDER || process.env.NODE_ENV === 'production') {
     const axios = require('axios');
     const pingUrl = RENDER_URL 
-      ? `${RENDER_URL}/health` 
-      : `https://stock-al-yoq4.onrender.com/health`;
+      ? `${RENDER_URL.replace(/\/+$/, '')}/health` 
+      : `http://localhost:${PORT}/health`;
     const PING_INTERVAL = 8 * 60 * 1000; // 8 phút (chống Render ngủ đông sau 15p)
     
     setInterval(() => {
