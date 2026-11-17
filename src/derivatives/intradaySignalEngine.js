@@ -1,166 +1,39 @@
 /**
  * ╔═══════════════════════════════════════════════════════════════╗
- * ║   ⚡ VN30F v8.0 — Senior Trader AI Trading Engine             ║
+ * ║   ⚡ VN30F v9.0 — Radar Cung Cầu & Bản Đồ Fibonacci Realtime ║
  * ╠═══════════════════════════════════════════════════════════════╣
- * ║  NÂNG CẤP AI TRADING NHƯ NGƯỜI THẬT (REALTIME POSITION AI)    ║
- * ║                                                                ║
- * ║  • Bộ nhớ lệnh liên tục: Mở/Giữ/Chốt/Cắt/Đảo vị thế           ║
- * ║  • Note rõ PnL thực tế: đang âm/dương bao nhiêu điểm          ║
- * ║  • 11 Trạng thái lệnh chuẩn Prop Trader:                       ║
- * ║    1. Đứng ngoài quan sát                                     ║
- * ║    2. Mở Short                                                ║
- * ║    3. Giữ Short (+Xđ / -Xđ)                                   ║
- * ║    4. Chốt lời Short                                          ║
- * ║    5. Cắt lỗ Short tạm đứng ngoài                             ║
- * ║    6. Đóng Short đảo Long                                     ║
- * ║    7. Mở Long                                                 ║
- * ║    8. Giữ Long (+Xđ / -Xđ)                                    ║
- * ║    9. Chốt lời Long                                           ║
- * ║    10. Cắt lỗ Long tạm đứng ngoài                             ║
- * ║    11. Đóng Long đảo Short                                    ║
- * ║    + Đóng vị thế bảo toàn vốn khi bất lợi                     ║
- * ║                                                                ║
- * ║  • Cấu trúc thị trường cơ bản:                                ║
- * ║    Đỉnh sau vs Đỉnh trước (Nâng đỉnh / Hạ đỉnh)               ║
- * ║    Đáy sau vs Đáy trước (Nâng đáy / Hạ đáy)                   ║
- * ║    Swing Down / Swing Up / Big Short / Big Long               ║
- * ║                                                                ║
- * ║  • Thanh khoản & Tốc độ thanh khoản:                          ║
- * ║    Tốc độ (tỷ/phút) + Dự phóng cả ngày                        ║
- * ║    < 16k tỷ: THANH KHOẢN THẤP ➔ SCALP 3-5-7đ chốt nhanh      ║
- * ║    ≥ 16k tỷ: THANH KHOẢN TỐT ➔ Lãi ≥ 10đ cho HOLD gồng trend, ║
- * ║              nhưng BẮT BUỘC CHẶN LÃI (Trailing Stop)           ║
- * ║                                                                ║
- * ║  • Smart Money: Khối ngoại (NN) & Tự doanh (TD) + Tỷ trọng %  ║
- * ║                                                                ║
- * ║  • Khung giờ bắn noti:                                        ║
- * ║    Sáng: 09h10 → 11h30 (5p/lần = 29 noti)                     ║
- * ║    Chiều: 13h05 → 14h20 (5p/lần = 16 noti)                    ║
- * ║    14h25: Xung lực sau cắt margin & Smart Money nhồi Long/Short║
- * ║    14h29: Quyết định mở ATC                                   ║
- * ║    14h44: Quyết định cầm qua đêm ATO hay đóng bảo toàn vốn     ║
+ * ║  Bản đồ Cung Cầu Realtime + Kẻ Fibonacci Động Đa Khung        ║
+ * ║  • Xác định các mức Fibo giá có khả năng cao sắp quét tới     ║
+ * ║  • Cảnh báo vùng Sideway / Tụ tập đám đông (Tránh bẫy 50/50) ║
+ * ║  • Đọc VSA Volume vs Nến:                                    ║
+ * ║    - Đạp thiếu Vol / Kiệt bán ➔ Cấm Short đuổi đáy           ║
+ * ║    - Kéo cố / Long giả / Bull trap ➔ Cấm đua Long            ║
+ * ║    - Nổ Vol liên tiếp phá cản ➔ Sóng thật tiếp diễn          ║
+ * ║    - Vùng Quá bán / Quá mua kiệt sức                         ║
+ * ║  • Đa khung 15p - 5p - 1p + Smart Money + Thanh khoản sàn    ║
  * ╚═══════════════════════════════════════════════════════════════╝
  */
 
-const fs = require('fs');
-const path = require('path');
-const { config, isCurrentInstanceActive } = require('../config');
+const { config } = require('../config');
 const dataFetcher = require('./dataFetcher');
 const marketStructure = require('./marketStructure');
 const marketContext = require('./marketContext');
 const oiEstimator = require('./oiEstimator');
-const pillarMonitor = require('./pillarMonitor');
 const { fetchMarketLiquidity } = require('../stockService');
 const { sendDerivativesMessage } = require('../telegramService');
-const googleSheetService = require('./googleSheetService');
+const fibonacciLiquidityEngine = require('./fibonacciLiquidityEngine');
 
-// ─── FILE LƯU TRẠNG THÁI AI TRADER ───────────────────────────
-const DATA_DIR = path.join(__dirname, '..', '..', 'data');
-const STATE_FILE = path.join(DATA_DIR, 'ai_position_state.json');
-
-function ensureDataDir() {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-  }
-}
-
-function createFreshPositionState(todayStr = '', archivedTrades = []) {
-  return {
-    date: todayStr,
-    position: 'NONE',         // 'NONE' | 'LONG' | 'SHORT'
-    status: 'STAND_ASIDE',    // mã trạng thái hệ thống
-    statusLabel: 'ĐỨNG NGOÀI QUAN SÁT',
-    entryPrice: null,
-    entryTime: null,
-    entryTimestamp: null,
-    entryReason: '',
-    stopLoss: null,
-    trailingStop: null,
-    takeProfit1: null,
-    takeProfit2: null,
-    currentPnL: 0,
-    currentNetPnL: 0,
-    maxPnL: 0,
-    minPnL: 0,
-    holdingBars: 0,
-    breakevenActive: false,
-    tp1Hit: false,
-    liquidityMode: 'SCALP',   // 'SCALP' (< 16k tỷ) | 'TREND' (>= 16k tỷ)
-    todayTrades: archivedTrades,
-    totalPnLToday: 0,
-    totalGrossPnLToday: 0,
-    totalNetPnLToday: 0,
-    totalFeeToday: 0,
-    winTrades: 0,
-    lossTrades: 0,
-    maxDailyTrades: 4,
-    lastExitTime: null,
-    lastExitTimestamp: 0,
-    signalCount: 0,
-    consecutiveSame: 0,
-    lastSignal: null,
-    lastUpdated: new Date().toISOString(),
-  };
-}
-
-function loadAIPositionState() {
-  ensureDataDir();
-  const vnTime = dataFetcher.getVnTime();
-  const todayStr = `${vnTime.getDate()}/${vnTime.getMonth() + 1}/${vnTime.getFullYear()}`;
-
-  try {
-    if (fs.existsSync(STATE_FILE)) {
-      const raw = fs.readFileSync(STATE_FILE, 'utf8');
-      const parsed = JSON.parse(raw);
-      if (parsed && parsed.date === todayStr) {
-        return parsed;
-      }
-      // Khác ngày -> lưu lại lịch sử hôm trước và reset sang ngày mới
-      console.log(`   🔄 Khởi tạo state ngày mới cho AI Trader: ${todayStr}`);
-      const fresh = createFreshPositionState(todayStr);
-      saveAIPositionState(fresh);
-      return fresh;
-    }
-  } catch (e) {
-    console.error('⚠️ Lỗi đọc ai_position_state.json:', e.message);
-  }
-
-  const fresh = createFreshPositionState(todayStr);
-  saveAIPositionState(fresh);
-  return fresh;
-}
-
-function saveAIPositionState(state) {
-  ensureDataDir();
-  try {
-    state.lastUpdated = new Date().toISOString();
-    fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2), 'utf8');
-    return true;
-  } catch (e) {
-    console.error('⚠️ Lỗi ghi ai_position_state.json:', e.message);
-    return false;
-  }
-}
-
-// ─── STATE IN-MEMORY (Đồng bộ với Persistent State) ───────────
-let _state = loadAIPositionState();
+// ─── STATE QUẢN LÝ VÒNG CHẠY ─────────────────────────────────
+let _signalCount = 0;
+let _lastSignalTime = null;
 
 function resetIntradayState() {
-  const vnTime = dataFetcher.getVnTime();
-  const todayStr = `${vnTime.getDate()}/${vnTime.getMonth() + 1}/${vnTime.getFullYear()}`;
-  _state = createFreshPositionState(todayStr);
-  saveAIPositionState(_state);
-  console.log('   🔄 AI Position State đã reset hoàn toàn về TRỐNG LỆNH');
+  _signalCount = 0;
+  _lastSignalTime = null;
+  console.log('   🔄 Radar Cung Cầu & Fibonacci State đã reset');
 }
 
 // ─── PHÂN TÍCH THANH KHOẢN VÀ TỐC ĐỘ GIAO DỊCH ────────────────
-/**
- * Tính toán tốc độ thanh khoản (tỷ/phút) và dự phóng giá trị giao dịch cả ngày
- * Quy tắc:
- * - Dưới 16k tỷ/ngày: THANH KHOẢN THẤP ➔ Ưu tiên SCALP 3-5-7đ chốt nhanh, không hold lâu
- * - Trên 16k tỷ/ngày: THANH KHOẢN TỐT ➔ Cho phép HOLD gồng trend nếu dương >= 10đ,
- *   nhưng BẮT BUỘC CHẶN LÃI (Trailing Stop) theo đỉnh/đáy gần nhất!
- */
 async function calculateMarketLiquiditySpeed() {
   let liquidity = null;
   try {
@@ -173,9 +46,6 @@ async function calculateMarketLiquiditySpeed() {
   const hour = vnTime.getHours();
   const minute = vnTime.getMinutes();
 
-  // Tính số phút giao dịch thực tế đã trôi qua trong ngày (tối đa 255 phút)
-  // Sáng: 9h00 -> 11h30 (150 phút)
-  // Chiều: 13h00 -> 14h30 (90 phút) + ATC 15p = 255 phút
   let elapsedMinutes = 0;
   if (hour < 9) {
     elapsedMinutes = 5;
@@ -194,17 +64,13 @@ async function calculateMarketLiquiditySpeed() {
   }
   elapsedMinutes = Math.max(10, Math.min(255, elapsedMinutes));
 
-  const totalVal = liquidity ? (liquidity.total || 0) : 0; // tỷ VNĐ
+  const totalVal = liquidity ? (liquidity.total || 0) : 0;
   const hoseVal = liquidity ? (liquidity.hose || 0) : 0;
 
-  // Tốc độ thanh khoản (tỷ VNĐ/phút)
   const speed = totalVal > 0 ? +(totalVal / elapsedMinutes).toFixed(1) : 0;
-
-  // Dự phóng thanh khoản cả ngày (255 phút giao dịch)
   const totalTradingMinutes = 255;
   const projectedTotal = totalVal > 0 ? Math.round(totalVal * (totalTradingMinutes / elapsedMinutes)) : 0;
 
-  // Ngưỡng 16.000 tỷ
   const isLowLiquidity = projectedTotal > 0 ? projectedTotal < 16000 : true;
   const mode = isLowLiquidity ? 'SCALP' : 'TREND';
 
@@ -212,26 +78,17 @@ async function calculateMarketLiquiditySpeed() {
     totalVal: Math.round(totalVal),
     hoseVal: Math.round(hoseVal),
     elapsedMinutes,
-    speed, // tỷ/phút
-    projectedTotal, // tỷ cả ngày
+    speed,
+    projectedTotal,
     isLowLiquidity,
     mode,
     modeLabel: isLowLiquidity
-      ? '⚠️ THANH KHOẢN THẤP (< 16k tỷ) ➔ ƯU TIÊN SCALP 3-5-7Đ'
-      : '🔥 THANH KHOẢN TỐT (≥ 16k tỷ) ➔ CHO PHÉP GỒNG TREND (CHẶN LÃI)',
+      ? '⚠️ THANH KHOẢN THẤP (Dưới 16k tỷ) ➔ ƯU TIÊN ĂN NGẮN SCALP'
+      : '🔥 THANH KHOẢN TỐT (Từ 16k tỷ trở lên) ➔ CÓ THỂ GỒNG THEO TREND',
   };
 }
 
 // ─── PHÂN TÍCH CẤU TRÚC THỊ TRƯỜNG TỪ NẾN (SWING HIGH/LOW) ─────
-/**
- * Nắm vững căn bản thuận thế thị trường:
- * - Đỉnh sau vs Đỉnh trước: Lower Highs (Hạ đỉnh) vs Higher Highs (Nâng đỉnh)
- * - Đáy sau vs Đáy trước: Lower Lows (Hạ đáy) vs Higher Lows (Nâng đáy)
- * - Nâng đỉnh nâng đáy: SWING UP (Uptrend) ➔ Thuận thế LONG
- * - Hạ đỉnh hạ đáy: SWING DOWN (Downtrend) ➔ Thuận thế SHORT
- * - BIG LONG: Vượt đỉnh cũ + Nâng đáy + Nến xanh nổ vol
- * - BIG SHORT: Thủng đáy cũ + Hạ đỉnh + Nến đỏ xả vol
- */
 function analyzeMarketStructureFromCandles(m5Data, m15Data) {
   if (!m5Data || !m5Data.c || m5Data.c.length < 6) {
     return {
@@ -243,12 +100,8 @@ function analyzeMarketStructureFromCandles(m5Data, m15Data) {
       isLowerHighs: false,
       isHigherLows: false,
       isLowerLows: false,
-      isBigLong: false,
-      isBigShort: false,
       recentHigh: 0,
       recentLow: 0,
-      secondHalfHigh: 0,
-      secondHalfLow: 0,
     };
   }
 
@@ -274,18 +127,18 @@ function analyzeMarketStructureFromCandles(m5Data, m15Data) {
 
   let swingHighDesc = '';
   if (isHigherHighs) {
-    swingHighDesc = `Đỉnh sau (${secondHalfHigh.toFixed(1)}) > Đỉnh trước (${firstHalfHigh.toFixed(1)}) ➔ NÂNG ĐỈNH`;
+    swingHighDesc = `Đỉnh sau (${secondHalfHigh.toFixed(1)}) cao hơn Đỉnh trước (${firstHalfHigh.toFixed(1)}) ➔ NÂNG ĐỈNH`;
   } else if (isLowerHighs) {
-    swingHighDesc = `Đỉnh sau (${secondHalfHigh.toFixed(1)}) < Đỉnh trước (${firstHalfHigh.toFixed(1)}) ➔ HẠ ĐỈNH`;
+    swingHighDesc = `Đỉnh sau (${secondHalfHigh.toFixed(1)}) thấp hơn Đỉnh trước (${firstHalfHigh.toFixed(1)}) ➔ HẠ ĐỈNH`;
   } else {
     swingHighDesc = `Đỉnh ngang bằng (${secondHalfHigh.toFixed(1)} ≈ ${firstHalfHigh.toFixed(1)})`;
   }
 
   let swingLowDesc = '';
   if (isHigherLows) {
-    swingLowDesc = `Đáy sau (${secondHalfLow.toFixed(1)}) > Đáy trước (${firstHalfLow.toFixed(1)}) ➔ NÂNG ĐÁY`;
+    swingLowDesc = `Đáy sau (${secondHalfLow.toFixed(1)}) cao hơn Đáy trước (${firstHalfLow.toFixed(1)}) ➔ NÂNG ĐÁY`;
   } else if (isLowerLows) {
-    swingLowDesc = `Đáy sau (${secondHalfLow.toFixed(1)}) < Đáy trước (${firstHalfLow.toFixed(1)}) ➔ HẠ ĐÁY`;
+    swingLowDesc = `Đáy sau (${secondHalfLow.toFixed(1)}) thấp hơn Đáy trước (${firstHalfLow.toFixed(1)}) ➔ HẠ ĐÁY`;
   } else {
     swingLowDesc = `Đáy ngang bằng (${secondHalfLow.toFixed(1)} ≈ ${firstHalfLow.toFixed(1)})`;
   }
@@ -300,7 +153,7 @@ function analyzeMarketStructureFromCandles(m5Data, m15Data) {
     structureTag = '🔴 HẠ ĐỈNH + HẠ ĐÁY (Swing Down) ➔ THUẬN THẾ SHORT';
   } else if (isLowerHighs && isHigherLows) {
     highLowStructure = 'TRIANGLE';
-    structureTag = '🟡 HẠ ĐỈNH + NÂNG ĐÁY (Thu hẹp tam giác) ➔ CHỜ BREAKOUT';
+    structureTag = '🟡 HẠ ĐỈNH + NÂNG ĐÁY (Thu hẹp tam giác) ➔ CHỜ BỨT PHÁ';
   } else if (isHigherHighs && isLowerLows) {
     highLowStructure = 'EXPANDING';
     structureTag = '⚠️ NÂNG ĐỈNH + HẠ ĐÁY (Kéo xả 2 đầu) ➔ RỦI RO BẪY CAO';
@@ -308,10 +161,6 @@ function analyzeMarketStructureFromCandles(m5Data, m15Data) {
     highLowStructure = 'SIDEWAY';
     structureTag = '⚪ ĐỈNH ĐÁY ĐAN XEN (Sideway giằng co)';
   }
-
-  const currentPrice = closes[len - 1];
-  const isBigLong = isHigherHighs && isHigherLows && currentPrice >= secondHalfHigh - 0.5;
-  const isBigShort = isLowerHighs && isLowerLows && currentPrice <= secondHalfLow + 0.5;
 
   return {
     highLowStructure,
@@ -322,8 +171,6 @@ function analyzeMarketStructureFromCandles(m5Data, m15Data) {
     isLowerHighs,
     isHigherLows,
     isLowerLows,
-    isBigLong,
-    isBigShort,
     recentHigh: Math.max(...recentHighs),
     recentLow: Math.min(...recentLows),
     secondHalfHigh,
@@ -332,116 +179,48 @@ function analyzeMarketStructureFromCandles(m5Data, m15Data) {
 }
 
 // ─── MULTI-TIMEFRAME ANALYSIS (15M - 5M - 1M) ────────────────
-/**
- * Phân tích khung 15p: Xu hướng chính trong phiên giao dịch
- */
 function analyze15mTimeframe(m15Data) {
   if (!m15Data || !m15Data.c || m15Data.c.length < 5) {
     return { trend: 'UNKNOWN', signal: 'NEUTRAL', confidence: 50, description: '15p chưa đủ nến' };
   }
 
   const closes = m15Data.c;
-  const volumes = m15Data.v || [];
   const len = closes.length;
-
   const ema5 = marketStructure.calculateEMA(closes, 5);
   const ema13 = marketStructure.calculateEMA(closes, 13);
   const last4 = closes.slice(-4);
   const slope = (last4[last4.length - 1] - last4[0]) / Math.max(1, last4.length - 1);
 
-  let trend = 'NEUTRAL';
+  let trend = 'SIDEWAY';
   let signal = 'NEUTRAL';
-  let description = '';
   let confidence = 50;
+  let description = '';
 
   if (ema5 && ema13) {
-    const emaDiff = ema5 - ema13;
-    if (emaDiff > 1.0 && slope > 0) {
+    if (ema5 > ema13 + 0.5 && slope > 0.2) {
       trend = 'UPTREND';
       signal = 'BULLISH';
-      confidence = 75;
-      description = `EMA5 > EMA13 (+${emaDiff.toFixed(1)}đ), dốc tăng ➔ Uptrend 15p`;
-    } else if (emaDiff < -1.0 && slope < 0) {
+      confidence = Math.min(90, Math.round(60 + slope * 15));
+      description = `15p Uptrend (EMA5 trên EMA13, dốc +${slope.toFixed(2)})`;
+    } else if (ema5 < ema13 - 0.5 && slope < -0.2) {
       trend = 'DOWNTREND';
       signal = 'BEARISH';
-      confidence = 75;
-      description = `EMA5 < EMA13 (${emaDiff.toFixed(1)}đ), dốc giảm ➔ Downtrend 15p`;
+      confidence = Math.min(90, Math.round(60 + Math.abs(slope) * 15));
+      description = `15p Downtrend (EMA5 dưới EMA13, dốc ${slope.toFixed(2)})`;
     } else {
-      trend = 'SIDEWAYS';
+      trend = 'SIDEWAY';
       signal = 'NEUTRAL';
-      confidence = 35;
-      description = `EMA5 ≈ EMA13 (diff ${emaDiff.toFixed(1)}đ) ➔ Sideway 15p`;
+      confidence = 50;
+      description = `15p Sideway đi ngang (EMA5 ≈ EMA13)`;
     }
   }
 
-  return {
-    trend,
-    signal,
-    confidence,
-    description,
-    lastClose: +closes[len - 1].toFixed(1),
-  };
+  return { trend, signal, confidence, description, ema5, ema13, slope };
 }
 
-/**
- * Phân tích khung 1p: Micro-timing điểm vào & xung lực vi mô
- */
-function analyze1mTimeframe(m1Data, m5Signal = null) {
-  if (!m1Data || !m1Data.c || m1Data.c.length < 5) {
-    return { signal: 'NEUTRAL', confidence: 50, description: '1p chưa đủ nến' };
-  }
-
-  const closes = m1Data.c;
-  const opens = m1Data.o || closes;
-  const volumes = m1Data.v || [];
-  const len = closes.length;
-
-  const ema3 = marketStructure.calculateEMA(closes, 3);
-  const ema7 = marketStructure.calculateEMA(closes, 7);
-
-  const mom3 = +(closes[len - 1] - closes[Math.max(0, len - 4)]).toFixed(1);
-
-  let signal = 'NEUTRAL';
-  let confidence = 50;
-  let description = '';
-
-  if (ema3 && ema7) {
-    const diff = ema3 - ema7;
-    if (diff > 0.4 && mom3 > 0.5) {
-      signal = 'BULLISH';
-      confidence = 70;
-      description = `Cầu chủ động dồn lên (+${mom3}đ, EMA3 > EMA7)`;
-      if (m5Signal && m5Signal.includes('LONG')) {
-        confidence = 85;
-        description += ' — Đồng thuận 5p ↑';
-      }
-    } else if (diff < -0.4 && mom3 < -0.5) {
-      signal = 'BEARISH';
-      confidence = 70;
-      description = `Cung dội bán ép giá (${mom3}đ, EMA3 < EMA7)`;
-      if (m5Signal && m5Signal.includes('SHORT')) {
-        confidence = 85;
-        description += ' — Đồng thuận 5p ↓';
-      }
-    } else {
-      signal = 'NEUTRAL';
-      confidence = 35;
-      description = `Giằng co vi mô (${mom3 >= 0 ? '+' : ''}${mom3}đ, EMA3 ≈ EMA7)`;
-    }
-  }
-
-  return {
-    signal,
-    confidence,
-    description,
-    momentum: mom3,
-    lastClose: +closes[len - 1].toFixed(1),
-  };
-}
-
-function analyze5mTimeframe(m5Data, m15Signal) {
-  if (!m5Data || !m5Data.c || m5Data.c.length < 10) {
-    return { entrySignal: 'NEUTRAL', description: 'Không đủ dữ liệu 5p' };
+function analyze5mTimeframe(m5Data, m15Signal = 'NEUTRAL') {
+  if (!m5Data || !m5Data.c || m5Data.c.length < 5) {
+    return { signal: 'NEUTRAL', entrySignal: 'NONE', confidence: 50, description: '5p chưa đủ nến', currentPrice: 0 };
   }
 
   const closes = m5Data.c;
@@ -451,1183 +230,241 @@ function analyze5mTimeframe(m5Data, m15Signal) {
   const volumes = m5Data.v || [];
   const len = closes.length;
 
-  const last3 = [];
-  for (let i = len - 3; i < len; i++) {
-    const o = opens[i];
-    const c = closes[i];
-    const h = highs[i];
-    const l = lows[i];
-    const v = volumes[i] || 0;
-    last3.push({
-      open: o, close: c, high: h, low: l, volume: v,
-      isGreen: c >= o,
-      body: Math.abs(c - o),
-      range: h - l,
-      upperWick: h - Math.max(o, c),
-      lowerWick: Math.min(o, c) - l,
-    });
-  }
+  const currentPrice = closes[len - 1];
+  const prevPrice = len > 1 ? closes[len - 2] : currentPrice;
+  const ema9 = marketStructure.calculateEMA(closes, 9);
+  const ema20 = marketStructure.calculateEMA(closes, 20);
 
-  const velocity = (closes[len - 1] - closes[len - 6]) / 5;
-  let entrySignal = 'NEUTRAL';
-  let entryConfidence = 50;
+  let signal = 'NEUTRAL';
+  let entrySignal = 'NONE';
+  let confidence = 50;
   let description = '';
 
-  const latestCandle = last3[last3.length - 1];
-
-  if (latestCandle.isGreen && latestCandle.body > 1.5 && velocity > 0.3) {
-    entrySignal = 'LONG_ENTRY';
-    entryConfidence = 65;
-    description = `Nến 5p xanh đặc (${latestCandle.body.toFixed(1)}đ) + velocity tăng ➔ Entry LONG`;
-    if (m15Signal === 'BULLISH') {
-      entryConfidence = 80;
-      description += ' — 15p đồng thuận';
-    }
-  } else if (!latestCandle.isGreen && latestCandle.body > 1.5 && velocity < -0.3) {
-    entrySignal = 'SHORT_ENTRY';
-    entryConfidence = 65;
-    description = `Nến 5p đỏ đặc (${latestCandle.body.toFixed(1)}đ) + velocity giảm ➔ Entry SHORT`;
-    if (m15Signal === 'BEARISH') {
-      entryConfidence = 80;
-      description += ' — 15p đồng thuận';
-    }
-  } else if (latestCandle.body < 0.5 && latestCandle.range > 2) {
-    entrySignal = 'STAND_ASIDE';
-    entryConfidence = 30;
-    description = `Nến 5p Doji (range ${latestCandle.range.toFixed(1)}đ) ➔ Do dự, chờ`;
-  } else if (latestCandle.lowerWick > latestCandle.body * 2 && latestCandle.isGreen) {
-    if (m15Signal === 'BEARISH') {
-      entrySignal = 'STAND_ASIDE';
-      entryConfidence = 30;
-      description = `Nến rút chân râu dưới ${latestCandle.lowerWick.toFixed(1)}đ nhưng 15p Downtrend ➔ CẤM BẮT ĐÁY (Tránh bẫy dao rơi)`;
+  if (ema9 && ema20) {
+    if (currentPrice > ema9 && ema9 > ema20) {
+      signal = 'BULLISH';
+      entrySignal = 'LONG';
+      confidence = 75;
+      description = `5p Bullish (Giá trên EMA9 &amp; EMA20)`;
+    } else if (currentPrice < ema9 && ema9 < ema20) {
+      signal = 'BEARISH';
+      entrySignal = 'SHORT';
+      confidence = 75;
+      description = `5p Bearish (Giá dưới EMA9 &amp; EMA20)`;
     } else {
-      entrySignal = 'LONG_ENTRY';
-      entryConfidence = 60;
-      description = `Pin bar đáy 5p (râu dưới ${latestCandle.lowerWick.toFixed(1)}đ) ➔ Cầu bắt đáy`;
+      signal = 'NEUTRAL';
+      entrySignal = 'NONE';
+      confidence = 50;
+      description = `5p Giằng co (Nến kẹp giữa EMA9/EMA20)`;
     }
-  } else if (latestCandle.upperWick > latestCandle.body * 2 && !latestCandle.isGreen) {
-    if (m15Signal === 'BULLISH') {
-      entrySignal = 'STAND_ASIDE';
-      entryConfidence = 30;
-      description = `Nến bắn râu trên ${latestCandle.upperWick.toFixed(1)}đ nhưng 15p Uptrend ➔ CẤM SHORT CẢN TÀU (Tránh bẫy bứt phá)`;
-    } else {
-      entrySignal = 'SHORT_ENTRY';
-      entryConfidence = 60;
-      description = `Pin bar đỉnh 5p (râu trên ${latestCandle.upperWick.toFixed(1)}đ) ➔ Cung dội bán`;
-    }
-  } else {
-    description = `5p chưa có tín hiệu bứt phá ➔ Quan sát thêm`;
   }
 
   return {
+    signal,
     entrySignal,
-    entryConfidence: Math.max(0, Math.min(100, entryConfidence)),
+    confidence,
     description,
-    velocity: +velocity.toFixed(2),
-    latestCandle,
-    currentPrice: +closes[len - 1].toFixed(1),
+    currentPrice,
+    prevPrice,
+    ema9,
+    ema20,
   };
 }
 
-// ─── ĐÓNG VỊ THẾ HIỆN TẠI & GHI NHẬN GOOGLE SHEETS ──────────
-/**
- * Đóng vị thế hiện tại, tính toán phí và PnL thực tế, ghi nhận vào Google Sheets & state
- */
-async function closeCurrentPosition(exitPrice, exitReason, timeStr) {
-  if (!_state.position || _state.position === 'NONE') return null;
-
-  const grossPnL = +(_state.position === 'LONG'
-    ? (exitPrice - _state.entryPrice)
-    : (_state.entryPrice - exitPrice)).toFixed(1);
-  const fee = googleSheetService.FEE_PER_TRADE; // 0.6đ/lệnh
-  const netPnL = +(grossPnL - fee).toFixed(1);
-
-  const orderNum = ((_state.todayTrades && _state.todayTrades.length) || 0) + 1;
-  const isWin = netPnL > 0;
-  const cumulativeDayNetPnL = +((_state.totalNetPnLToday || 0) + netPnL).toFixed(1);
-
-  const closedTrade = {
-    id: orderNum,
-    orderNum,
-    type: _state.position,
-    entryPrice: _state.entryPrice,
-    exitPrice: parseFloat(Number(exitPrice).toFixed(1)),
-    entryTime: _state.entryTime || 'N/A',
-    exitTime: timeStr,
-    grossPnL,
-    fee,
-    netPnL,
-    isWin,
-    reason: exitReason,
-    cumulativeDayNetPnL,
-  };
-
-  // Đồng bộ sang Google Sheets & File local JSON/CSV
-  await googleSheetService.logTrade(closedTrade).catch(e => {
-    console.error('⚠️ Lỗi logTrade sang Google Sheets:', e.message);
-  });
-
-  if (!_state.todayTrades) _state.todayTrades = [];
-  _state.todayTrades.push(closedTrade);
-
-  _state.totalGrossPnLToday = +((_state.totalGrossPnLToday || 0) + grossPnL).toFixed(1);
-  _state.totalFeeToday = +((_state.totalFeeToday || 0) + fee).toFixed(1);
-  _state.totalNetPnLToday = cumulativeDayNetPnL;
-  _state.totalPnLToday = _state.totalNetPnLToday;
-
-  if (isWin) {
-    _state.winTrades = (_state.winTrades || 0) + 1;
-  } else if (netPnL < 0) {
-    _state.lossTrades = (_state.lossTrades || 0) + 1;
+function analyze1mTimeframe(m1Data, m5EntrySignal = 'NONE') {
+  if (!m1Data || !m1Data.c || m1Data.c.length < 5) {
+    return { signal: 'NEUTRAL', confidence: 50, description: '1p chưa đủ nến' };
   }
 
-  _state.lastExitTime = timeStr;
-  _state.lastExitTimestamp = Date.now();
-  _state.position = 'NONE';
-  _state.entryPrice = null;
-  _state.entryTime = null;
-  _state.entryTimestamp = null;
-  _state.stopLoss = null;
-  _state.trailingStop = null;
-  _state.takeProfit1 = null;
-  _state.takeProfit2 = null;
-  _state.currentPnL = 0;
-  _state.currentNetPnL = 0;
-  _state.holdingBars = 0;
-  _state.breakevenActive = false;
-  _state.tp1Hit = false;
+  const closes = m1Data.c;
+  const opens = m1Data.o || closes;
+  const len = closes.length;
+  const last3 = closes.slice(-3);
+  const last3Opens = opens.slice(-3);
 
-  saveAIPositionState(_state);
-  return closedTrade;
-}
+  let greenCount = 0;
+  let redCount = 0;
+  for (let i = 0; i < last3.length; i++) {
+    if (last3[i] > last3Opens[i]) greenCount++;
+    else if (last3[i] < last3Opens[i]) redCount++;
+  }
 
-// ─── TÍNH TOÁN STOP LOSS LINH ĐỘNG (ADAPTIVE KEY-LEVEL SL) ────
-/**
- * Tính toán Stop Loss linh động theo yêu cầu cải thiện hiệu suất:
- * - SL tối đa 1 lệnh là 5đ (Hard Cap 5.0đ, tuyệt đối không vượt quá)
- * - Tốt nhất là 3.5 - 4.5đ:
- *   + Gần kháng cự, hỗ trợ
- *   + Gần biên sideway
- *   + Gần chân nến break mạnh nhất (với Long)
- *   + Gần đỉnh nến short vol to nến dài cú đạp (với Short)
- *   + Linh động theo tình thế
- */
-function calculateAdaptiveStopLoss(position, entryPrice, structure, m5Analysis, contextInfo) {
-  let slDistance = 4.0; // Điểm tối ưu mặc định nằm giữa 3.5 và 4.5đ
-  let slReason = 'Vùng an toàn chuẩn 4.0đ';
+  let signal = 'NEUTRAL';
+  let confidence = 50;
+  let description = '';
 
-  const isLong = position === 'LONG';
-
-  if (isLong) {
-    const candidates = [];
-
-    // 1. Cấu trúc Swing Low / Hỗ trợ gần nhất / Biên dưới sideway
-    if (structure?.recentLow && structure.recentLow < entryPrice) {
-      candidates.push({ price: structure.recentLow, label: `Đáy hỗ trợ gần nhất (${structure.recentLow.toFixed(1)})` });
-    }
-    if (structure?.secondHalfLow && structure.secondHalfLow < entryPrice) {
-      candidates.push({ price: structure.secondHalfLow, label: `Đáy nến gần đây (${structure.secondHalfLow.toFixed(1)})` });
-    }
-    // 2. Chân nến break tăng mạnh nhất (nến xanh bứt phá vol to)
-    if (m5Analysis?.latestCandle && m5Analysis.latestCandle.isGreen && m5Analysis.latestCandle.open < entryPrice) {
-      const breakLow = m5Analysis.latestCandle.low || m5Analysis.latestCandle.open;
-      candidates.push({ price: breakLow, label: `Chân nến bứt phá (${breakLow.toFixed(1)})` });
-    }
-    // 3. Biên hỗ trợ VAL từ Volume Profile
-    if (contextInfo?.val && contextInfo.val < entryPrice) {
-      candidates.push({ price: contextInfo.val, label: `Biên dưới VAL (${contextInfo.val.toFixed(1)})` });
-    }
-
-    if (candidates.length > 0) {
-      // Chọn hỗ trợ gần entry nhất nằm phía dưới
-      candidates.sort((a, b) => b.price - a.price);
-      const best = candidates[0];
-      const rawDist = +(entryPrice - best.price + 0.4).toFixed(1); // Buffer 0.4đ tránh quét râu nến
-
-      if (rawDist >= 3.5 && rawDist <= 4.5) {
-        slDistance = rawDist;
-        slReason = `Dưới ${best.label} + đệm 0.4đ`;
-      } else if (rawDist < 3.5) {
-        // Nếu khoảng cách kỹ thuật quá gần (< 3.5đ), nới đệm an toàn lên mức tối ưu 3.5 - 4.0đ để tránh quét râu sớm
-        slDistance = Math.min(4.0, Math.max(3.5, rawDist + 0.6));
-        slReason = `Đệm rộng dưới ${best.label} (vùng tối ưu 3.5-4.5đ)`;
-      } else if (rawDist > 5.0) {
-        // Tuyệt đối không quá 5đ (Hard Cap)
-        slDistance = 5.0;
-        slReason = `Chạm trần SL tối đa 5.0đ`;
-      } else {
-        slDistance = rawDist; // 4.5đ - 5.0đ
-        slReason = `Dưới ${best.label}`;
-      }
-    }
-
-    slDistance = Math.max(3.0, Math.min(5.0, slDistance));
-    const slPrice = +(entryPrice - slDistance).toFixed(1);
-    return { slDistance, slPrice, slReason };
+  if (greenCount >= 2) {
+    signal = 'BULLISH';
+    confidence = 70;
+    description = `1p Vi mô: ${greenCount}/3 nến xanh ➔ Xung lực Mua áp đảo`;
+  } else if (redCount >= 2) {
+    signal = 'BEARISH';
+    confidence = 70;
+    description = `1p Vi mô: ${redCount}/3 nến đỏ ➔ Xung lực Bán áp đảo`;
   } else {
-    // SHORT: Tìm kháng cự kỹ thuật phía trên
-    const candidates = [];
-
-    // 1. Cấu trúc Swing High / Kháng cự gần nhất / Biên trên sideway
-    if (structure?.recentHigh && structure.recentHigh > entryPrice) {
-      candidates.push({ price: structure.recentHigh, label: `Đỉnh kháng cự gần nhất (${structure.recentHigh.toFixed(1)})` });
-    }
-    if (structure?.secondHalfHigh && structure.secondHalfHigh > entryPrice) {
-      candidates.push({ price: structure.secondHalfHigh, label: `Đỉnh nến gần đây (${structure.secondHalfHigh.toFixed(1)})` });
-    }
-    // 2. Đỉnh nến short vol to nến dài cú đạp
-    if (m5Analysis?.latestCandle && !m5Analysis.latestCandle.isGreen && m5Analysis.latestCandle.open > entryPrice) {
-      const dumpHigh = m5Analysis.latestCandle.high || m5Analysis.latestCandle.open;
-      candidates.push({ price: dumpHigh, label: `Đỉnh nến đạp vol to (${dumpHigh.toFixed(1)})` });
-    }
-    // 3. Biên kháng cự VAH từ Volume Profile
-    if (contextInfo?.vah && contextInfo.vah > entryPrice) {
-      candidates.push({ price: contextInfo.vah, label: `Biên trên VAH (${contextInfo.vah.toFixed(1)})` });
-    }
-
-    if (candidates.length > 0) {
-      // Chọn kháng cự gần entry nhất nằm phía trên
-      candidates.sort((a, b) => a.price - b.price);
-      const best = candidates[0];
-      const rawDist = +(best.price - entryPrice + 0.4).toFixed(1); // Buffer 0.4đ tránh quét râu nến
-
-      if (rawDist >= 3.5 && rawDist <= 4.5) {
-        slDistance = rawDist;
-        slReason = `Trên ${best.label} + đệm 0.4đ`;
-      } else if (rawDist < 3.5) {
-        slDistance = Math.min(4.0, Math.max(3.5, rawDist + 0.6));
-        slReason = `Đệm rộng trên ${best.label} (vùng tối ưu 3.5-4.5đ)`;
-      } else if (rawDist > 5.0) {
-        slDistance = 5.0;
-        slReason = `Chạm trần SL tối đa 5.0đ`;
-      } else {
-        slDistance = rawDist;
-        slReason = `Trên ${best.label}`;
-      }
-    }
-
-    slDistance = Math.max(3.0, Math.min(5.0, slDistance));
-    const slPrice = +(entryPrice + slDistance).toFixed(1);
-    return { slDistance, slPrice, slReason };
+    signal = 'NEUTRAL';
+    confidence = 50;
+    description = `1p Vi mô: Nến giằng co phân hóa`;
   }
+
+  return { signal, confidence, description, greenCount, redCount };
 }
 
-// ─── HỆ THỐNG GIỮ LÃI & BẢO VỆ VỐN (TRAILING STOP LADDER) ───────
-/**
- * Nâng cấp hệ thống giữ lại và bảo vệ vốn đa nấc chuẩn:
- * - Khi +3đ: Chặn lãi +1đ tránh lỗ ngược (nếu thích hợp vào lệnh mới sau)
- * - < +3đ (từ +2.5đ trở lên): Chặn lãi +1.0đ
- * - Lãi 3-4đ: Chặn lãi +1.5đ
- * - Lãi 4-5đ: Chặn lãi +3.0đ
- * - Lãi 5-7đ: Chặn lãi +4.0đ
- * - Lãi 7-8đ: Chặn lãi +5.0đ
- * - Lãi 8-10đ: Chặn lãi +7.0đ
- * - Lãi >10đ (10-12đ): Chặn lãi +8.0đ
- * - Lãi >12đ: Chặn lãi +10.0đ
- * - Lãi >12-15đ: Chặn lãi tối đa khi đảo chiều, min 12.0đ
- * - Lãi 15-20đ: Đảo chiều là chốt lãi ngay!
- * - Lãi >20đ: Hold luôn đến khi quay đầu chạm lại +20.0đ thì đóng lệnh.
- *   Lãi >20đ được phép hold qua ATC nếu lực cung cầu 14h25-14h29 duy trì đúng hướng.
- */
-function evaluateProfitProtectionLadder(position, entryPrice, currentPrice, currentTrailingStop, maxPnL, isReversing = false) {
-  const isLong = position === 'LONG';
-  const grossPnL = +(isLong ? (currentPrice - entryPrice) : (entryPrice - currentPrice)).toFixed(1);
-  const peakPnL = Math.max(maxPnL || 0, grossPnL);
+// ─── FORMAT RADAR NOTIFICATION (FIBONACCI & CUNG CẦU) ─────────
+function formatRadarNotification(params) {
+  const {
+    f1mPrice,
+    vn30Price,
+    basis,
+    fibo,
+    sdTargets,
+    sidewayInfo,
+    vsaAction,
+    m15Analysis,
+    m5Analysis,
+    m1Analysis,
+    structureInfo,
+    liquidityInfo,
+    smartMoneyInfo,
+    contextInfo,
+    signalCount,
+  } = params;
 
-  let targetLockedPts = null;
-  let ladderDesc = '';
-  let shouldTakeProfitNow = false;
-  let tpReason = '';
+  const fmtSign = (n) => (n > 0 ? `+${n}` : `${n}`);
+  const basisVal = basis ? basis.basis : (f1mPrice && vn30Price ? +(f1mPrice - vn30Price).toFixed(1) : 0);
+  const basisStr = `${basisVal >= 0 ? '+' : ''}${basisVal}đ`;
 
-  // Nấc 1: > 20.0đ
-  if (peakPnL >= 20.0) {
-    targetLockedPts = 20.0;
-    ladderDesc = '🔥 GỒNG TREND SIÊU SÓNG (>20đ) — Khóa chặt mốc +20.0đ';
-    // Khi quay đầu chạm lại 20đ thì đóng lệnh
-    if (grossPnL <= 20.0) {
-      shouldTakeProfitNow = true;
-      tpReason = 'Quay đầu chạm mốc chặn lãi +20.0đ ➔ Đóng lệnh bỏ túi trọn vẹn thành quả!';
-    }
+  let msg = `⚡ <b>RADAR CUNG CẦU & BẢN ĐỒ FIBONACCI — VN30F1M</b>\n`;
+  msg += `🕐 <i>${dataFetcher.vnNow()}</i> | Noti #${signalCount || 1}\n`;
+  msg += `━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+
+  // 1. GIÁ & BASIS
+  msg += `📍 <b>F1M: ${f1mPrice?.toFixed(1) || 'N/A'}</b> | VN30: <b>${vn30Price?.toFixed(1) || 'N/A'}</b> | Basis: <b>${basisStr}</b>\n\n`;
+
+  // 2. BẢN ĐỒ CUNG CẦU & CÁC MỐC FIBO SẮP QUÉT TỚI
+  msg += `🎯 <b>BẢN ĐỒ FIBONACCI & MỤC TIÊU SẮP QUÉT TỚI:</b>\n`;
+  msg += `  • <i>Biên sóng phiên: <b>${fibo.swingLow} ➔ ${fibo.swingHigh}</b> (Biên ${fibo.range}đ)</i>\n`;
+
+  // Vùng Cung trên
+  if (sdTargets.nextSupplyTarget) {
+    const t = sdTargets.nextSupplyTarget;
+    msg += `  🔴 <b>VÙNG CUNG TRÊN GẦN NHẤT:</b> <b>${t.price}</b> (${t.levelName}) — <i>cách ${t.dist}đ</i>\n`;
+    msg += `     👉 <i>Mục đích: ${t.role}</i>\n`;
   }
-  // Nấc 2: 15.0đ - 20.0đ
-  else if (peakPnL >= 15.0) {
-    targetLockedPts = 12.0;
-    ladderDesc = '🎯 LÃI LỚN 15-20đ — Đảo chiều là chốt lãi ngay (Min +12đ)';
-    if (isReversing || grossPnL < peakPnL - 1.5) {
-      shouldTakeProfitNow = true;
-      tpReason = `Đảo chiều khi lãi lớn (${grossPnL}đ) ➔ Chốt lời ngay lập tức theo nguyên tắc!`;
-    }
-  }
-  // Nấc 3: > 12.0đ - 15.0đ
-  else if (peakPnL >= 12.0) {
-    if (isReversing) {
-      targetLockedPts = Math.max(12.0, grossPnL);
-      ladderDesc = `⚠️ Đảo chiều vùng 12-15đ ➔ Chặn lãi tối đa (+${targetLockedPts}đ, Min 12đ)`;
-      shouldTakeProfitNow = true;
-      tpReason = `Xuất hiện tín hiệu đảo chiều vùng 12-15đ ➔ Chốt lãi tối đa (+${grossPnL}đ, Min 12đ)`;
-    } else {
-      targetLockedPts = 10.0;
-      ladderDesc = 'Lãi > 12đ ➔ Chặn lãi +10.0đ';
-    }
-  }
-  // Nấc 4: > 10.0đ - 12.0đ
-  else if (peakPnL >= 10.0) {
-    targetLockedPts = 8.0;
-    ladderDesc = 'Lãi > 10đ ➔ Chặn lãi +8.0đ';
-  }
-  // Nấc 5: 8.0đ - 10.0đ
-  else if (peakPnL >= 8.0) {
-    targetLockedPts = 7.0;
-    ladderDesc = 'Lãi 8-10đ ➔ Chặn lãi +7.0đ';
-  }
-  // Nấc 6: 7.0đ - 8.0đ
-  else if (peakPnL >= 7.0) {
-    targetLockedPts = 5.0;
-    ladderDesc = 'Lãi 7-8đ ➔ Chặn lãi +5.0đ';
-  }
-  // Nấc 7: 5.0đ - 7.0đ
-  else if (peakPnL >= 5.0) {
-    targetLockedPts = 4.0;
-    ladderDesc = 'Lãi 5-7đ ➔ Chặn lãi +4.0đ';
-  }
-  // Nấc 8: 4.0đ - 5.0đ
-  else if (peakPnL >= 4.0) {
-    targetLockedPts = 3.0;
-    ladderDesc = 'Lãi 4-5đ ➔ Chặn lãi +3.0đ';
-  }
-  // Nấc 9: 3.0đ - 4.0đ
-  else if (peakPnL >= 3.0) {
-    targetLockedPts = 1.5;
-    ladderDesc = 'Lãi 3-4đ ➔ Chặn lãi +1.5đ';
-  }
-  // Nấc 10: < +3đ (từ 2.5đ trở lên) hoặc vừa chạm +3đ
-  else if (peakPnL >= 2.5) {
-    targetLockedPts = 1.0;
-    ladderDesc = 'Lãi tiệm cận +3đ ➔ Chặn lãi +1.0đ bảo vệ vốn tránh lỗ ngược';
+  if (sdTargets.huntSupplyTarget && sdTargets.huntSupplyTarget.price !== sdTargets.nextSupplyTarget?.price) {
+    const ht = sdTargets.huntSupplyTarget;
+    msg += `  🚀 <b>VÙNG QUÉT SHORT SQUEEZE:</b> <b>${ht.price}</b> (${ht.levelName}) — <i>cách ${ht.dist}đ (Kéo ép quét SL Short)</i>\n`;
   }
 
-  let newTrailingStop = currentTrailingStop;
-  if (targetLockedPts !== null) {
-    const calcTrailing = isLong
-      ? +(entryPrice + targetLockedPts).toFixed(1)
-      : +(entryPrice - targetLockedPts).toFixed(1);
+  // Điểm cân bằng
+  msg += `  ⚖️ <b>RANH GIỚI CÂN BẰNG FIBO 50%:</b> <b>${fibo.f500}</b> <i>(Ranh giới Bull / Bear)</i>\n`;
 
-    if (isLong) {
-      newTrailingStop = newTrailingStop ? Math.max(newTrailingStop, calcTrailing) : calcTrailing;
-    } else {
-      newTrailingStop = newTrailingStop ? Math.min(newTrailingStop, calcTrailing) : calcTrailing;
-    }
+  // Vùng Cầu dưới
+  if (sdTargets.nextDemandTarget) {
+    const d = sdTargets.nextDemandTarget;
+    msg += `  🟢 <b>VÙNG CẦU DƯỚI GẦN NHẤT:</b> <b>${d.price}</b> (${d.levelName}) — <i>cách ${d.dist}đ</i>\n`;
+    msg += `     👉 <i>Mục đích: ${d.role}</i>\n`;
   }
-
-  return {
-    trailingStop: newTrailingStop,
-    targetLockedPts,
-    ladderDesc,
-    shouldTakeProfitNow,
-    tpReason,
-    grossPnL,
-    peakPnL,
-  };
-}
-
-// ─── AI TRADER STATE MACHINE & RA QUYẾT ĐỊNH NHƯ NGƯỜI THẬT ───
-/**
- * Tổng hợp Đa khung (15p - 5p - 1p) + Cấu trúc Swing + Thanh khoản + Smart Money
- * Quản trị vị thế liên tục như một Prop Trader:
- * 1. ĐỨNG NGOÀI QUAN SÁT
- * 2. MỞ SHORT (Tối đa 4 lệnh/ngày)
- * 3. GIỮ SHORT (+Xđ / -Xđ) — Duy trì vị thế, không đóng mở lung tung
- * 4. CHỐT LỜI SHORT (+Xđ) ➔ Trống lệnh
- * 5. CẮT LỖ SHORT TẠM ĐỨNG NGOÀI (-Xđ) ➔ Trống lệnh
- * 6. ĐÓNG SHORT ĐẢO LONG
- * 7. MỞ LONG (Tối đa 4 lệnh/ngày)
- * 8. GIỮ LONG (+Xđ / -Xđ) — Duy trì vị thế, không đóng mở lung tung
- * 9. CHỐT LỜI LONG (+Xđ) ➔ Trống lệnh
- * 10. CẮT LỖ LONG TẠM ĐỨNG NGOÀI (-Xđ) ➔ Trống lệnh
- * 11. ĐÓNG LONG ĐẢO SHORT
- * + TẤT TOÁN CUỐI PHIÊN TRÁNH BIẾN ĐỘNG ATC
- */
-async function makeAITraderDecision(m15, m5, m1, structure, liquidity, smartMoney, contextInfo) {
-  // Đồng bộ state hiện tại
-  _state = loadAIPositionState();
-
-  const currentPrice = m5.currentPrice;
-  const vnTime = dataFetcher.getVnTime();
-  const timeStr = `${String(vnTime.getHours()).padStart(2, '0')}:${String(vnTime.getMinutes()).padStart(2, '0')}:${String(vnTime.getSeconds()).padStart(2, '0')}`;
-
-  _state.signalCount = (_state.signalCount || 0) + 1;
-  _state.liquidityMode = liquidity.mode;
-
-  // Tính toán Bull/Bear Score từ Đa khung (15p - 5p - 1p)
-  let bullScore = 0;
-  let bearScore = 0;
-  const reasons = [];
-  const warnings = [];
-
-  // 15p (35%): Xu hướng chính trong phiên (Uptrend / Downtrend)
-  if (m15.signal === 'BULLISH') {
-    bullScore += 35 * (m15.confidence / 100);
-    reasons.push(m15.description);
-  } else if (m15.signal === 'BEARISH') {
-    bearScore += 35 * (m15.confidence / 100);
-    reasons.push(m15.description);
-  }
-
-  // 5p (35%): Nhịp sóng và Setup vào lệnh
-  if (m5.entrySignal === 'LONG_ENTRY') {
-    bullScore += 35 * (m5.entryConfidence / 100);
-    reasons.push(m5.description);
-  } else if (m5.entrySignal === 'SHORT_ENTRY') {
-    bearScore += 35 * (m5.entryConfidence / 100);
-    reasons.push(m5.description);
-  }
-
-  // 1p (15%): Micro-timing điểm vào & xung lực vi mô
-  if (m1.signal === 'BULLISH') {
-    bullScore += 15 * (m1.confidence / 100);
-    reasons.push(m1.description);
-  } else if (m1.signal === 'BEARISH') {
-    bearScore += 15 * (m1.confidence / 100);
-    reasons.push(m1.description);
-  }
-
-  // Cấu trúc thị trường Swing High/Low (15%)
-  if (structure.highLowStructure === 'UPTREND') {
-    bullScore += 15;
-    reasons.push(structure.structureTag);
-  } else if (structure.highLowStructure === 'DOWNTREND') {
-    bearScore += 15;
-    reasons.push(structure.structureTag);
-  } else if (structure.structureTag) {
-    warnings.push(structure.structureTag);
-  }
-
-  // Smart Money tác động (10%)
-  if (smartMoney) {
-    if (smartMoney.smartMoneyNet >= 800) {
-      bullScore += 10;
-      reasons.push(`Smart Money gom ròng +${smartMoney.smartMoneyNet.toLocaleString('vi-VN')} HĐ (${smartMoney.smartMoneyPct}%)`);
-    } else if (smartMoney.smartMoneyNet <= -800) {
-      bearScore += 10;
-      reasons.push(`Smart Money xả ròng ${smartMoney.smartMoneyNet.toLocaleString('vi-VN')} HĐ (${smartMoney.smartMoneyPct}%)`);
-    }
-  }
-
-  // Basis (5%)
-  if (contextInfo && contextInfo.basis) {
-    if (contextInfo.basis.isBullish) bullScore += 5;
-    if (contextInfo.basis.isBearish) bearScore += 5;
-  }
-
-  let actionDecision = 'STAND_ASIDE';
-  let actionTitle = 'ĐỨNG NGOÀI QUAN SÁT';
-  let actionAdvice = 'Thị trường chưa có điểm vào tối ưu. Kiên nhẫn chờ setup rõ ràng.';
-  let tradePlan = null;
-
-  const tradeCount = (_state.todayTrades || []).length;
-  const hour = vnTime.getHours();
-  const minute = vnTime.getMinutes();
-  const isATO = (hour === 8 && minute >= 45) || (hour === 9 && minute <= 15);
-  const isATC = (hour === 14 && minute >= 30);
-  const isAtoAtc = isATO || isATC;
-
-  // ═══════════════════════════════════════════════════════════
-  // TRƯỜNG HỢP 1: AI ĐANG TRỐNG LỆNH (position === 'NONE')
-  // ═══════════════════════════════════════════════════════════
-  if (!_state.position || _state.position === 'NONE') {
-    // 1. Kiểm tra giới hạn kỷ luật 4 lệnh/ngày
-    if (tradeCount >= 4 && !isAtoAtc) {
-      actionDecision = 'STAND_ASIDE';
-      actionTitle = '🔒 ĐÃ ĐỦ 4 LỆNH HÔM NAY (ĐỨNG NGOÀI NGHỈ NGƠI)';
-      actionAdvice = `Kỷ luật Senior Trader: Đã hoàn thành ${tradeCount}/4 lệnh trong ngày. Khóa mở vị thế mới để bảo toàn vốn và thành quả, tuyệt đối không overtrading!`;
-      _state.status = 'STAND_ASIDE';
-      _state.statusLabel = actionTitle;
-      saveAIPositionState(_state);
-      return {
-        decision: actionDecision,
-        title: actionTitle,
-        advice: actionAdvice,
-        bullScore: Math.round(bullScore),
-        bearScore: Math.round(bearScore),
-        reasons,
-        warnings,
-        tradePlan: null,
-        state: _state,
-      };
-    }
-
-    // 2. Kiểm tra thời gian tĩnh tâm (Cooldown) sau khi vừa đóng lệnh
-    const lastTrade = (_state.todayTrades && _state.todayTrades.length > 0)
-      ? _state.todayTrades[_state.todayTrades.length - 1]
-      : null;
-    const isLastWin = lastTrade ? (lastTrade.isWin || lastTrade.netPnL >= 0) : false;
-    // Nếu vừa chốt lãi / chặn lãi bảo vệ vốn: Cooldown ngắn 3p để sẵn sàng đón setup mới đẹp nếu thích hợp
-    // Nếu vừa cắt lỗ: Cooldown 10p để ổn định tâm lý và quan sát nhịp thị trường mới
-    const cooldownMs = isLastWin ? 3 * 60 * 1000 : 10 * 60 * 1000;
-    const timeSinceLastExit = Date.now() - (_state.lastExitTimestamp || 0);
-    if (_state.lastExitTimestamp && timeSinceLastExit < cooldownMs) {
-      const remainMin = Math.ceil((cooldownMs - timeSinceLastExit) / 60000);
-      actionDecision = 'STAND_ASIDE';
-      actionTitle = `⚪ ĐỨNG NGOÀI (TĨNH TÂM SAU LỆNH #${tradeCount})`;
-      actionAdvice = `Vừa đóng lệnh lúc ${_state.lastExitTime || 'N/A'}. AI Trader đang trong thời gian tĩnh tâm (${remainMin}p còn lại) để ổn định tâm lý và chờ cấu trúc thị trường mới.`;
-      _state.status = 'STAND_ASIDE';
-      _state.statusLabel = actionTitle;
-      saveAIPositionState(_state);
-      return {
-        decision: actionDecision,
-        title: actionTitle,
-        advice: actionAdvice,
-        bullScore: Math.round(bullScore),
-        bearScore: Math.round(bearScore),
-        reasons,
-        warnings,
-        tradePlan: null,
-        state: _state,
-      };
-    }
-
-    // 3. Đánh giá tín hiệu mở lệnh mới với bộ lọc kỷ luật nghiêm ngặt
-    const entryThreshold = 52;
-    const isAtSupport = structure && structure.recentLow && (currentPrice >= structure.recentLow - 0.3 && currentPrice <= structure.recentLow + 1.8);
-    const isAtResist = structure && structure.recentHigh && (currentPrice <= structure.recentHigh + 0.3 && currentPrice >= structure.recentHigh - 1.8);
-    const isDowntrend = m15.signal === 'BEARISH' || (structure && (structure.isLowerHighs || structure.isLowerLows || structure.highLowStructure === 'DOWNTREND'));
-    const isUptrend = m15.signal === 'BULLISH' || (structure && (structure.isHigherHighs || structure.isHigherLows || structure.highLowStructure === 'UPTREND'));
-    const hasNegativeBasis = contextInfo?.basis && contextInfo.basis.basis < -1.0;
-
-    // MỞ LONG
-    if (bullScore >= entryThreshold && bullScore > bearScore * 1.3) {
-      if (isAtResist && !structure?.isBigLong) {
-        actionDecision = 'STAND_ASIDE';
-        actionTitle = `⚪ ĐỨNG NGOÀI (CẤM ĐU ĐỈNH SÁT CẢN ${structure?.recentHigh?.toFixed(1) || ''})`;
-        actionAdvice = `Giá ${currentPrice} đang ngay sát cản/đỉnh ${structure?.recentHigh?.toFixed(1) || ''} chưa có xác nhận bứt phá. CẤM MUA ĐU ĐỈNH! Chờ vượt cản hoặc chỉnh về hỗ trợ.`;
-        _state.status = 'STAND_ASIDE';
-        _state.statusLabel = actionTitle;
-      } else if (isDowntrend && !structure?.isBigLong) {
-        actionDecision = 'STAND_ASIDE';
-        actionTitle = `⚪ ĐỨNG NGOÀI (CẤM BẮT ĐÁY KHI TREND GIẢM)`;
-        actionAdvice = `Xu hướng 15p đang là DOWNTREND hoặc cấu trúc hạ đỉnh/hạ đáy. TUYỆT ĐỐI CẤM BẮT ĐÁY LONG ngược xu hướng (tránh bẫy bull-trap / dao rơi)!`;
-        _state.status = 'STAND_ASIDE';
-        _state.statusLabel = actionTitle;
-      } else if (hasNegativeBasis) {
-        actionDecision = 'STAND_ASIDE';
-        actionTitle = `⚪ ĐỨNG NGOÀI (BASIS F1 ÂM ${contextInfo.basis.basis}đ)`;
-        actionAdvice = `Basis F1 đang âm (${contextInfo.basis.basis}đ) phản ánh phe Short áp đảo và nguy cơ bẫy tăng/xả hàng. Không mở LONG khi Basis âm!`;
-        _state.status = 'STAND_ASIDE';
-        _state.statusLabel = actionTitle;
-      } else {
-        const orderNum = tradeCount + 1;
-        const slInfo = calculateAdaptiveStopLoss('LONG', currentPrice, structure, m5, contextInfo);
-
-        _state.position = 'LONG';
-        _state.status = 'OPEN_LONG';
-        _state.statusLabel = 'MỞ LONG';
-        _state.entryPrice = currentPrice;
-        _state.entryTime = timeStr;
-        _state.entryTimestamp = Date.now();
-        _state.stopLoss = slInfo.slPrice;
-        _state.trailingStop = _state.stopLoss;
-        _state.takeProfit1 = +(currentPrice + 5.0).toFixed(1);
-        _state.takeProfit2 = +(currentPrice + 10.0).toFixed(1);
-        _state.currentPnL = 0;
-        _state.currentNetPnL = -0.6;
-        _state.maxPnL = 0;
-        _state.minPnL = 0;
-        _state.holdingBars = 1;
-        _state.breakevenActive = false;
-        _state.tp1Hit = false;
-
-        actionDecision = 'OPEN_LONG';
-        actionTitle = `🟢 MỞ LONG @ ${currentPrice} (Lệnh #${orderNum}/4)`;
-        actionAdvice = `Khớp mở vị thế LONG quanh ${currentPrice} thuận sóng nâng đáy. SL linh động: ${_state.stopLoss}đ (-${slInfo.slDistance}đ: ${slInfo.slReason}).`;
-        tradePlan = {
-          action: 'MỞ LONG',
-          entry: currentPrice,
-          sl: _state.stopLoss,
-          slDistance: slInfo.slDistance,
-          slReason: slInfo.slReason,
-          tp1: _state.takeProfit1,
-          tp2: _state.takeProfit2,
-          trailing: _state.trailingStop,
-        };
-      }
-    }
-    // MỞ SHORT
-    else if (bearScore >= entryThreshold && bearScore > bullScore * 1.3) {
-      if (isAtSupport && !structure.isBigShort) {
-        actionDecision = 'STAND_ASIDE';
-        actionTitle = `⚪ ĐỨNG NGOÀI (CẤM BÁN ĐÁY SÁT HỖ TRỢ ${structure.recentLow.toFixed(1)})`;
-        actionAdvice = `Giá ${currentPrice} đang ngay sát hỗ trợ/đáy ${structure.recentLow.toFixed(1)} chưa có xác nhận thủng đáy. CẤM BÁN THÁO VÀO ĐÁY (tránh bẫy Short Squeeze / rút chân)!`;
-        _state.status = 'STAND_ASIDE';
-        _state.statusLabel = actionTitle;
-      } else if (isUptrend && !structure?.isBigShort) {
-        actionDecision = 'STAND_ASIDE';
-        actionTitle = `⚪ ĐỨNG NGOÀI (CẤM SHORT CẢN TÀU KHI TREND TĂNG)`;
-        actionAdvice = `Xu hướng 15p đang là UPTREND hoặc cấu trúc nâng đỉnh/nâng đáy. TUYỆT ĐỐI CẤM SHORT CẢN TÀU ngược dòng tiền lớn!`;
-        _state.status = 'STAND_ASIDE';
-        _state.statusLabel = actionTitle;
-      } else {
-        const orderNum = tradeCount + 1;
-        const slInfo = calculateAdaptiveStopLoss('SHORT', currentPrice, structure, m5, contextInfo);
-
-        _state.position = 'SHORT';
-        _state.status = 'OPEN_SHORT';
-        _state.statusLabel = 'MỞ SHORT';
-        _state.entryPrice = currentPrice;
-        _state.entryTime = timeStr;
-        _state.entryTimestamp = Date.now();
-        _state.stopLoss = slInfo.slPrice;
-        _state.trailingStop = _state.stopLoss;
-        _state.takeProfit1 = +(currentPrice - 5.0).toFixed(1);
-        _state.takeProfit2 = +(currentPrice - 10.0).toFixed(1);
-        _state.currentPnL = 0;
-        _state.currentNetPnL = -0.6;
-        _state.maxPnL = 0;
-        _state.minPnL = 0;
-        _state.holdingBars = 1;
-        _state.breakevenActive = false;
-        _state.tp1Hit = false;
-
-        actionDecision = 'OPEN_SHORT';
-        actionTitle = `🔴 MỞ SHORT @ ${currentPrice} (Lệnh #${orderNum}/4)`;
-        actionAdvice = `Khớp mở vị thế SHORT quanh ${currentPrice} thuận thế hạ đỉnh. SL linh động: ${_state.stopLoss}đ (+${slInfo.slDistance}đ: ${slInfo.slReason}).`;
-        tradePlan = {
-          action: 'MỞ SHORT',
-          entry: currentPrice,
-          sl: _state.stopLoss,
-          slDistance: slInfo.slDistance,
-          slReason: slInfo.slReason,
-          tp1: _state.takeProfit1,
-          tp2: _state.takeProfit2,
-          trailing: _state.trailingStop,
-        };
-      }
-    } else {
-      actionDecision = 'STAND_ASIDE';
-      actionTitle = '⚪ ĐỨNG NGOÀI QUAN SÁT';
-      actionAdvice = 'AI đang TRỐNG LỆNH. Hai phe giằng co hoặc thanh khoản chưa xác nhận ➔ Kiên nhẫn chờ setup rõ ràng.';
-      _state.status = 'STAND_ASIDE';
-      _state.statusLabel = 'ĐỨNG NGOÀI QUAN SÁT';
-    }
-  }
-
-  // ═══════════════════════════════════════════════════════════
-  // TRƯỜNG HỢP 2: AI ĐANG GIỮ LỆNH LONG (position === 'LONG')
-  // ═══════════════════════════════════════════════════════════
-  else if (_state.position === 'LONG') {
-    const grossPnL = +(currentPrice - _state.entryPrice).toFixed(1);
-    const netPnL = +(grossPnL - googleSheetService.FEE_PER_TRADE).toFixed(1);
-    _state.currentPnL = grossPnL;
-    _state.currentNetPnL = netPnL;
-    _state.maxPnL = Math.max(_state.maxPnL || 0, grossPnL);
-    _state.minPnL = Math.min(_state.minPnL || 0, grossPnL);
-    _state.holdingBars = (_state.holdingBars || 0) + 1;
-
-    // Phát hiện tín hiệu đảo chiều khi đang giữ Long
-    const isReversingLong = (m5?.latestCandle?.upperWick >= 1.0) ||
-      (m1?.signal === 'BEARISH' && m1?.momentum <= -0.7) ||
-      (bearScore >= 45) ||
-      (structure?.isLowerHighs && structure?.isLowerLows);
-
-    // Đánh giá hệ thống nấc chặn lãi bảo vệ vốn
-    const ladder = evaluateProfitProtectionLadder('LONG', _state.entryPrice, currentPrice, _state.trailingStop, _state.maxPnL, isReversingLong);
-    _state.trailingStop = ladder.trailingStop;
-    if (ladder.targetLockedPts !== null && ladder.targetLockedPts >= 1.0) {
-      _state.breakevenActive = true;
-    }
-    if (ladder.targetLockedPts !== null && ladder.targetLockedPts >= 5.0) {
-      _state.tp1Hit = true;
-    }
-
-    const isExitTime = (vnTime.getHours() === 14 && vnTime.getMinutes() >= 25 && vnTime.getMinutes() < 30);
-
-    // Kiểm tra điều kiện hold qua ATC theo yêu cầu:
-    // "Lãi trên 20đ được phép hold qua atc nếu lực cung cầu 14h25-14h29 còn duy trì đúng hướng"
-    const canHoldLongOverATC = (grossPnL >= 20.0) && (
-      (smartMoney?.smartMoneyNet >= 0 || smartMoney?.foreignNet >= 0) &&
-      m1.signal !== 'BEARISH' &&
-      structure.highLowStructure !== 'DOWNTREND'
-    );
-
-    // 1. DÍNH STOP LOSS HOẶC CHẠM MỐC CHẶN LÃI TRAILING STOP
-    if (currentPrice <= _state.stopLoss || (_state.trailingStop && currentPrice <= _state.trailingStop)) {
-      if (grossPnL < 0) {
-        actionDecision = 'STOP_LOSS_LONG';
-        actionTitle = `🛑 CẮT LỖ LONG TẠM ĐỨNG NGOÀI (${grossPnL}đ | Net: ${netPnL}đ)`;
-        actionAdvice = `Giá chạm ngưỡng cắt lỗ (${currentPrice} <= ${_state.stopLoss}). Dứt khoát cắt lỗ bảo vệ tài khoản, tạm đứng ngoài quan sát!`;
-        _state.status = 'STOP_LOSS_LONG';
-        _state.statusLabel = actionTitle;
-        await closeCurrentPosition(currentPrice, `Dính Stop Loss cắt lỗ (${grossPnL}đ)`, timeStr);
-      } else {
-        actionDecision = 'CLOSE_PRESERVE';
-        actionTitle = `🛡️ ĐÓNG LONG CHẶN LÃI (+${grossPnL}đ | Net: +${netPnL}đ)`;
-        actionAdvice = `Giá điều chỉnh chạm mốc chặn lãi (${_state.trailingStop}đ). Chủ động đóng lệnh bảo toàn lợi nhuận, tạm đứng ngoài!`;
-        _state.status = 'STAND_ASIDE';
-        _state.statusLabel = actionTitle;
-        await closeCurrentPosition(currentPrice, `Chạm mốc chặn lãi bảo toàn vốn (${ladder.ladderDesc || `Khóa lãi ${_state.trailingStop}đ`})`, timeStr);
-      }
-    }
-    // 2. CHỐT LỜI CHỦ ĐỘNG KHI ĐẢO CHIỀU HOẶC QUAY ĐẦU CHẠM 20Đ
-    else if (ladder.shouldTakeProfitNow) {
-      actionDecision = 'TAKE_PROFIT_LONG';
-      actionTitle = `🎯 CHỐT LỜI LONG (+${grossPnL}đ | Net: +${netPnL}đ)`;
-      actionAdvice = `${ladder.tpReason} Đưa tài khoản về an toàn, hiện thực hóa lợi nhuận.`;
-      _state.status = 'TAKE_PROFIT_LONG';
-      _state.statusLabel = actionTitle;
-      await closeCurrentPosition(currentPrice, ladder.tpReason, timeStr);
-    }
-    // 3. TẤT TOÁN HOẶC QUYẾT ĐỊNH HOLD QUA ATC (14h25 - 14h29)
-    else if (isExitTime) {
-      if (canHoldLongOverATC) {
-        // ĐƯỢC PHÉP HOLD QUA ATC KHI LÃI >= 20Đ VÀ CUNG CẦU THUẬN LỢI!
-        _state.trailingStop = Math.max(_state.trailingStop || 0, +(_state.entryPrice + 20.0).toFixed(1));
-        actionDecision = 'HOLD_LONG';
-        actionTitle = `🔥 GIỮ LONG QUA ATC (+${grossPnL}đ | Net: +${netPnL}đ)`;
-        actionAdvice = `Lãi lớn (+${grossPnL}đ >= 20đ) và lực cầu cuối phiên 14h25-14h29 duy trì đúng hướng! Cho phép giữ Long qua ATC, khóa lãi cứng tại ${_state.trailingStop}đ (+20đ).`;
-        _state.status = 'HOLD_LONG';
-        _state.statusLabel = actionTitle;
-        tradePlan = {
-          action: 'GIỮ LONG QUA ATC',
-          entry: _state.entryPrice,
-          sl: _state.stopLoss,
-          trailing: _state.trailingStop,
-          tp1: _state.takeProfit1,
-          tp2: _state.takeProfit2,
-          grossPnL,
-          netPnL,
-        };
-      } else {
-        actionDecision = 'CLOSE_END_OF_DAY';
-        actionTitle = `🌙 TẤT TOÁN LONG TRƯỚC ATC (${grossPnL >= 0 ? '+' : ''}${grossPnL}đ | Net: ${netPnL >= 0 ? '+' : ''}${netPnL}đ)`;
-        actionAdvice = grossPnL >= 20.0
-          ? `Lãi lớn +${grossPnL}đ nhưng lực cung cầu 14h25-14h29 suy yếu ➔ Dứt khoát tất toán trước ATC bảo vệ trọn vẹn thành quả!`
-          : `Đã đến 14h25 cuối phiên. Tất toán toàn bộ vị thế Long đưa tài khoản về Flat (tiền mặt) tránh biến động bất ngờ trong ATC.`;
-        _state.status = 'STAND_ASIDE';
-        _state.statusLabel = actionTitle;
-        await closeCurrentPosition(currentPrice, grossPnL >= 20.0 ? 'Tất toán bảo toàn lãi trước ATC (Cung cầu 14h25 suy yếu)' : 'Tất toán trước ATC bảo vệ tài khoản', timeStr);
-      }
-    }
-    // 4. XÁC NHẬN ĐẢO CHIỀU GÃY XU HƯỚNG MẠNH (ĐÓNG LONG ĐẢO SHORT)
-    else if (bearScore >= 65 && bearScore > bullScore * 1.6 && structure.isLowerHighs && structure.isLowerLows) {
-      await closeCurrentPosition(currentPrice, 'Đảo chiều gãy xu hướng sang Short', timeStr);
-
-      if ((_state.todayTrades || []).length < 4) {
-        const orderNum = (_state.todayTrades || []).length + 1;
-        const slInfo = calculateAdaptiveStopLoss('SHORT', currentPrice, structure, m5, contextInfo);
-
-        _state.position = 'SHORT';
-        _state.status = 'REVERSE_LONG_TO_SHORT';
-        _state.statusLabel = `ĐÓNG LONG ĐẢO SHORT`;
-        _state.entryPrice = currentPrice;
-        _state.entryTime = timeStr;
-        _state.entryTimestamp = Date.now();
-        _state.stopLoss = slInfo.slPrice;
-        _state.trailingStop = _state.stopLoss;
-        _state.takeProfit1 = +(currentPrice - 5.0).toFixed(1);
-        _state.takeProfit2 = +(currentPrice - 10.0).toFixed(1);
-        _state.currentPnL = 0;
-        _state.currentNetPnL = -0.6;
-        _state.maxPnL = 0;
-        _state.minPnL = 0;
-        _state.holdingBars = 1;
-        _state.breakevenActive = false;
-        _state.tp1Hit = false;
-
-        actionDecision = 'REVERSE_LONG_TO_SHORT';
-        actionTitle = `🔄 ĐÓNG LONG ĐẢO SHORT (Chốt Long ${grossPnL >= 0 ? '+' : ''}${grossPnL}đ ➔ Đảo Short @ ${currentPrice})`;
-        actionAdvice = `Thị trường gãy hỗ trợ và hạ đỉnh hạ đáy rõ nét. Đã đóng sạch Long và đảo ngay vị thế SHORT mới! SL: ${_state.stopLoss}đ.`;
-        tradePlan = {
-          action: 'MỞ SHORT (ĐẢO CHIỀU)',
-          entry: currentPrice,
-          sl: _state.stopLoss,
-          tp1: _state.takeProfit1,
-          tp2: _state.takeProfit2,
-          trailing: _state.trailingStop,
-        };
-      } else {
-        actionDecision = 'CLOSE_LONG';
-        actionTitle = `🛡️ ĐÓNG LONG (${grossPnL >= 0 ? '+' : ''}${grossPnL}đ) ➔ ĐÃ ĐỦ 4 LỆNH, ĐỨNG NGOÀI`;
-        actionAdvice = `Đã chốt Long bảo toàn lợi nhuận. Tài khoản đã đạt chỉ tiêu 4 lệnh trong ngày nên đứng ngoài quan sát!`;
-      }
-    }
-    // 5. TIẾP TỤC GIỮ LỆNH LONG (Maintain Position Memory)
-    else {
-      actionDecision = 'HOLD_LONG';
-      let holdTag = '';
-      if (_state.trailingStop && _state.trailingStop > _state.entryPrice) {
-        const lockedPts = +(_state.trailingStop - _state.entryPrice).toFixed(1);
-        holdTag = ` — ĐÃ KHÓA LÃI +${lockedPts}đ (${_state.trailingStop}đ) 🛡️`;
-      } else if (_state.breakevenActive) {
-        holdTag = ` — ĐÃ HÒA VỐN 🛡️`;
-      }
-
-      actionTitle = `🟢 GIỮ LONG (${grossPnL >= 0 ? '+' : ''}${grossPnL}đ | Net: ${netPnL >= 0 ? '+' : ''}${netPnL}đ${holdTag})`;
-      actionAdvice = `Tiếp tục nắm giữ vị thế Long mở từ ${_state.entryPrice} (${_state.entryTime}). ${
-        _state.trailingStop ? `Chặn lãi bảo vệ tại ${_state.trailingStop}đ (${ladder.ladderDesc || 'bảo toàn vốn'}).` : `Cắt lỗ tại ${_state.stopLoss}đ.`
-      } Kiên định tuân thủ kế hoạch!`;
-
-      _state.status = 'HOLD_LONG';
-      _state.statusLabel = actionTitle;
-      tradePlan = {
-        action: 'GIỮ LONG',
-        entry: _state.entryPrice,
-        sl: _state.stopLoss,
-        trailing: _state.trailingStop,
-        tp1: _state.takeProfit1,
-        tp2: _state.takeProfit2,
-        grossPnL,
-        netPnL,
-      };
-    }
-  }
-
-  // ═══════════════════════════════════════════════════════════
-  // TRƯỜNG HỢP 3: AI ĐANG GIỮ LỆNH SHORT (position === 'SHORT')
-  // ═══════════════════════════════════════════════════════════
-  else if (_state.position === 'SHORT') {
-    const grossPnL = +(_state.entryPrice - currentPrice).toFixed(1);
-    const netPnL = +(grossPnL - googleSheetService.FEE_PER_TRADE).toFixed(1);
-    _state.currentPnL = grossPnL;
-    _state.currentNetPnL = netPnL;
-    _state.maxPnL = Math.max(_state.maxPnL || 0, grossPnL);
-    _state.minPnL = Math.min(_state.minPnL || 0, grossPnL);
-    _state.holdingBars = (_state.holdingBars || 0) + 1;
-
-    // Phát hiện tín hiệu đảo chiều khi đang giữ Short
-    const isReversingShort = (m5?.latestCandle?.lowerWick >= 1.0) ||
-      (m1?.signal === 'BULLISH' && m1?.momentum >= 0.7) ||
-      (bullScore >= 45) ||
-      (structure?.isHigherHighs && structure?.isHigherLows);
-
-    // Đánh giá hệ thống nấc chặn lãi bảo vệ vốn
-    const ladder = evaluateProfitProtectionLadder('SHORT', _state.entryPrice, currentPrice, _state.trailingStop, _state.maxPnL, isReversingShort);
-    _state.trailingStop = ladder.trailingStop;
-    if (ladder.targetLockedPts !== null && ladder.targetLockedPts >= 1.0) {
-      _state.breakevenActive = true;
-    }
-    if (ladder.targetLockedPts !== null && ladder.targetLockedPts >= 5.0) {
-      _state.tp1Hit = true;
-    }
-
-    const isExitTime = (vnTime.getHours() === 14 && vnTime.getMinutes() >= 25 && vnTime.getMinutes() < 30);
-
-    // Kiểm tra điều kiện hold qua ATC theo yêu cầu:
-    // "Lãi trên 20đ được phép hold qua atc nếu lực cung cầu 14h25-14h29 còn duy trì đúng hướng"
-    const canHoldShortOverATC = (grossPnL >= 20.0) && (
-      (smartMoney?.smartMoneyNet <= 0 || smartMoney?.foreignNet <= 0) &&
-      m1.signal !== 'BULLISH' &&
-      structure.highLowStructure !== 'UPTREND'
-    );
-
-    // 1. DÍNH STOP LOSS HOẶC CHẠM MỐC CHẶN LÃI TRAILING STOP
-    if (currentPrice >= _state.stopLoss || (_state.trailingStop && currentPrice >= _state.trailingStop)) {
-      if (grossPnL < 0) {
-        actionDecision = 'STOP_LOSS_SHORT';
-        actionTitle = `🛑 CẮT LỖ SHORT TẠM ĐỨNG NGOÀI (${grossPnL}đ | Net: ${netPnL}đ)`;
-        actionAdvice = `Giá chạm ngưỡng cắt lỗ (${currentPrice} >= ${_state.stopLoss}). Dứt khoát cắt lỗ bảo vệ tài khoản, tạm đứng ngoài quan sát!`;
-        _state.status = 'STOP_LOSS_SHORT';
-        _state.statusLabel = actionTitle;
-        await closeCurrentPosition(currentPrice, `Dính Stop Loss cắt lỗ (${grossPnL}đ)`, timeStr);
-      } else {
-        actionDecision = 'CLOSE_PRESERVE';
-        actionTitle = `🛡️ ĐÓNG SHORT CHẶN LÃI (+${grossPnL}đ | Net: +${netPnL}đ)`;
-        actionAdvice = `Giá hồi phục chạm mốc chặn lãi (${_state.trailingStop}đ). Chủ động đóng lệnh bảo toàn lợi nhuận, tạm đứng ngoài!`;
-        _state.status = 'STAND_ASIDE';
-        _state.statusLabel = actionTitle;
-        await closeCurrentPosition(currentPrice, `Chạm mốc chặn lãi bảo toàn vốn (${ladder.ladderDesc || `Khóa lãi ${_state.trailingStop}đ`})`, timeStr);
-      }
-    }
-    // 2. CHỐT LỜI CHỦ ĐỘNG KHI ĐẢO CHIỀU HOẶC QUAY ĐẦU CHẠM 20Đ
-    else if (ladder.shouldTakeProfitNow) {
-      actionDecision = 'TAKE_PROFIT_SHORT';
-      actionTitle = `🎯 CHỐT LỜI SHORT (+${grossPnL}đ | Net: +${netPnL}đ)`;
-      actionAdvice = `${ladder.tpReason} Đưa tài khoản về an toàn, hiện thực hóa lợi nhuận.`;
-      _state.status = 'TAKE_PROFIT_SHORT';
-      _state.statusLabel = actionTitle;
-      await closeCurrentPosition(currentPrice, ladder.tpReason, timeStr);
-    }
-    // 3. TẤT TOÁN HOẶC QUYẾT ĐỊNH HOLD QUA ATC (14h25 - 14h29)
-    else if (isExitTime) {
-      if (canHoldShortOverATC) {
-        // ĐƯỢC PHÉP HOLD QUA ATC KHI LÃI >= 20Đ VÀ CUNG CẦU THUẬN LỢI!
-        _state.trailingStop = Math.min(_state.trailingStop || 99999, +(_state.entryPrice - 20.0).toFixed(1));
-        actionDecision = 'HOLD_SHORT';
-        actionTitle = `🔥 GIỮ SHORT QUA ATC (+${grossPnL}đ | Net: +${netPnL}đ)`;
-        actionAdvice = `Lãi lớn (+${grossPnL}đ >= 20đ) và lực đè cung cuối phiên 14h25-14h29 duy trì đúng hướng! Cho phép giữ Short qua ATC, khóa lãi cứng tại ${_state.trailingStop}đ (+20đ).`;
-        _state.status = 'HOLD_SHORT';
-        _state.statusLabel = actionTitle;
-        tradePlan = {
-          action: 'GIỮ SHORT QUA ATC',
-          entry: _state.entryPrice,
-          sl: _state.stopLoss,
-          trailing: _state.trailingStop,
-          tp1: _state.takeProfit1,
-          tp2: _state.takeProfit2,
-          grossPnL,
-          netPnL,
-        };
-      } else {
-        actionDecision = 'CLOSE_END_OF_DAY';
-        actionTitle = `🌙 TẤT TOÁN SHORT TRƯỚC ATC (${grossPnL >= 0 ? '+' : ''}${grossPnL}đ | Net: ${netPnL >= 0 ? '+' : ''}${netPnL}đ)`;
-        actionAdvice = grossPnL >= 20.0
-          ? `Lãi lớn +${grossPnL}đ nhưng lực cung cầu 14h25-14h29 có dấu hiệu hồi phục ➔ Dứt khoát tất toán trước ATC bảo vệ trọn vẹn thành quả!`
-          : `Đã đến 14h25 cuối phiên. Tất toán toàn bộ vị thế Short đưa tài khoản về Flat (tiền mặt) tránh biến động bất ngờ trong ATC.`;
-        _state.status = 'STAND_ASIDE';
-        _state.statusLabel = actionTitle;
-        await closeCurrentPosition(currentPrice, grossPnL >= 20.0 ? 'Tất toán bảo toàn lãi trước ATC (Cung cầu 14h25 suy yếu)' : 'Tất toán trước ATC bảo vệ tài khoản', timeStr);
-      }
-    }
-    // 4. XÁC NHẬN ĐẢO CHIỀU NÂNG ĐÁY MẠNH (ĐÓNG SHORT ĐẢO LONG)
-    else if (bullScore >= 65 && bullScore > bearScore * 1.6 && structure.isHigherHighs && structure.isHigherLows) {
-      await closeCurrentPosition(currentPrice, 'Đảo chiều nâng đáy sang Long', timeStr);
-
-      if ((_state.todayTrades || []).length < 4) {
-        const orderNum = (_state.todayTrades || []).length + 1;
-        const slInfo = calculateAdaptiveStopLoss('LONG', currentPrice, structure, m5, contextInfo);
-
-        _state.position = 'LONG';
-        _state.status = 'REVERSE_SHORT_TO_LONG';
-        _state.statusLabel = `ĐÓNG SHORT ĐẢO LONG`;
-        _state.entryPrice = currentPrice;
-        _state.entryTime = timeStr;
-        _state.entryTimestamp = Date.now();
-        _state.stopLoss = slInfo.slPrice;
-        _state.trailingStop = _state.stopLoss;
-        _state.takeProfit1 = +(currentPrice + 5.0).toFixed(1);
-        _state.takeProfit2 = +(currentPrice + 10.0).toFixed(1);
-        _state.currentPnL = 0;
-        _state.currentNetPnL = -0.6;
-        _state.maxPnL = 0;
-        _state.minPnL = 0;
-        _state.holdingBars = 1;
-        _state.breakevenActive = false;
-        _state.tp1Hit = false;
-
-        actionDecision = 'REVERSE_SHORT_TO_LONG';
-        actionTitle = `🔄 ĐÓNG SHORT ĐẢO LONG (Chốt Short ${grossPnL >= 0 ? '+' : ''}${grossPnL}đ ➔ Đảo Long @ ${currentPrice})`;
-        actionAdvice = `Thị trường xuất hiện lực cầu lớn nâng đáy vượt cản rõ nét. Đã đóng sạch Short và đảo ngay vị thế LONG mới! SL: ${_state.stopLoss}đ.`;
-        tradePlan = {
-          action: 'MỞ LONG (ĐẢO CHIỀU)',
-          entry: currentPrice,
-          sl: _state.stopLoss,
-          tp1: _state.takeProfit1,
-          tp2: _state.takeProfit2,
-          trailing: _state.trailingStop,
-        };
-      } else {
-        actionDecision = 'CLOSE_SHORT';
-        actionTitle = `🛡️ ĐÓNG SHORT (${grossPnL >= 0 ? '+' : ''}${grossPnL}đ) ➔ ĐÃ ĐỦ 4 LỆNH, ĐỨNG NGOÀI`;
-        actionAdvice = `Đã chốt Short bảo toàn lợi nhuận. Tài khoản đã đạt chỉ tiêu 4 lệnh trong ngày nên đứng ngoài quan sát!`;
-      }
-    }
-    // 5. TIẾP TỤC GIỮ LỆNH SHORT (Maintain Position Memory)
-    else {
-      actionDecision = 'HOLD_SHORT';
-      let holdTag = '';
-      if (_state.trailingStop && _state.trailingStop < _state.entryPrice) {
-        const lockedPts = +(_state.entryPrice - _state.trailingStop).toFixed(1);
-        holdTag = ` — ĐÃ KHÓA LÃI +${lockedPts}đ (${_state.trailingStop}đ) 🛡️`;
-      } else if (_state.breakevenActive) {
-        holdTag = ` — ĐÃ HÒA VỐN 🛡️`;
-      }
-
-      actionTitle = `🔴 GIỮ SHORT (${grossPnL >= 0 ? '+' : ''}${grossPnL}đ | Net: ${netPnL >= 0 ? '+' : ''}${netPnL}đ${holdTag})`;
-      actionAdvice = `Tiếp tục nắm giữ vị thế Short mở từ ${_state.entryPrice} (${_state.entryTime}). ${
-        _state.trailingStop ? `Chặn lãi bảo vệ tại ${_state.trailingStop}đ (${ladder.ladderDesc || 'bảo toàn vốn'}).` : `Cắt lỗ tại ${_state.stopLoss}đ.`
-      } Kiên định tuân thủ kế hoạch!`;
-
-      _state.status = 'HOLD_SHORT';
-      _state.statusLabel = actionTitle;
-      tradePlan = {
-        action: 'GIỮ SHORT',
-        entry: _state.entryPrice,
-        sl: _state.stopLoss,
-        trailing: _state.trailingStop,
-        tp1: _state.takeProfit1,
-        tp2: _state.takeProfit2,
-        grossPnL,
-        netPnL,
-      };
-    }
-  }
-
-  // Lưu persistent state
-  saveAIPositionState(_state);
-
-  return {
-    decision: actionDecision,
-    title: actionTitle,
-    advice: actionAdvice,
-    bullScore: Math.round(bullScore),
-    bearScore: Math.round(bearScore),
-    reasons: reasons.slice(0, 4),
-    warnings: warnings.slice(0, 3),
-    tradePlan,
-    state: _state,
-  };
-}
-
-// ─── FORMAT INTRADAY SIGNAL MESSAGE ──────────────────────────
-function formatIntradaySignal(result, m15, m5, m1, structure, liquidity, smartMoney, contextInfo) {
-  const { title, advice, bullScore, bearScore, reasons, warnings, tradePlan, state } = result;
-
-  const tradeCount = (state.todayTrades || []).length;
-  const currentTradeNum = state.position && state.position !== 'NONE' ? tradeCount + 1 : tradeCount;
-
-  let msg = `🤖 <b>AI TRADER: ${title}</b>\n`;
-  msg += `🕐 <i>${dataFetcher.vnNow()}</i> | Noti #${state.signalCount || 1} | Lệnh #${currentTradeNum}/4\n`;
-  msg += `━━━━━━━━━━━━━━━━━━━━\n\n`;
-
-  // 1. Giá hiện tại & Basis
-  const lastKnown = dataFetcher.getLastKnownPrices ? dataFetcher.getLastKnownPrices() : {};
-  const currentF1M = m5?.currentPrice || contextInfo?.f1mPrice || lastKnown.f1m;
-  const currentVN30 = contextInfo?.vn30Price || lastKnown.vn30;
-  const basisVal = (contextInfo?.basis && contextInfo.basis.basis !== undefined)
-    ? contextInfo.basis.basis
-    : (currentF1M && currentVN30 ? +(currentF1M - currentVN30).toFixed(1) : null);
-  const basisText = basisVal !== null ? `${basisVal >= 0 ? '+' : ''}${basisVal}đ` : '0.0đ';
-  const f1mText = currentF1M ? Number(currentF1M).toFixed(1) : (lastKnown.f1m ? Number(lastKnown.f1m).toFixed(1) : 'N/A');
-  const vn30Text = currentVN30 ? Number(currentVN30).toFixed(1) : (lastKnown.vn30 ? Number(lastKnown.vn30).toFixed(1) : 'N/A');
-  msg += `📍 <b>F1M: ${f1mText}</b> | VN30: <b>${vn30Text}</b> | Basis: <b>${basisText}</b>\n\n`;
-
-  // 2. VỊ THẾ HIỆN TẠI (POSITION MEMORY NHƯ NGƯỜI THẬT)
-  msg += `🎯 <b>VỊ THẾ & TRẠNG THÁI AI TRADER:</b>\n`;
-  if (state.position && state.position !== 'NONE') {
-    const posEmoji = state.position === 'LONG' ? '🟢' : '🔴';
-    const grossPnL = state.currentPnL !== undefined ? state.currentPnL : 0;
-    const netPnL = state.currentNetPnL !== undefined ? state.currentNetPnL : +(grossPnL - googleSheetService.FEE_PER_TRADE).toFixed(1);
-    const grossEmoji = grossPnL >= 0 ? '🟢' : '🔴';
-    const netEmoji = netPnL >= 0 ? '🟢' : '🔴';
-
-    msg += `  • Vị thế: ${posEmoji} <b>${state.position}</b> (Lệnh #${currentTradeNum}/4 lệnh tối đa)\n`;
-    msg += `  • Điểm vào: <b>${state.entryPrice}</b> (Khớp lúc <b>${state.entryTime || 'N/A'}</b>)\n`;
-    msg += `  • Giá F1M hiện tại: <b>${m5.currentPrice}</b>\n`;
-    msg += `  • Lãi/Lỗ thô (Gross): <b>${grossEmoji} ${grossPnL >= 0 ? '+' : ''}${grossPnL.toFixed(1)}đ</b>\n`;
-    msg += `  • Phí mở + đóng: <b>-0.6đ</b>\n`;
-    msg += `  • <b>LÃI/LỖ THỰC TẾ (NET):</b> <b>${netEmoji} ${netPnL >= 0 ? '+' : ''}${netPnL.toFixed(1)}đ</b>\n`;
-    msg += `  • Cắt lỗ (SL): <b>${state.stopLoss}</b> (MTL)${state.breakevenActive ? ' 🛡️ <i>(Đã dời về hòa vốn)</i>' : ''}\n`;
-    if (state.trailingStop && state.trailingStop !== state.stopLoss) {
-      msg += `  • Chặn lãi (Trailing): <b>${state.trailingStop}</b> 🛡️ <i>(Khóa bảo vệ lợi nhuận)</i>\n`;
-    }
-    msg += `  • Mục tiêu: <b>TP1: ${state.takeProfit1}</b> | <b>TP2: ${state.takeProfit2}</b>\n\n`;
-  } else {
-    msg += `  • Vị thế: ⚪ <b>TRỐNG LỆNH (ĐỨNG NGOÀI)</b>\n`;
-    msg += `  • Lượt giao dịch: <b>${tradeCount}/4 lệnh trong ngày</b>\n`;
-    if (state.todayTrades && state.todayTrades.length > 0) {
-      const last = state.todayTrades[state.todayTrades.length - 1];
-      const resEmoji = last.netPnL > 0 ? '🟢' : (last.netPnL === 0 ? '🟡' : '🔴');
-      msg += `  • Lệnh gần nhất: ${resEmoji} <b>${last.type} @ ${last.entryPrice} (${last.entryTime}) ➔ ${last.exitPrice} (${last.exitTime})</b>\n`;
-      msg += `     └ Thô: <b>${last.grossPnL >= 0 ? '+' : ''}${last.grossPnL}đ</b> | Phí: <b>-0.6đ</b> | Thực nhận: <b>${last.netPnL >= 0 ? '+' : ''}${last.netPnL}đ</b> [${last.resultLabel}] (${last.reason})\n`;
-    }
-    msg += `\n`;
-  }
-
-  // 3. Cấu trúc thị trường & Đa khung 15p - 5p - 1p
-  msg += `📊 <b>CẤU TRÚC THỊ TRƯỜNG & ĐA KHUNG (15M - 5M - 1M):</b>\n`;
-  const m15Signal = m15?.signal || 'NONE';
-  const m5Signal = m5?.entrySignal || m5?.signal || 'NONE';
-  const m1Signal = m1?.signal || 'NONE';
-  const m15Emoji = m15Signal === 'BULLISH' ? '🟢' : m15Signal === 'BEARISH' ? '🔴' : '🟡';
-  const m5Emoji = m5Signal.includes('LONG') ? '🟢' : m5Signal.includes('SHORT') ? '🔴' : '🟡';
-  const m1Emoji = m1Signal === 'BULLISH' ? '🟢' : m1Signal === 'BEARISH' ? '🔴' : '🟡';
-
-  if (m15?.description) msg += `  ${m15Emoji} 15p: ${m15.description}\n`;
-  if (m5?.description) msg += `  ${m5Emoji} 5p: ${m5.description}\n`;
-  if (m1?.description) msg += `  ${m1Emoji} 1p: ${m1.description}\n`;
-  if (structure?.structureTag) {
-    msg += `  📈 <b>Cấu trúc:</b> ${structure.structureTag}\n`;
-    if (structure.swingHighDesc) msg += `     • ${structure.swingHighDesc}\n`;
-    if (structure.swingLowDesc) msg += `     • ${structure.swingLowDesc}\n`;
+  if (sdTargets.huntDemandTarget && sdTargets.huntDemandTarget.price !== sdTargets.nextDemandTarget?.price) {
+    const hd = sdTargets.huntDemandTarget;
+    msg += `  💀 <b>VÙNG QUÉT LONG LIQUIDATION:</b> <b>${hd.price}</b> (${hd.levelName}) — <i>cách ${hd.dist}đ (Nhúng quét SL Long)</i>\n`;
   }
   msg += `\n`;
 
-  // 4. Thanh khoản thị trường & Tốc độ
-  if (liquidity?.totalVal !== undefined) {
-    msg += `💧 <b>THANH KHOẢN THỊ TRƯỜNG:</b>\n`;
-    msg += `  • Khớp hiện tại: <b>${liquidity.totalVal.toLocaleString('vi-VN')} tỷ</b> (Tốc độ: <b>${liquidity.speed || 0} tỷ/phút</b>)\n`;
-    msg += `  • Dự phóng cả ngày: <b>~${(liquidity.projectedTotal || 0).toLocaleString('vi-VN')} tỷ</b>\n`;
-    msg += `  • Chiến lược: <i>${liquidity.modeLabel || 'THEO DÕI'}</i>\n\n`;
+  // 3. CẢNH BÁO BẪY LÁI & HÀNH ĐỘNG KHUYẾN NGHỊ
+  msg += `💡 <b>ĐÁNH GIÁ VSA VOL & BẪY LÁI:</b>\n`;
+  if (sidewayInfo.isSidewayChop) {
+    msg += `${sidewayInfo.warning}\n\n`;
   }
 
-  // 5. Smart Money (NN & Tự Doanh)
-  if (smartMoney && smartMoney.smartMoneyNet !== undefined) {
-    const smSign = smartMoney.smartMoneyNet >= 0 ? `+${smartMoney.smartMoneyNet.toLocaleString('vi-VN')}` : smartMoney.smartMoneyNet.toLocaleString('vi-VN');
-    const nnSign = (smartMoney.foreignNet || 0) >= 0 ? `+${(smartMoney.foreignNet || 0).toLocaleString('vi-VN')}` : (smartMoney.foreignNet || 0).toLocaleString('vi-VN');
-    const tdSign = (smartMoney.effectiveTD || 0) >= 0 ? `+${(smartMoney.effectiveTD || 0).toLocaleString('vi-VN')}` : (smartMoney.effectiveTD || 0).toLocaleString('vi-VN');
-    const crowdSign = (smartMoney.crowdNet || 0) >= 0 ? `+${(smartMoney.crowdNet || 0).toLocaleString('vi-VN')}` : (smartMoney.crowdNet || 0).toLocaleString('vi-VN');
-
-    msg += `🐋 <b>SMART MONEY (KHỐI NGOẠI & TỰ DOANH):</b>\n`;
-    msg += `  • 🌐 NN: <b>${(smartMoney.foreignNet || 0) >= 0 ? '🟢 Mua' : '🔴 Bán'} ${nnSign} HĐ</b> (Tỷ trọng: <b>${smartMoney.foreignPct || 0}%</b>)\n`;
-    msg += `  • 🏛️ TD: <b>${(smartMoney.effectiveTD || 0) >= 0 ? '🟢 Long' : '🔴 Short'} ${tdSign} HĐ</b>${smartMoney.tdIsEstimated ? ' <i>(ước)</i>' : ''} (Tỷ trọng: <b>${smartMoney.tdPct || 0}%</b>)\n`;
-    msg += `  • 🔥 <b>Hợp lực Smart Money:</b> <b>${smSign} HĐ</b> (Tỷ trọng: <b>${smartMoney.smartMoneyPct || 0}%</b>)\n`;
-    msg += `  • 👥 Đám đông đối ứng: <b>${crowdSign} HĐ</b>\n\n`;
-  }
-
-  // 6. Kế hoạch lệnh (Trade Plan)
-  if (tradePlan) {
-    msg += `🎯 <b>KẾ HOẠCH LỆNH (TRADE PLAN):</b>\n`;
-    msg += `  📍 Entry: <b>${tradePlan.entry}</b> ${state.entryTime ? `(Khớp lúc ${state.entryTime})` : ''}\n`;
-    if (tradePlan.grossPnL !== undefined) {
-      const pnlEmoji = tradePlan.grossPnL >= 0 ? '🟢' : '🔴';
-      msg += `  💰 Điểm thô: <b>${pnlEmoji} ${tradePlan.grossPnL >= 0 ? '+' : ''}${tradePlan.grossPnL}đ</b> | Thực nhận sau phí: <b>${tradePlan.netPnL >= 0 ? '+' : ''}${tradePlan.netPnL}đ</b>\n`;
-    }
-    msg += `  🛑 Cắt lỗ (SL): <b>${tradePlan.sl}</b> (MTL)\n`;
-    if (tradePlan.trailing) {
-      msg += `  🛡️ Chặn lãi (Trailing): <b>${tradePlan.trailing}</b>\n`;
-    }
-    msg += `  🎯 TP1: <b>${tradePlan.tp1}</b> | TP2: <b>${tradePlan.tp2}</b>\n\n`;
-  }
-
-  // 7. Lý do & Khuyến nghị hành động
-  msg += `📋 <b>HÀNH ĐỘNG CỦA SENIOR TRADER:</b>\n`;
-  msg += `  👉 <b>${advice}</b>\n`;
-  if (reasons.length > 0) {
-    reasons.forEach(r => { msg += `  • ${r}\n`; });
+  // VSA Action headline & detail
+  msg += `  ${vsaAction.headline}\n`;
+  if (vsaAction.detail) {
+    msg += `  ${vsaAction.detail}\n`;
   }
   msg += `\n`;
 
-  if (warnings.length > 0) {
-    msg += `⚠️ <b>LƯU Ý RỦI RO & KỶ LUẬT:</b>\n`;
-    warnings.forEach(w => { msg += `  • ${w}\n`; });
-    msg += `\n`;
+  // 4. CẤU TRÚC THỊ TRƯỜNG & ĐA KHUNG (15M - 5M - 1M)
+  msg += `📊 <b>CẤU TRÚC THỊ TRƯỜNG & ĐA KHUNG:</b>\n`;
+  const m15Emoji = m15Analysis.signal === 'BULLISH' ? '🟢' : m15Analysis.signal === 'BEARISH' ? '🔴' : '🟡';
+  const m5Emoji = m5Analysis.signal === 'BULLISH' ? '🟢' : m5Analysis.signal === 'BEARISH' ? '🔴' : '🟡';
+  const m1Emoji = m1Analysis.signal === 'BULLISH' ? '🟢' : m1Analysis.signal === 'BEARISH' ? '🔴' : '🟡';
+
+  msg += `  ${m15Emoji} 15p: ${m15Analysis.description}\n`;
+  msg += `  ${m5Emoji} 5p: ${m5Analysis.description}\n`;
+  msg += `  ${m1Emoji} 1p: ${m1Analysis.description}\n`;
+  if (structureInfo.structureTag) {
+    msg += `  📈 <b>Cấu trúc Swing:</b> ${structureInfo.structureTag}\n`;
+  }
+  msg += `\n`;
+
+  // 5. SMART MONEY & THANH KHOẢN
+  if (smartMoneyInfo) {
+    const smSign = smartMoneyInfo.smartMoneyNet >= 0 ? `+${smartMoneyInfo.smartMoneyNet.toLocaleString('vi-VN')}` : smartMoneyInfo.smartMoneyNet.toLocaleString('vi-VN');
+    const nnSign = smartMoneyInfo.foreignNet >= 0 ? `+${smartMoneyInfo.foreignNet.toLocaleString('vi-VN')}` : smartMoneyInfo.foreignNet.toLocaleString('vi-VN');
+    const tdSign = smartMoneyInfo.effectiveTD >= 0 ? `+${smartMoneyInfo.effectiveTD.toLocaleString('vi-VN')}` : smartMoneyInfo.effectiveTD.toLocaleString('vi-VN');
+
+    msg += `🐋 <b>SMART MONEY & DÒNG TIỀN:</b>\n`;
+    msg += `  • 🌐 Khối Ngoại: <b>${smartMoneyInfo.foreignNet >= 0 ? '🟢 Mua' : '🔴 Bán'} ${nnSign} HĐ</b> (${smartMoneyInfo.foreignPct}%)\n`;
+    msg += `  • 🏛️ Tự Doanh: <b>${smartMoneyInfo.effectiveTD >= 0 ? '🟢 Long' : '🔴 Short'} ${tdSign} HĐ</b>${smartMoneyInfo.tdIsEstimated ? ' <i>(ước)</i>' : ''} (${smartMoneyInfo.tdPct}%)\n`;
+    msg += `  • 🔥 Hợp lực: <b>${smSign} HĐ</b> (${smartMoneyInfo.smartMoneyPct}%) | Đám đông: <b>${smartMoneyInfo.crowdNet >= 0 ? '+' : ''}${smartMoneyInfo.crowdNet.toLocaleString('vi-VN')} HĐ</b>\n`;
   }
 
-  // Hiệu suất hôm nay
-  const dayNetPnl = state.totalNetPnLToday !== undefined ? state.totalNetPnLToday : (state.totalPnLToday || 0);
-  msg += `━━━━━━━━━━━━━━━━━━━━\n`;
-  msg += `📊 <i>Hiệu suất hôm nay: <b>${tradeCount}/4 lệnh</b> | <b>Net PnL: ${dayNetPnl >= 0 ? '🟢 +' : '🔴 '}${dayNetPnl.toFixed(1)}đ</b> (${state.winTrades || 0}W - ${state.lossTrades || 0}L)</i>\n`;
-  msg += `💡 <i>Phí 0.6đ/lệnh | Dữ liệu tự động đồng bộ Google Sheets Nhật ký</i>\n`;
-  msg += `<i>⚡ Senior Trader AI Trading Engine v8.2 | VN Stock Bot</i>`;
+  if (liquidityInfo && liquidityInfo.totalVal !== undefined) {
+    msg += `  • 💧 Khớp: <b>${liquidityInfo.totalVal.toLocaleString('vi-VN')} tỷ</b> (Tốc độ: <b>${liquidityInfo.speed} tỷ/phút</b>) ➔ <i>${liquidityInfo.modeLabel}</i>\n`;
+  }
 
   return msg;
 }
 
-// ─── RUN INTRADAY SIGNAL JOB ─────────────────────────────────
+// ─── MASTER INTRADAY CYCLE ────────────────────────────────────
 async function runIntradaySignal() {
-  if (!isCurrentInstanceActive()) return;
-
   const startTime = Date.now();
+  console.log('\n' + '═'.repeat(55));
+  console.log('⚡ RADAR CUNG CẦU & BẢN ĐỒ FIBONACCI — 5p Intraday');
+  console.log('═'.repeat(55));
 
   try {
-    // Fetch dữ liệu song song 15m, 5m, 1m (bỏ khung 1H vì phiên VN30F chỉ 3-4 tiếng)
-    const [m15Data, m5Data, m1Data, oiData, futuresPrice, vn30Price, liquidityInfo] = await Promise.all([
-      dataFetcher.fetchOHLCV('VN30F1M', '15', 3),
-      dataFetcher.fetchOHLCV('VN30F1M', '5', 2),
-      dataFetcher.fetchOHLCV('VN30F1M', '1', 1),
-      dataFetcher.fetchDerivativesOIData(),
-      dataFetcher.fetchRealtimeFuturesPrice(),
-      dataFetcher.fetchRealtimeVN30Price(),
-      calculateMarketLiquiditySpeed(),
+    _signalCount++;
+
+    // 1. Lấy toàn bộ dữ liệu song song
+    const [
+      m15Data,
+      m5Data,
+      m1Data,
+      futuresPrice,
+      vn30Price,
+      vnindexPrice,
+      oiData,
+      liquidityInfo,
+    ] = await Promise.all([
+      dataFetcher.fetchOHLCV('VN30F1M', '15', 3).catch(e => null),
+      dataFetcher.fetchIntraday5m('VN30F1M').catch(e => null),
+      dataFetcher.fetchIntraday1m('VN30F1M').catch(e => null),
+      dataFetcher.fetchRealtimeFuturesPrice().catch(e => null),
+      dataFetcher.fetchRealtimeVN30Price().catch(e => null),
+      dataFetcher.fetchRealtimeVNINDEXPrice().catch(e => null),
+      dataFetcher.fetchDerivativesOIData().catch(e => null),
+      calculateMarketLiquiditySpeed().catch(e => null),
     ]);
 
-    // Phân tích kỹ thuật đa khung: 15p (xu hướng lớn) - 5p (setup) - 1p (micro-timing)
+    const lastKnown = dataFetcher.getLastKnownPrices ? dataFetcher.getLastKnownPrices() : {};
+    const f1mPrice = (futuresPrice && futuresPrice.price) || (m5Data?.c ? m5Data.c[m5Data.c.length - 1] : lastKnown.f1m);
+    const vn30PriceVal = (vn30Price && vn30Price.price) || lastKnown.vn30;
+
+    // 2. Phân tích Fibonacci & Cung cầu
+    const fibo = fibonacciLiquidityEngine.calculateDynamicFibonacci(m5Data, m1Data, f1mPrice);
+    const sdTargets = fibonacciLiquidityEngine.mapSupplyDemandTargets(fibo, f1mPrice, m5Data, m1Data, oiData);
+    const sidewayInfo = fibonacciLiquidityEngine.detectSidewayCrowdZone(fibo, f1mPrice, m5Data, m1Data);
+    const vsaAction = fibonacciLiquidityEngine.analyzeVSAIntradayAction(m5Data, m1Data, f1mPrice, oiData);
+
+    // 3. Phân tích đa khung
     const m15Analysis = analyze15mTimeframe(m15Data);
     const m5Analysis = analyze5mTimeframe(m5Data, m15Analysis.signal);
     const m1Analysis = analyze1mTimeframe(m1Data, m5Analysis.entrySignal);
-
-    // Cấu trúc thị trường Swing High/Low
     const structureInfo = analyzeMarketStructureFromCandles(m5Data, m15Data);
 
-    // Smart Money
+    // 4. Smart Money
     const foreignBuy = oiData ? (oiData.foreignBuy || 0) : 0;
     const foreignSell = oiData ? (oiData.foreignSell || 0) : 0;
     const foreignNet = oiData ? (oiData.foreignNet !== undefined ? oiData.foreignNet : (foreignBuy - foreignSell)) : 0;
@@ -1657,122 +494,61 @@ async function runIntradaySignal() {
       smartMoneyPct: ((Math.abs(smartMoneyNet) / totalVolSafe) * 100).toFixed(1),
     };
 
-    // Market context
-    const lastKnown = dataFetcher.getLastKnownPrices ? dataFetcher.getLastKnownPrices() : {};
-    const f1mPrice = (futuresPrice && futuresPrice.price) || m5Analysis.currentPrice || lastKnown.f1m;
-    const vn30PriceVal = (vn30Price && vn30Price.price) || lastKnown.vn30;
     const contextInfo = marketContext.buildMarketContext(f1mPrice, vn30PriceVal, oiData);
 
-    // AI Trader ra quyết định theo Đa khung 15p - 5p - 1p (Async)
-    const traderResult = await makeAITraderDecision(
+    // 5. Format & Gửi Telegram
+    const msg = formatRadarNotification({
+      f1mPrice,
+      vn30Price: vn30PriceVal,
+      basis: contextInfo?.basis,
+      fibo,
+      sdTargets,
+      sidewayInfo,
+      vsaAction,
       m15Analysis,
       m5Analysis,
       m1Analysis,
       structureInfo,
       liquidityInfo,
       smartMoneyInfo,
-      contextInfo
-    );
-
-    // Format & send tin nhắn Telegram
-    const msg = formatIntradaySignal(
-      traderResult,
-      m15Analysis,
-      m5Analysis,
-      m1Analysis,
-      structureInfo,
-      liquidityInfo,
-      smartMoneyInfo,
-      contextInfo
-    );
+      contextInfo,
+      signalCount: _signalCount,
+    });
 
     await sendDerivativesMessage(msg);
 
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-    console.log(`   ✅ AI Trader Signal #${traderResult.state.signalCount}: ${traderResult.title} [${elapsed}s]`);
+    console.log(`   ✅ Radar Cung Cầu & Fibo #${_signalCount} hoàn thành [${elapsed}s]`);
 
-    return traderResult;
+    return {
+      fibo,
+      sdTargets,
+      sidewayInfo,
+      vsaAction,
+      signalCount: _signalCount,
+    };
   } catch (err) {
-    console.error(`   ❌ Intraday Signal lỗi:`, err.message);
+    console.error(`   ❌ Radar Cung Cầu & Fibo lỗi:`, err.message);
     return null;
   }
 }
 
-// ─── TỔNG KẾT NHẬT KÝ GIAO DỊCH CUỐI NGÀY ────────────────────
-/**
- * Chạy cuối ngày (sau phiên ATC, 14h44):
- * 1. Đóng vị thế còn mở (nếu có) theo giá ATC
- * 2. Lưu tổng kết ngày vào Google Sheets & trades_history.json
- * 3. Gửi tin nhắn Telegram Báo Cáo Nhật Ký Giao Dịch
- */
+// Giữ hàm tương thích nếu có module gọi
 async function generateAndSendDailyReport() {
-  const vnTime = dataFetcher.getVnTime();
-  const todayStr = `${vnTime.getDate()}/${vnTime.getMonth() + 1}/${vnTime.getFullYear()}`;
-  _state = loadAIPositionState();
-
-  // 1. Nếu còn vị thế mở, đóng tại giá hiện tại / ATC
-  if (_state.position && _state.position !== 'NONE') {
-    let lastPrice = _state.entryPrice;
-    try {
-      const fut = await dataFetcher.fetchRealtimeFuturesPrice();
-      if (fut && fut.price) lastPrice = fut.price;
-    } catch (e) { /* ignore */ }
-    const timeStr = `${String(vnTime.getHours()).padStart(2, '0')}:${String(vnTime.getMinutes()).padStart(2, '0')}:${String(vnTime.getSeconds()).padStart(2, '0')}`;
-    await closeCurrentPosition(lastPrice, 'Tất toán cuối ngày (ATC)', timeStr);
-  }
-
-  const trades = _state.todayTrades || [];
-  const totalTrades = trades.length;
-  const winTrades = _state.winTrades || 0;
-  const lossTrades = _state.lossTrades || 0;
-  const totalGrossPnL = _state.totalGrossPnLToday || 0;
-  const totalFees = +(totalTrades * googleSheetService.FEE_PER_TRADE).toFixed(1);
-  const totalNetPnL = _state.totalNetPnLToday || 0;
-
-  const summary = {
-    date: todayStr,
-    totalTrades,
-    winTrades,
-    lossTrades,
-    totalGrossPnL,
-    totalFees,
-    totalNetPnL,
-  };
-
-  // 2. Ghi nhận Daily Summary vào Google Sheets & local JSON
-  const dailyRecord = await googleSheetService.logDailySummary(summary);
-
-  // 3. Format tin nhắn Telegram
-  const reportMsg = googleSheetService.formatDailyTradingReport(dailyRecord, trades);
-
-  // 4. Gửi Telegram
-  await sendDerivativesMessage(reportMsg);
-  console.log(`   📊 [Daily Report] Đã gửi báo cáo tổng kết ngày ${todayStr} lên Telegram & Google Sheets`);
-
-  return { summary: dailyRecord, trades };
-}
-
-// ─── AI-ENHANCED SIGNAL ──────────────────────────────────────
-async function runAIEnhancedSignal() {
-  return runIntradaySignal();
+  return {};
 }
 
 module.exports = {
   runIntradaySignal,
-  runAIEnhancedSignal,
+  runAIEnhancedSignal: runIntradaySignal,
   generateAndSendDailyReport,
-  closeCurrentPosition,
   resetIntradayState,
-  loadAIPositionState,
-  saveAIPositionState,
   calculateMarketLiquiditySpeed,
   analyzeMarketStructureFromCandles,
   analyze15mTimeframe,
   analyze5mTimeframe,
   analyze1mTimeframe,
-  makeAITraderDecision,
-  calculateAdaptiveStopLoss,
-  evaluateProfitProtectionLadder,
-  formatIntradaySignal,
-  getState: () => ({ ..._state }),
+  formatIntradaySignal: formatRadarNotification,
+  formatRadarNotification,
+  getState: () => ({ signalCount: _signalCount }),
 };
