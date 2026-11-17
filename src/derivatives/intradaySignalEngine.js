@@ -346,7 +346,56 @@ function formatRadarNotification(params) {
   // 2. GIÁ HIỆN TẠI & BASIS
   msg += `📍 <b>F1M: ${f1mPrice?.toFixed(1) || 'N/A'}</b> | VN30: <b>${vn30Price?.toFixed(1) || 'N/A'}</b> | Basis: <b>${basisStr}</b>\n\n`;
 
-  // 3. BẢN ĐỒ CUNG CẦU & CÁC MỐC FIBO SẮP QUÉT TỚI
+  // 3. CẢNH BÁO BIẾN ĐỘNG THEO VOL & BẪY LÁI (Bỏ dòng tiêu đề theo yêu cầu user)
+  if (triggerContext && triggerContext.label) {
+    msg += `  ⚡ <b>CẢNH BÁO BIẾN ĐỘNG:</b> ${triggerContext.label}\n`;
+  }
+  if (vsaAction && vsaAction.headline) {
+    msg += `  ${vsaAction.headline}\n`;
+  }
+  if (vsaAction && vsaAction.detail) {
+    msg += `  ${vsaAction.detail}\n`;
+  }
+  if (practicalAdvice) {
+    msg += `  ${practicalAdvice}\n`;
+  }
+  if (sidewayInfo && sidewayInfo.isSidewayChop && sidewayInfo.warning) {
+    msg += `\n${sidewayInfo.warning}\n`;
+  }
+  msg += `\n`;
+
+  // 4. CẤU TRÚC THỊ TRƯỜNG & ĐA KHUNG (15M - 5M - 1M)
+  msg += `📊 <b>CẤU TRÚC THỊ TRƯỜNG & ĐA KHUNG:</b>\n`;
+  const m15Emoji = m15Analysis.signal === 'BULLISH' ? '🟢' : m15Analysis.signal === 'BEARISH' ? '🔴' : '🟡';
+  const m5Emoji = m5Analysis.signal === 'BULLISH' ? '🟢' : m5Analysis.signal === 'BEARISH' ? '🔴' : '🟡';
+  const m1Emoji = m1Analysis.signal === 'BULLISH' ? '🟢' : m1Analysis.signal === 'BEARISH' ? '🔴' : '🟡';
+
+  msg += `  ${m15Emoji} 15p: ${m15Analysis.description}\n`;
+  msg += `  ${m5Emoji} 5p: ${m5Analysis.description}\n`;
+  msg += `  ${m1Emoji} 1p: ${m1Analysis.description}\n`;
+  if (structureInfo.structureTag) {
+    msg += `  📈 <b>Cấu trúc Swing:</b> ${structureInfo.structureTag}\n`;
+  }
+  msg += `\n`;
+
+  // 5. SMART MONEY & DÒNG TIỀN
+  if (smartMoneyInfo) {
+    const smSign = smartMoneyInfo.smartMoneyNet >= 0 ? `+${smartMoneyInfo.smartMoneyNet.toLocaleString('vi-VN')}` : smartMoneyInfo.smartMoneyNet.toLocaleString('vi-VN');
+    const nnSign = smartMoneyInfo.foreignNet >= 0 ? `+${smartMoneyInfo.foreignNet.toLocaleString('vi-VN')}` : smartMoneyInfo.foreignNet.toLocaleString('vi-VN');
+    const tdSign = smartMoneyInfo.effectiveTD >= 0 ? `+${smartMoneyInfo.effectiveTD.toLocaleString('vi-VN')}` : smartMoneyInfo.effectiveTD.toLocaleString('vi-VN');
+
+    msg += `🐋 <b>SMART MONEY & DÒNG TIỀN:</b>\n`;
+    msg += `  • 🌐 Khối Ngoại: <b>${smartMoneyInfo.foreignNet >= 0 ? '🟢 Mua' : '🔴 Bán'} ${nnSign} HĐ</b> (${smartMoneyInfo.foreignPct}%)\n`;
+    msg += `  • 🏛️ Tự Doanh: <b>${smartMoneyInfo.effectiveTD >= 0 ? '🟢 Long' : '🔴 Short'} ${tdSign} HĐ</b>${smartMoneyInfo.tdIsEstimated ? ' <i>(ước)</i>' : ''} (${smartMoneyInfo.tdPct}%)\n`;
+    msg += `  • 🔥 Hợp lực: <b>${smSign} HĐ</b> (${smartMoneyInfo.smartMoneyPct}%) | Đám đông: <b>${smartMoneyInfo.crowdNet >= 0 ? '+' : ''}${smartMoneyInfo.crowdNet.toLocaleString('vi-VN')} HĐ</b>\n`;
+  }
+
+  if (liquidityInfo && liquidityInfo.totalVal !== undefined) {
+    msg += `  • 💧 Khớp: <b>${liquidityInfo.totalVal.toLocaleString('vi-VN')} tỷ</b> (Tốc độ: <b>${liquidityInfo.speed} tỷ/phút</b>) ➔ <i>${liquidityInfo.modeLabel}</i>\n`;
+  }
+  msg += `\n`;
+
+  // 6. BẢN ĐỒ CUNG CẦU & CÁC MỐC FIBO SẮP QUÉT TỚI
   msg += `🎯 <b>BẢN ĐỒ FIBONACCI & MỤC TIÊU SẮP QUÉT TỚI:</b>\n`;
   msg += `  • <i>Biên sóng phiên: <b>${fibo.swingLow} ➔ ${fibo.swingHigh}</b> (Biên ${fibo.range}đ)</i>\n`;
 
@@ -373,52 +422,6 @@ function formatRadarNotification(params) {
   if (sdTargets.huntDemandTarget && sdTargets.huntDemandTarget.price !== sdTargets.nextDemandTarget?.price) {
     const hd = sdTargets.huntDemandTarget;
     msg += `  💀 <b>VÙNG QUÉT LONG LIQUIDATION:</b> <b>${hd.price}</b> (${hd.levelName}) — <i>cách ${hd.dist}đ (Nhúng xuyên quét SL Long)</i>\n`;
-  }
-  msg += `\n`;
-
-  // 4. CẢNH BÁO BIẾN ĐỘNG THEO VOL & BẪY LÁI THỰC CHIẾN
-  msg += `💡 <b>ĐÁNH GIÁ BIẾN ĐỘNG THEO VOL & BẪY LÁI:</b>\n`;
-  if (triggerContext && triggerContext.label) {
-    msg += `  ⚡ <b>CẢNH BÁO BIẾN ĐỘNG:</b> ${triggerContext.label}\n`;
-  }
-  msg += `  ${vsaAction.headline}\n`;
-  if (vsaAction.detail) {
-    msg += `  ${vsaAction.detail}\n`;
-  }
-  msg += `  ${practicalAdvice}\n`;
-  if (sidewayInfo.isSidewayChop && sidewayInfo.warning) {
-    msg += `\n${sidewayInfo.warning}\n`;
-  }
-  msg += `\n`;
-
-  // 5. CẤU TRÚC THỊ TRƯỜNG & ĐA KHUNG (15M - 5M - 1M)
-  msg += `📊 <b>CẤU TRÚC THỊ TRƯỜNG & ĐA KHUNG:</b>\n`;
-  const m15Emoji = m15Analysis.signal === 'BULLISH' ? '🟢' : m15Analysis.signal === 'BEARISH' ? '🔴' : '🟡';
-  const m5Emoji = m5Analysis.signal === 'BULLISH' ? '🟢' : m5Analysis.signal === 'BEARISH' ? '🔴' : '🟡';
-  const m1Emoji = m1Analysis.signal === 'BULLISH' ? '🟢' : m1Analysis.signal === 'BEARISH' ? '🔴' : '🟡';
-
-  msg += `  ${m15Emoji} 15p: ${m15Analysis.description}\n`;
-  msg += `  ${m5Emoji} 5p: ${m5Analysis.description}\n`;
-  msg += `  ${m1Emoji} 1p: ${m1Analysis.description}\n`;
-  if (structureInfo.structureTag) {
-    msg += `  📈 <b>Cấu trúc Swing:</b> ${structureInfo.structureTag}\n`;
-  }
-  msg += `\n`;
-
-  // 6. SMART MONEY & THANH KHOẢN SÀN
-  if (smartMoneyInfo) {
-    const smSign = smartMoneyInfo.smartMoneyNet >= 0 ? `+${smartMoneyInfo.smartMoneyNet.toLocaleString('vi-VN')}` : smartMoneyInfo.smartMoneyNet.toLocaleString('vi-VN');
-    const nnSign = smartMoneyInfo.foreignNet >= 0 ? `+${smartMoneyInfo.foreignNet.toLocaleString('vi-VN')}` : smartMoneyInfo.foreignNet.toLocaleString('vi-VN');
-    const tdSign = smartMoneyInfo.effectiveTD >= 0 ? `+${smartMoneyInfo.effectiveTD.toLocaleString('vi-VN')}` : smartMoneyInfo.effectiveTD.toLocaleString('vi-VN');
-
-    msg += `🐋 <b>SMART MONEY & DÒNG TIỀN:</b>\n`;
-    msg += `  • 🌐 Khối Ngoại: <b>${smartMoneyInfo.foreignNet >= 0 ? '🟢 Mua' : '🔴 Bán'} ${nnSign} HĐ</b> (${smartMoneyInfo.foreignPct}%)\n`;
-    msg += `  • 🏛️ Tự Doanh: <b>${smartMoneyInfo.effectiveTD >= 0 ? '🟢 Long' : '🔴 Short'} ${tdSign} HĐ</b>${smartMoneyInfo.tdIsEstimated ? ' <i>(ước)</i>' : ''} (${smartMoneyInfo.tdPct}%)\n`;
-    msg += `  • 🔥 Hợp lực: <b>${smSign} HĐ</b> (${smartMoneyInfo.smartMoneyPct}%) | Đám đông: <b>${smartMoneyInfo.crowdNet >= 0 ? '+' : ''}${smartMoneyInfo.crowdNet.toLocaleString('vi-VN')} HĐ</b>\n`;
-  }
-
-  if (liquidityInfo && liquidityInfo.totalVal !== undefined) {
-    msg += `  • 💧 Khớp: <b>${liquidityInfo.totalVal.toLocaleString('vi-VN')} tỷ</b> (Tốc độ: <b>${liquidityInfo.speed} tỷ/phút</b>) ➔ <i>${liquidityInfo.modeLabel}</i>\n`;
   }
 
   return msg;
