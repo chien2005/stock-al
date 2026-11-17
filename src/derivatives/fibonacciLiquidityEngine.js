@@ -405,9 +405,105 @@ function analyzeVSAIntradayAction(m5Data, m1Data, currentPrice, oiData, contextI
   };
 }
 
+/**
+ * 5. TẠO BANNER THẾ VÀ CẤU TRÚC THỊ TRƯỜNG CHO ĐẦU DÒNG NOTI
+ * Giúp Trader quan sát trong 0.5s nhận diện ngay:
+ * - Thế Short / Downtrend / Swing Down
+ * - Thế Long / Uptrend / Swing Up
+ * - Thế Sideway / Tụ tập đám đông (Tránh 50/50 tài xỉu)
+ */
+function generateMarketBiasBanner(structureInfo, m15Analysis, sidewayInfo, vsaAction) {
+  const structure = structureInfo?.highLowStructure || 'SIDEWAY';
+  const m15Signal = m15Analysis?.signal || 'NEUTRAL';
+
+  // 1. Nếu đang kẹt nền sideway hoặc tụ tập đám đông
+  if (sidewayInfo && sidewayInfo.isSidewayChop) {
+    return `⚪ <b>THẾ SIDEWAY: TỤ TẬP ĐÁM ĐÔNG — CẤM VÀO LỆNH (TRÁNH 50/50 TÀI XỈU)</b>`;
+  }
+
+  // 2. Thế Short rõ rệt (Swing Down hoặc Hạ Đỉnh + Hạ Đáy)
+  if (structure === 'DOWNTREND' || (m15Signal === 'BEARISH' && structure !== 'UPTREND')) {
+    const detail = structureInfo?.swingHighDesc && structureInfo?.swingLowDesc
+      ? `(HẠ ĐỈNH + HẠ ĐÁY)`
+      : `(SWING DOWN)`;
+    return `🔴 <b>THẾ SHORT — DOWNTREND ${detail} ➔ ƯU TIÊN CANH SHORT</b>`;
+  }
+
+  // 3. Thế Long rõ rệt (Swing Up hoặc Nâng Đỉnh + Nâng Đáy)
+  if (structure === 'UPTREND' || (m15Signal === 'BULLISH' && structure !== 'DOWNTREND')) {
+    const detail = structureInfo?.swingHighDesc && structureInfo?.swingLowDesc
+      ? `(NÂNG ĐỈNH + NÂNG ĐÁY)`
+      : `(SWING UP)`;
+    return `🟢 <b>THẾ LONG — UPTREND ${detail} ➔ ƯU TIÊN CANH LONG</b>`;
+  }
+
+  // 4. Thế tam giác co hẹp
+  if (structure === 'TRIANGLE') {
+    return `🟡 <b>THẾ TAM GIÁC CO HẸP (HẠ ĐỈNH + NÂNG ĐÁY) ➔ CHỜ BỨT PHÁ</b>`;
+  }
+
+  // 5. Thế giằng co sideway biên rộng
+  return `⚪ <b>THẾ GIẰNG CO PHÂN HÓA — CHƯA RÕ LONG/SHORT ➔ ĐỨNG NGOÀI QUAN SÁT</b>`;
+}
+
+/**
+ * 6. TẠO LỜI KHUYÊN HÀNH ĐỘNG THỰC CHIẾN (PRACTICAL ADVICE)
+ * Giải đáp chính xác:
+ * - Lúc nào Short tiếp được? Lúc nào Quá bán kiệt sức rồi không Short được nữa?
+ * - Kéo cố, Long giả hay chỉ là Long hồi kỹ thuật chưa phải trend?
+ * - Tránh đi lệnh vùng sideway 50/50 tài xỉu.
+ */
+function generatePracticalTradingAdvice(structureInfo, fibo, sdTargets, sidewayInfo, vsaAction, currentPrice) {
+  // Ưu tiên 1: Cảnh báo vùng Sideway đám đông
+  if (sidewayInfo && sidewayInfo.isSidewayChop) {
+    return `⚠️ <b>KHUYẾN NGHỊ:</b> Giá đang tụ tập nén biên hẹp (${sidewayInfo.chopLow} - ${sidewayInfo.chopHigh}đ). Phe Long/Short đang 50/50 tài xỉu. <b>TUYỆT ĐỐI KHÔNG ĐI LỆNH VÙNG KẸT NỀN</b>, kiên nhẫn chờ nổ Vol bứt phá!`;
+  }
+
+  // Ưu tiên 2: Cảnh báo Đạp ép thiếu Vol / Kiệt Bán (Không được Short đuổi đáy)
+  if (vsaAction && vsaAction.isNoSupply) {
+    return `⚠️ <b>KHUYẾN NGHỊ:</b> Giá giật giảm nhưng kiệt Vol. Đây là bẫy đè rũ quét Stop Loss, <b>CẤM SHORT ĐUỔI VÙNG ĐÁY</b> (rủi ro dính đáy cực cao). Nếu muốn Short, phải kiên nhẫn chờ nhịp hồi phục kiểm tra lại vùng Cung Fibo <b>${sdTargets.nextSupplyTarget?.price || fibo.f618}đ</b>!`;
+  }
+
+  // Ưu tiên 3: Cảnh báo Kéo cố / Long giả / Bull Trap (Không được đua Long)
+  if (vsaAction && vsaAction.isNoDemand) {
+    return `⚠️ <b>KHUYẾN NGHỊ:</b> Giá rướn thốc nhưng thiếu cầu hoặc bị đè râu trên. <b>CẤM ĐUA LONG GIÁ CAO</b> (chỉ là nhịp hồi kỹ thuật, chưa hình thành trend). Canh chốt bớt Long hoặc chờ chỉnh về vùng Cầu Fibo <b>${sdTargets.nextDemandTarget?.price || fibo.f618}đ</b> để đỡ!`;
+  }
+
+  // Ưu tiên 4: Quá bán / Bắt đáy rút chân
+  if (vsaAction && vsaAction.alertType === 'SELLING_EXHAUSTION') {
+    return `💡 <b>KHUYẾN NGHỊ:</b> Vùng Quá Bán xuất hiện nến rút chân mạnh tại hỗ trợ Fibo. Lực bán đã cạn kiệt, <b>KHÔNG THỂ SHORT TIẾP</b>, sẵn sàng cho nhịp hồi phục chữ V!`;
+  }
+
+  // Ưu tiên 5: Quá mua / Đè râu đỉnh
+  if (vsaAction && vsaAction.alertType === 'BUYING_EXHAUSTION') {
+    return `💡 <b>KHUYẾN NGHỊ:</b> Vùng Quá Mua gặp áp lực xả đỉnh tại cản Fibo. Lực Mua suy yếu, <b>CẤM MỞ LONG MỚI</b>, ưu tiên chốt lời chặn lãi!`;
+  }
+
+  // Ưu tiên 6: Sóng thật xác nhận
+  if (vsaAction && vsaAction.isTrueBreakout) {
+    if (vsaAction.alertType === 'TRUE_LONG_BREAKOUT') {
+      return `🔥 <b>KHUYẾN NGHỊ:</b> Nổ Vol lớn phá cản xác nhận sóng Long thật! Thuận thế Long mở rộng, mục tiêu hướng lên Fibo Extension <b>${sdTargets.huntSupplyTarget?.price || fibo.fExtHigh1272}đ</b>.`;
+    } else {
+      return `⚡ <b>KHUYẾN NGHỊ:</b> Áp lực xả Vol lớn thủng hỗ trợ xác nhận sóng Short thật! Thuận thế Short tiếp diễn, mục tiêu mở rộng xuống Fibo Extension <b>${sdTargets.huntDemandTarget?.price || fibo.fExtLow1272}đ</b>.`;
+    }
+  }
+
+  // Ưu tiên 7: Theo xu hướng Swing High/Low
+  const structure = structureInfo?.highLowStructure;
+  if (structure === 'DOWNTREND') {
+    return `🔴 <b>KHUYẾN NGHỊ:</b> Xu hướng thuận Short (Hạ đỉnh + Hạ đáy). Có thể canh Short ở các nhịp hồi chạm Cung Fibo <b>${sdTargets.nextSupplyTarget?.price || fibo.f618}đ</b>, chốt lời dần khi nhúng sát Cầu Fibo <b>${sdTargets.nextDemandTarget?.price || fibo.f0}đ</b>.`;
+  } else if (structure === 'UPTREND') {
+    return `🟢 <b>KHUYẾN NGHỊ:</b> Xu hướng thuận Long (Nâng đỉnh + Nâng đáy). Canh Long ở các nhịp rung lắc về Cầu Fibo <b>${sdTargets.nextDemandTarget?.price || fibo.f618}đ</b>, chốt lời khi rướn sát Cung Fibo <b>${sdTargets.nextSupplyTarget?.price || fibo.f100}đ</b>.`;
+  }
+
+  return `⚪ <b>KHUYẾN NGHỊ:</b> Biên độ giằng co kỹ thuật giữa Cầu <b>${sdTargets.nextDemandTarget?.price || fibo.f0}đ</b> và Cung <b>${sdTargets.nextSupplyTarget?.price || fibo.f100}đ</b>. Hạn chế đi lệnh lưng chừng.`;
+}
+
 module.exports = {
   calculateDynamicFibonacci,
   mapSupplyDemandTargets,
   detectSidewayCrowdZone,
   analyzeVSAIntradayAction,
+  generateMarketBiasBanner,
+  generatePracticalTradingAdvice,
 };

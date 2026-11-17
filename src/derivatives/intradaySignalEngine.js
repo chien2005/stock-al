@@ -328,20 +328,25 @@ function formatRadarNotification(params) {
     smartMoneyInfo,
     contextInfo,
     signalCount,
+    triggerContext,
   } = params;
 
-  const fmtSign = (n) => (n > 0 ? `+${n}` : `${n}`);
   const basisVal = basis ? basis.basis : (f1mPrice && vn30Price ? +(f1mPrice - vn30Price).toFixed(1) : 0);
   const basisStr = `${basisVal >= 0 ? '+' : ''}${basisVal}đ`;
 
-  let msg = `⚡ <b>RADAR CUNG CẦU & BẢN ĐỒ FIBONACCI — VN30F1M</b>\n`;
+  // 1. BANNER THẾ VÀ CẤU TRÚC THỊ TRƯỜNG ĐẶT NGAY ĐẦU DÒNG ĐỂ QUAN SÁT NHANH (0.5s)
+  const marketBiasBanner = fibonacciLiquidityEngine.generateMarketBiasBanner(structureInfo, m15Analysis, sidewayInfo, vsaAction);
+  const practicalAdvice = fibonacciLiquidityEngine.generatePracticalTradingAdvice(structureInfo, fibo, sdTargets, sidewayInfo, vsaAction, f1mPrice);
+
+  let msg = `${marketBiasBanner}\n`;
+  msg += `⚡ <b>RADAR CUNG CẦU & BẢN ĐỒ FIBONACCI — VN30F1M</b>\n`;
   msg += `🕐 <i>${dataFetcher.vnNow()}</i> | Noti #${signalCount || 1}\n`;
   msg += `━━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
-  // 1. GIÁ & BASIS
+  // 2. GIÁ HIỆN TẠI & BASIS
   msg += `📍 <b>F1M: ${f1mPrice?.toFixed(1) || 'N/A'}</b> | VN30: <b>${vn30Price?.toFixed(1) || 'N/A'}</b> | Basis: <b>${basisStr}</b>\n\n`;
 
-  // 2. BẢN ĐỒ CUNG CẦU & CÁC MỐC FIBO SẮP QUÉT TỚI
+  // 3. BẢN ĐỒ CUNG CẦU & CÁC MỐC FIBO SẮP QUÉT TỚI
   msg += `🎯 <b>BẢN ĐỒ FIBONACCI & MỤC TIÊU SẮP QUÉT TỚI:</b>\n`;
   msg += `  • <i>Biên sóng phiên: <b>${fibo.swingLow} ➔ ${fibo.swingHigh}</b> (Biên ${fibo.range}đ)</i>\n`;
 
@@ -353,7 +358,7 @@ function formatRadarNotification(params) {
   }
   if (sdTargets.huntSupplyTarget && sdTargets.huntSupplyTarget.price !== sdTargets.nextSupplyTarget?.price) {
     const ht = sdTargets.huntSupplyTarget;
-    msg += `  🚀 <b>VÙNG QUÉT SHORT SQUEEZE:</b> <b>${ht.price}</b> (${ht.levelName}) — <i>cách ${ht.dist}đ (Kéo ép quét SL Short)</i>\n`;
+    msg += `  🚀 <b>VÙNG QUÉT SHORT SQUEEZE:</b> <b>${ht.price}</b> (${ht.levelName}) — <i>cách ${ht.dist}đ (Kéo rướn quét SL Short)</i>\n`;
   }
 
   // Điểm cân bằng
@@ -367,24 +372,26 @@ function formatRadarNotification(params) {
   }
   if (sdTargets.huntDemandTarget && sdTargets.huntDemandTarget.price !== sdTargets.nextDemandTarget?.price) {
     const hd = sdTargets.huntDemandTarget;
-    msg += `  💀 <b>VÙNG QUÉT LONG LIQUIDATION:</b> <b>${hd.price}</b> (${hd.levelName}) — <i>cách ${hd.dist}đ (Nhúng quét SL Long)</i>\n`;
+    msg += `  💀 <b>VÙNG QUÉT LONG LIQUIDATION:</b> <b>${hd.price}</b> (${hd.levelName}) — <i>cách ${hd.dist}đ (Nhúng xuyên quét SL Long)</i>\n`;
   }
   msg += `\n`;
 
-  // 3. CẢNH BÁO BẪY LÁI & HÀNH ĐỘNG KHUYẾN NGHỊ
-  msg += `💡 <b>ĐÁNH GIÁ VSA VOL & BẪY LÁI:</b>\n`;
-  if (sidewayInfo.isSidewayChop) {
-    msg += `${sidewayInfo.warning}\n\n`;
+  // 4. CẢNH BÁO BIẾN ĐỘNG THEO VOL & BẪY LÁI THỰC CHIẾN
+  msg += `💡 <b>ĐÁNH GIÁ BIẾN ĐỘNG THEO VOL & BẪY LÁI:</b>\n`;
+  if (triggerContext && triggerContext.label) {
+    msg += `  ⚡ <b>CẢNH BÁO BIẾN ĐỘNG:</b> ${triggerContext.label}\n`;
   }
-
-  // VSA Action headline & detail
   msg += `  ${vsaAction.headline}\n`;
   if (vsaAction.detail) {
     msg += `  ${vsaAction.detail}\n`;
   }
+  msg += `  ${practicalAdvice}\n`;
+  if (sidewayInfo.isSidewayChop && sidewayInfo.warning) {
+    msg += `\n${sidewayInfo.warning}\n`;
+  }
   msg += `\n`;
 
-  // 4. CẤU TRÚC THỊ TRƯỜNG & ĐA KHUNG (15M - 5M - 1M)
+  // 5. CẤU TRÚC THỊ TRƯỜNG & ĐA KHUNG (15M - 5M - 1M)
   msg += `📊 <b>CẤU TRÚC THỊ TRƯỜNG & ĐA KHUNG:</b>\n`;
   const m15Emoji = m15Analysis.signal === 'BULLISH' ? '🟢' : m15Analysis.signal === 'BEARISH' ? '🔴' : '🟡';
   const m5Emoji = m5Analysis.signal === 'BULLISH' ? '🟢' : m5Analysis.signal === 'BEARISH' ? '🔴' : '🟡';
@@ -398,7 +405,7 @@ function formatRadarNotification(params) {
   }
   msg += `\n`;
 
-  // 5. SMART MONEY & THANH KHOẢN
+  // 6. SMART MONEY & THANH KHOẢN SÀN
   if (smartMoneyInfo) {
     const smSign = smartMoneyInfo.smartMoneyNet >= 0 ? `+${smartMoneyInfo.smartMoneyNet.toLocaleString('vi-VN')}` : smartMoneyInfo.smartMoneyNet.toLocaleString('vi-VN');
     const nnSign = smartMoneyInfo.foreignNet >= 0 ? `+${smartMoneyInfo.foreignNet.toLocaleString('vi-VN')}` : smartMoneyInfo.foreignNet.toLocaleString('vi-VN');
@@ -418,7 +425,7 @@ function formatRadarNotification(params) {
 }
 
 // ─── MASTER INTRADAY CYCLE ────────────────────────────────────
-async function runIntradaySignal() {
+async function runIntradaySignal(triggerContext = null) {
   const startTime = Date.now();
   console.log('\n' + '═'.repeat(55));
   console.log('⚡ RADAR CUNG CẦU & BẢN ĐỒ FIBONACCI — 5p Intraday');
@@ -513,6 +520,7 @@ async function runIntradaySignal() {
       smartMoneyInfo,
       contextInfo,
       signalCount: _signalCount,
+      triggerContext,
     });
 
     await sendDerivativesMessage(msg);

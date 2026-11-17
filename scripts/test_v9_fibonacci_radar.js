@@ -179,7 +179,7 @@ async function runAll() {
   // ─── TEST 5: FORMAT TIN NHẮN NOTI REALTIME ĐẦY ĐỦ ───────────────
   console.log('\n📌 5. KIỂM THỬ FORMAT TIN NHẮN RADAR CUNG CẦU & FIBONACCI');
 
-  it('Tin nhắn Telegram định dạng chuẩn HTML, đầy đủ mốc Fibo, không có thông báo đi lệnh hay N/A', () => {
+  it('Tin nhắn Telegram đưa THẾ & CẤU TRÚC lên DÒNG ĐẦU TIÊN, gộp cảnh báo giá giật/vol, không có đi lệnh hay N/A', () => {
     const msg = intradaySignalEngine.formatRadarNotification({
       f1mPrice: 1843.0,
       vn30Price: 1844.3,
@@ -215,10 +215,16 @@ async function runAll() {
         tdPct: 4.2,
         smartMoneyPct: 8.3,
       },
+      triggerContext: {
+        label: '⚡ GIÁ GIẬT -2.2đ (Vol chỉ 900 HĐ) ➔ ĐẠP THIẾU VOL / KIỆT BÁN'
+      },
       signalCount: 1,
     });
 
+    const lines = msg.trim().split('\n');
+    assert(lines[0].includes('THẾ LONG') || lines[0].includes('THẾ SHORT') || lines[0].includes('THẾ SIDEWAY'), 'Dòng đầu tiên của tin nhắn BẮT BUỘC phải là THẾ VÀ CẤU TRÚC THỊ TRƯỜNG');
     assert(msg.includes('RADAR CUNG CẦU & BẢN ĐỒ FIBONACCI'), 'Phải có tiêu đề RADAR CUNG CẦU & BẢN ĐỒ FIBONACCI');
+    assert(msg.includes('⚡ GIÁ GIẬT -2.2đ (Vol chỉ 900 HĐ)'), 'Phải gộp cảnh báo giá giật/vol vào chung tin nhắn');
     assert(msg.includes('<b>F1M: 1843.0</b>'), 'Phải hiển thị F1M: 1843.0');
     assert(msg.includes('VN30: <b>1844.3</b>'), 'Phải hiển thị VN30: 1844.3');
     assert(msg.includes('Basis: <b>-1.3đ</b>'), 'Phải hiển thị Basis: -1.3đ');

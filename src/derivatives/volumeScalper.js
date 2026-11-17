@@ -626,35 +626,16 @@ async function processNewCandle(candle, allCandles, oiData, extraData = {}) {
   const maxMove = Math.max(priceMove, jumpMove);
 
   if (maxMove >= TRAP_PRICE_CHANGE_MIN) {
-    if (candle.volume < dynamicThresholds.trap) {
-      // MỨC 1: BƠM/ĐẠP ĐỂU — CỰC NGUY HIỂM
+    const isTrapVol = candle.volume < dynamicThresholds.trap || candle.volume < VOL_ANOMALY_MED;
+    if (isTrapVol) {
       _state.trapLockUntil = now + TRAP_LOCK_DURATION_MS;
       if (now - _state.lastTrapAlertTime > TRAP_SHIELD_COOLDOWN_MS) {
         _state.lastTrapAlertTime = now;
-        const trapMsg = proNotifier.formatTrapShieldAlert({
-          level: 1,
-          candle,
-          priceChange: candle.close - prevClose,
-          currentPosition: _state.position,
-          context,
-          pillarAnalysis,
+        const priceDelta = +(candle.close - prevClose).toFixed(1);
+        const signStr = priceDelta >= 0 ? `+${priceDelta}` : `${priceDelta}`;
+        await intradaySignalEngine.runIntradaySignal({
+          label: `⚡ GIÁ GIẬT ${signStr}đ về ${candle.close.toFixed(1)} (Vol chỉ ${candle.volume.toLocaleString('vi-VN')} HĐ) ➔ BẪY ĐẠP/KÉO THIẾU VOL!`,
         });
-        await sendDerivativesMessage(trapMsg);
-      }
-    } else if (candle.volume < VOL_ANOMALY_MED) {
-      // MỨC 2: KÉO/XẢ ẢO — CẢNH GIÁC CAO
-      _state.trapLockUntil = now + TRAP_LOCK_DURATION_MS;
-      if (now - _state.lastTrapAlertTime > TRAP_SHIELD_COOLDOWN_MS) {
-        _state.lastTrapAlertTime = now;
-        const trapMsg = proNotifier.formatTrapShieldAlert({
-          level: 2,
-          candle,
-          priceChange: candle.close - prevClose,
-          currentPosition: _state.position,
-          context,
-          pillarAnalysis,
-        });
-        await sendDerivativesMessage(trapMsg);
       }
     }
   }
@@ -991,22 +972,11 @@ async function processNewCandle(candle, allCandles, oiData, extraData = {}) {
       _state.currentPlan = plan;
 
       // Gửi Notification 5 Lớp Chuẩn Playbook
-      const entryMsg = proNotifier.formatEntryNotification({
-        candle,
-        direction: proposedDirection,
-        decision,
-        plan,
-        indicators,
-        context,
-        marketStructureData,
-        flowData: flowCombined,
-        pillarAnalysis,
-        liquidityInfo,
-        volRatio,
+      await intradaySignalEngine.runIntradaySignal({
+        label: `🔥 NỔ VOL XÁC NHẬN XUNG LỰC ${proposedDirection} @ ${candle.close.toFixed(1)} (${candle.volume.toLocaleString('vi-VN')} HĐ)!`,
       });
-      await sendDerivativesMessage(entryMsg);
       _state.lastNotiTime = now;
-      console.log(`   ✅ [Scalper 1M] MỞ ${proposedDirection} @ ${candle.close} [Setup: ${setupInfo.label}] Confidence: ${decision.confidence}%`);
+      console.log(`   ✅ [Scalper 1M] Xung lực ${proposedDirection} @ ${candle.close} [Setup: ${setupInfo.label}] Confidence: ${decision.confidence}%`);
     } else {
       // VỊ THẾ RÕ RÀNG: ĐỨNG NGOÀI QUAN SÁT (STAND ASIDE)
       _state.position = 'NONE';
