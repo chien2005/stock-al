@@ -29,13 +29,17 @@ const HEADERS = {
 // ─── IN-MEMORY LAST KNOWN PRICES (Zero N/A Protection) ────────
 const _lastKnownPrices = {
   f1m: 1843.0,
+  f2m: 1791.1,
   vn30: 1844.25,
   vnindex: 1736.89,
   f1mPrev: 1851.0,
+  f2mPrev: 1808.0,
   vn30Prev: 1844.91,
   vnindexPrev: 1734.93,
   updatedAt: Date.now(),
 };
+
+let _activeDerivSymbolF2 = null;
 
 let _indexSnapshotCache = { data: null, fetchedAt: 0 };
 
@@ -80,6 +84,24 @@ function getStartOfDayTimestamp() {
   const vnTime = getVnTime();
   vnTime.setHours(0, 0, 0, 0);
   return Math.floor(vnTime.getTime() / 1000);
+}
+
+// Kiểm tra xem hôm nay có phải ngày đáo hạn hợp đồng phái sinh không
+function isDerivativesExpiryDay(date = new Date(), matureDateStr = null) {
+  const vnTime = new Date(date.toLocaleString('en-US', { timeZone: config.timezone || 'Asia/Ho_Chi_Minh' }));
+  const d = vnTime.getDate();
+  const m = vnTime.getMonth() + 1;
+  const y = vnTime.getFullYear();
+
+  if (matureDateStr && typeof matureDateStr === 'string') {
+    const parts = matureDateStr.trim().split('/').map(p => parseInt(p, 10));
+    if (parts.length === 3 && parts[0] === d && parts[1] === m && parts[2] === y) {
+      return true;
+    }
+  }
+
+  // Thứ 5 thứ 3 của tháng (ngày từ 15 đến 21)
+  return vnTime.getDay() === 4 && d >= 15 && d <= 21;
 }
 
 // ─── FETCH OHLCV (Multi-source fallback) ─────────────────────
@@ -243,29 +265,37 @@ async function fetchRealtimeIndicesSnapshot() {
 }
 
 // ─── FETCH REALTIME FUTURES PRICE ────────────────────────────
-async function fetchRealtimeFuturesPrice() {
+async function fetchRealtimeFuturesPrice(chartCode = 'VN30F1M') {
+  const isF2 = chartCode === 'VN30F2M';
+  const priceKey = isF2 ? 'f2m' : 'f1m';
+  const prevKey = isF2 ? 'f2mPrev' : 'f1mPrev';
+
   // Ưu tiên 1: Snapshot phái sinh realtime từ VPS (nhanh, chính xác từng giây)
   try {
-    if (!_activeDerivSymbol || Date.now() - _lastMapFetchedAt > 3600000) {
+    if ((!_activeDerivSymbol || (isF2 && !_activeDerivSymbolF2)) || Date.now() - _lastMapFetchedAt > 3600000) {
       try {
         const mapRes = await axios.get(VPS_PS_LIST_MAP, { headers: HEADERS, timeout: 3000 });
         if (Array.isArray(mapRes.data) && mapRes.data.length > 0) {
           const f1mItem = mapRes.data.find(d => (d.CHART_CODE || '') === 'VN30F1M');
           if (f1mItem) {
             _activeDerivSymbol = f1mItem.SYMBOL;
-            _lastMapFetchedAt = Date.now();
           }
+          const f2mItem = mapRes.data.find(d => (d.CHART_CODE || '') === 'VN30F2M');
+          if (f2mItem) {
+            _activeDerivSymbolF2 = f2mItem.SYMBOL;
+          }
+          _lastMapFetchedAt = Date.now();
         }
       } catch (e) {}
     }
-    const sym = _activeDerivSymbol || '41I1GB000';
+    const sym = isF2 ? (_activeDerivSymbolF2 || '41I1GC000') : (_activeDerivSymbol || '41I1GB000');
     const res = await axios.get(`${VPS_PS_SNAPSHOT}/${sym}`, { headers: HEADERS, timeout: 3000 });
     if (res.data && Array.isArray(res.data) && res.data.length > 0 && res.data[0].lastPrice) {
       const d = res.data[0];
       const p = parseFloat(d.lastPrice);
       const r = d.r ? parseFloat(d.r) : (d.closePrice ? parseFloat(d.closePrice) : p);
-      _lastKnownPrices.f1m = p;
-      _lastKnownPrices.f1mPrev = r;
+      _lastKnownPrices[priceKey] = p;
+      _lastKnownPrices[prevKey] = r;
       _lastKnownPrices.updatedAt = Date.now();
       return {
         price: p,
@@ -284,15 +314,15 @@ async function fetchRealtimeFuturesPrice() {
     const now = Math.floor(Date.now() / 1000);
     const from = now - 86400 * 2;
     const res = await axios.get(
-      `${VPS_HISTORY_URL}?symbol=VN30F1M&resolution=1&from=${from}&to=${now}`,
+      `${VPS_HISTORY_URL}?symbol=${chartCode}&resolution=1&from=${from}&to=${now}`,
       { headers: HEADERS, timeout: 5000 }
     );
     if (res.data && res.data.c && res.data.c.length > 0) {
       const c = res.data.c;
       const p = c[c.length - 1];
       const r = c.length > 1 ? c[c.length - 2] : p;
-      _lastKnownPrices.f1m = p;
-      _lastKnownPrices.f1mPrev = r;
+      _lastKnownPrices[priceKey] = p;
+      _lastKnownPrices[prevKey] = r;
       _lastKnownPrices.updatedAt = Date.now();
       return {
         price: p,
@@ -304,7 +334,7 @@ async function fetchRealtimeFuturesPrice() {
   } catch (e) { /* fail silently */ }
 
   // Ưu tiên 3: Intraday 1m/5m cache fallback
-  if (_cache.intraday1m && _cache.intraday1m.data && _cache.intraday1m.data.c && _cache.intraday1m.data.c.length > 0) {
+  if (!isF2 && _cache.intraday1m && _cache.intraday1m.data && _cache.intraday1m.data.c && _cache.intraday1m.data.c.length > 0) {
     const c = _cache.intraday1m.data.c;
     const p = c[c.length - 1];
     const r = c.length > 1 ? c[c.length - 2] : p;
@@ -315,10 +345,10 @@ async function fetchRealtimeFuturesPrice() {
 
   // Ưu tiên 4: In-memory cache bảo vệ tuyệt đối không bao giờ trả về null/N/A
   return {
-    price: _lastKnownPrices.f1m,
-    prevPrice: _lastKnownPrices.f1mPrev,
-    high: _lastKnownPrices.f1m,
-    low: _lastKnownPrices.f1m,
+    price: _lastKnownPrices[priceKey],
+    prevPrice: _lastKnownPrices[prevKey],
+    high: _lastKnownPrices[priceKey],
+    low: _lastKnownPrices[priceKey],
     isCached: true,
   };
 }
@@ -538,6 +568,22 @@ async function fetchDerivativesOIData() {
     _activeDerivSymbol = f1mCode;
     const f1mData = rawList.find(d => d.sym === f1mCode) || rawList[0];
 
+    // Tìm contract F2M (tháng kế tiếp) — quan trọng vào ngày đáo hạn
+    let f2mCode = null;
+    let f2mData = null;
+    if (mapData) {
+      const f2mItem = mapData.find(d => d.CHART_CODE === 'VN30F2M');
+      if (f2mItem) {
+        f2mCode = f2mItem.SYMBOL;
+        _activeDerivSymbolF2 = f2mCode;
+        f2mData = rawList.find(d => d.sym === f2mCode) || null;
+      }
+    }
+
+    // Kiểm tra ngày đáo hạn từ matureDate F1M
+    const f1mMatureDate = f1mData ? (f1mData.matureDate || null) : null;
+    const isExpiry = isDerivativesExpiryDay(new Date(), f1mMatureDate);
+
     let totalOI = 0;
     let totalOIChange = 0;
     let totalVolume = 0;
@@ -565,6 +611,14 @@ async function fetchDerivativesOIData() {
     const f1mOI = f1mData ? parseInt(f1mData.oi || '0') : 0;
     const f1mPrice = f1mData && f1mData.lastPrice ? parseFloat(f1mData.lastPrice) : null;
 
+    // F2M data (quan trọng vào ngày đáo hạn vì Smart Money chuyển sang F2)
+    const f2mForeignBuy = f2mData ? parseInt(f2mData.fBVol || '0') : 0;
+    const f2mForeignSell = f2mData ? parseInt(f2mData.fSVolume || '0') : 0;
+    const f2mOI = f2mData ? parseInt(f2mData.oi || '0') : 0;
+    const f2mVolume = f2mData ? parseInt(f2mData.lot || '0') : 0;
+    const f2mPrice = f2mData && f2mData.lastPrice ? parseFloat(f2mData.lastPrice) : null;
+    const f2mMatureDate = f2mData ? (f2mData.matureDate || null) : null;
+
     return {
       totalOI: hasOI ? totalOI : null,
       totalOIChange: totalOIChange,
@@ -584,6 +638,39 @@ async function fetchDerivativesOIData() {
       f1mForeignNet: f1mForeignBuy - f1mForeignSell,
       f1mPrice,
       f1mRealtime: f1mData,
+      f1mMatureDate,
+      // ─── F2M DATA (Hợp đồng tháng kế tiếp) ─────────────
+      f2mForeignBuy,
+      f2mForeignSell,
+      f2mForeignNet: f2mForeignBuy - f2mForeignSell,
+      f2mOI,
+      f2mVolume,
+      f2mPrice,
+      f2mRealtime: f2mData,
+      f2mMatureDate,
+      // Structured objects cho F1 và F2
+      f1mData: {
+        symbol: f1mCode,
+        price: f1mPrice,
+        volume: f1mData ? parseInt(f1mData.lot || '0') : 0,
+        oi: f1mOI,
+        foreignBuy: f1mForeignBuy,
+        foreignSell: f1mForeignSell,
+        foreignNet: f1mForeignBuy - f1mForeignSell,
+        matureDate: f1mMatureDate,
+      },
+      f2mData: {
+        symbol: f2mCode,
+        price: f2mPrice,
+        volume: f2mVolume,
+        oi: f2mOI,
+        foreignBuy: f2mForeignBuy,
+        foreignSell: f2mForeignSell,
+        foreignNet: f2mForeignBuy - f2mForeignSell,
+        matureDate: f2mMatureDate,
+      },
+      // Ngày đáo hạn
+      isExpiryDay: isExpiry,
       derivSymbols,
     };
   } catch (e) {
@@ -668,6 +755,10 @@ function getLastKnownPrice(symbolKey) {
   return _lastKnownPrices[symbolKey] || null;
 }
 
+async function fetchRealtimeF2Price() {
+  return fetchRealtimeFuturesPrice('VN30F2M');
+}
+
 module.exports = {
   fetchOHLCV,
   fetchIntraday1m,
@@ -675,6 +766,7 @@ module.exports = {
   fetchVN30Intraday1m,
   fetchRealtimeVN30,
   fetchRealtimeFuturesPrice,
+  fetchRealtimeF2Price,
   fetchRealtimeVN30Price,
   fetchRealtimeVNINDEXPrice,
   fetchRealtimeIndicesSnapshot,
@@ -688,6 +780,7 @@ module.exports = {
   getBreadthSnapshots,
   resetDailyCache,
   getCurrentDerivativeSymbols,
+  isDerivativesExpiryDay,
   vnNow,
   getVnTime,
   isMarketHours,

@@ -1,5 +1,5 @@
 {
-  "lastUpdated": "2026-11-16T14:17:51.555Z",
+  "lastUpdated": "2026-11-21T11:27:55.743Z",
   "history": [
     {
       "date": "16/10/2026",
@@ -185,6 +185,62 @@
       "cumulativeNN": -4469,
       "cumulativeTD": 1799,
       "cumulativeCrowd": 2670
+    },
+    {
+      "date": "17/11/2026",
+      "buy": 6200,
+      "sell": 6800,
+      "overnightNet": -600,
+      "tuDoanhOvernight": 210,
+      "crowdOvernight": 390,
+      "cumulativeNN": -5069,
+      "cumulativeTD": 2009,
+      "cumulativeCrowd": 3060,
+      "isExpiryDay": false
+    },
+    {
+      "date": "18/11/2026",
+      "buy": 5500,
+      "sell": 6900,
+      "overnightNet": -1400,
+      "tuDoanhOvernight": 490,
+      "crowdOvernight": 910,
+      "cumulativeNN": -6469,
+      "cumulativeTD": 2499,
+      "cumulativeCrowd": 3970,
+      "isExpiryDay": false
+    },
+    {
+      "date": "19/11/2026",
+      "buy": 10000,
+      "sell": 2000,
+      "overnightNet": 8000,
+      "tuDoanhOvernight": 0,
+      "crowdOvernight": -8000,
+      "cumulativeNN": -8000,
+      "cumulativeTD": 2800,
+      "cumulativeCrowd": 5200,
+      "isExpiryDay": true,
+      "f1CloseNet": 8000,
+      "f2Net": 0,
+      "f2Buy": 0,
+      "f2Sell": 0,
+      "f2Volume": 12500,
+      "f2OI": 26300,
+      "f2mPrice": 1791.1,
+      "f2Basis": 2.59
+    },
+    {
+      "date": "20/11/2026",
+      "buy": 5848,
+      "sell": 5894,
+      "overnightNet": -46,
+      "tuDoanhOvernight": 16,
+      "crowdOvernight": 30,
+      "cumulativeNN": -8046,
+      "cumulativeTD": 2816,
+      "cumulativeCrowd": 5230,
+      "isExpiryDay": false
     }
   ]
 }

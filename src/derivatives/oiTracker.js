@@ -288,6 +288,15 @@ function getRecent5DaysData() {
       basis: oItem.basis || 0,
       volume: oItem.volume || 0,
       positionState: oItem.positionState || 'NEUTRAL',
+      isExpiryDay: !!(fItem.isExpiryDay || oItem.isExpiryDay),
+      f1CloseNet: fItem.f1CloseNet,
+      f2Net: fItem.f2Net,
+      f2Buy: fItem.f2Buy,
+      f2Sell: fItem.f2Sell,
+      f2Volume: oItem.f2Volume || fItem.f2Volume || 0,
+      f2OI: oItem.f2OI || fItem.f2OI || 0,
+      f2mPrice: oItem.f2mPrice || fItem.f2mPrice || 0,
+      f2Basis: oItem.f2Basis !== undefined ? oItem.f2Basis : fItem.f2Basis,
     });
   }
 
@@ -460,6 +469,11 @@ function analyzeOIPositions(days5 = null) {
       f1mPrice: latest.f1mPrice,
       vn30Price: latest.vn30Price,
       basis: latest.basis,
+      isExpiryDay: !!latest.isExpiryDay,
+      f2mPrice: latest.f2mPrice,
+      f2Basis: latest.f2Basis,
+      f2OI: latest.f2OI,
+      f2Volume: latest.f2Volume,
     },
     prediction: {
       biasDirection,
@@ -599,6 +613,17 @@ async function buildOIEveningNotificationAsync(session = 'evening') {
       const vn30PriceVal = (vn30Price && vn30Price.price) || lastKnown.vn30 || 0;
       const basis = f1mPrice && vn30PriceVal ? parseFloat((f1mPrice - vn30PriceVal).toFixed(2)) : 0;
 
+      // F2M data và kiểm tra ngày đáo hạn
+      const isExpiry = (realtimeOI && realtimeOI.isExpiryDay) || dataFetcher.isDerivativesExpiryDay(vnTime, realtimeOI?.f1mMatureDate);
+      const f2PriceObj = await dataFetcher.fetchRealtimeFuturesPrice('VN30F2M').catch(() => null);
+      const f2mPriceVal = (f2PriceObj && f2PriceObj.price) || realtimeOI?.f2mPrice || lastKnown.f2m || 0;
+      const basisF2 = f2mPriceVal && vn30PriceVal ? parseFloat((f2mPriceVal - vn30PriceVal).toFixed(2)) : 0;
+      const f2ForeignBuy = realtimeOI ? (realtimeOI.f2mForeignBuy || 0) : 0;
+      const f2ForeignSell = realtimeOI ? (realtimeOI.f2mForeignSell || 0) : 0;
+      const f2ForeignNet = realtimeOI ? (realtimeOI.f2mForeignNet !== undefined ? realtimeOI.f2mForeignNet : (f2ForeignBuy - f2ForeignSell)) : 0;
+      const f2OI = realtimeOI ? (realtimeOI.f2mOI || 0) : 0;
+      const f2Volume = realtimeOI ? (realtimeOI.f2mVolume || 0) : 0;
+
       // Tính tự doanh: dùng data file nếu có, nếu không ước lượng
       const foreignStore = loadForeignOIData();
       const existingToday = (foreignStore.history || []).find(h => normalizeDateStr(h.date) === normalizeDateStr(todayStr));
@@ -610,9 +635,19 @@ async function buildOIEveningNotificationAsync(session = 'evening') {
       const prevCumTD = prevF ? (prevF.cumulativeTD !== undefined ? prevF.cumulativeTD : 1610) : 1610;
 
       const effectiveTD = tuDoanhOvernight !== 0 ? tuDoanhOvernight : Math.round(-foreignNet * (oiEstimator.TD_ESTIMATION_RATIO || 0.35));
-      const cumNN = existingToday && existingToday.cumulativeNN !== undefined ? existingToday.cumulativeNN : (prevCumNN + foreignNet);
-      const cumTD = existingToday && existingToday.cumulativeTD !== undefined ? existingToday.cumulativeTD : (prevCumTD + effectiveTD);
-      const cumCrowd = -(cumNN + cumTD);
+
+      // Lũy kế cho chu kỳ mới nếu là ngày đáo hạn:
+      // F1 kết thúc; vị thế chu kỳ mới bắt đầu từ F2 tích lũy
+      let cumNN, cumTD, cumCrowd;
+      if (isExpiry) {
+        cumNN = existingToday && existingToday.cumulativeNN !== undefined ? existingToday.cumulativeNN : (-8000 + f2ForeignNet);
+        cumTD = existingToday && existingToday.cumulativeTD !== undefined ? existingToday.cumulativeTD : Math.round(-cumNN * 0.35);
+        cumCrowd = -(cumNN + cumTD);
+      } else {
+        cumNN = existingToday && existingToday.cumulativeNN !== undefined ? existingToday.cumulativeNN : (prevCumNN + foreignNet);
+        cumTD = existingToday && existingToday.cumulativeTD !== undefined ? existingToday.cumulativeTD : (prevCumTD + effectiveTD);
+        cumCrowd = -(cumNN + cumTD);
+      }
 
       const entry = {
         date: todayStr,
@@ -631,10 +666,19 @@ async function buildOIEveningNotificationAsync(session = 'evening') {
         vn30Price: vn30PriceVal ? parseFloat(vn30PriceVal.toFixed(2)) : 0,
         basis: basis,
         positionState: _classifyPositionState(totalOIChange, f1mPrice, existingToday),
+        isExpiryDay: isExpiry,
+        f1CloseNet: isExpiry ? foreignNet : undefined,
+        f2Net: isExpiry ? f2ForeignNet : undefined,
+        f2Buy: isExpiry ? f2ForeignBuy : undefined,
+        f2Sell: isExpiry ? f2ForeignSell : undefined,
+        f2OI: isExpiry ? f2OI : undefined,
+        f2Volume: isExpiry ? f2Volume : undefined,
+        f2mPrice: isExpiry ? f2mPriceVal : undefined,
+        f2Basis: isExpiry ? basisF2 : undefined,
       };
 
       recordDailySessionOI(entry);
-      console.log(`   ✅ [OI ${session}] Auto-synced realtime data for ${todayStr}: Foreign=${foreignNet} (LK=${cumNN}), OI=${totalOI} (ΔOI=${totalOIChange})`);
+      console.log(`   ✅ [OI ${session}] Auto-synced realtime data for ${todayStr}: Foreign=${foreignNet} (LK=${cumNN}), OI=${totalOI} (isExpiry=${isExpiry})`);
     } else {
       console.log(`   ⚠️ [OI ${session}] No realtime data available, using cached file data`);
     }
@@ -677,54 +721,99 @@ function buildOIEveningNotificationSync(session = 'evening') {
   const fmtSignDec = (num, d = 1) => (num > 0 ? `+${fmtDec(num, d)}` : fmtDec(num, d));
 
   const isAfternoon = session === 'afternoon';
-  const sessionTitle = isAfternoon
-    ? `📊 <b>BÁO CÁO VỊ THẾ QUA ĐÊM (OI) & 3 PHE (SƠ BỘ SAU ATC)</b>\n`
-    : `📊 <b>BÁO CÁO VỊ THẾ QUA ĐÊM (OI) & 3 PHE (CHÍNH THỨC)</b>\n`;
+  const isExp = !!latest.isExpiryDay;
+
+  const sessionTitle = isExp
+    ? `📊 <b>BÁO CÁO VỊ THẾ QUA ĐÊM (OI) & 3 PHE — 🔄 NGÀY ĐÁO HẠN HĐ (${isAfternoon ? 'SƠ BỘ 14H47' : 'CHÍNH THỨC 19H35'})</b>\n`
+    : isAfternoon
+      ? `📊 <b>BÁO CÁO VỊ THẾ QUA ĐÊM (OI) & 3 PHE (SƠ BỘ SAU ATC)</b>\n`
+      : `📊 <b>BÁO CÁO VỊ THẾ QUA ĐÊM (OI) & 3 PHE (CHÍNH THỨC)</b>\n`;
   const sessionSub = isAfternoon
-    ? `🕐 <i>Chiều 14h47 (Sơ bộ sau ATC) — Ngày ${latest.date} | Chuẩn bị phiên kế tiếp</i>\n`
-    : `🕐 <i>Tối 19h35 (Chốt sổ HNX & VSDC) — Ngày ${latest.date} | Chuẩn bị phiên kế tiếp</i>\n`;
+    ? `🕐 <i>Chiều 14h47 (Sơ bộ sau ATC) — Ngày ${latest.date} | Chuẩn bị ${isExp ? 'chu kỳ HĐ mới' : 'phiên kế tiếp'}</i>\n`
+    : `🕐 <i>Tối 19h35 (Chốt sổ HNX & VSDC) — Ngày ${latest.date} | Chuẩn bị ${isExp ? 'chu kỳ HĐ mới' : 'phiên kế tiếp'}</i>\n`;
 
   let msg = sessionTitle;
   msg += sessionSub;
+  if (isExp) {
+    msg += `⚠️ <b>HĐ F1M ĐÃ TẤT TOÁN CHỐT SỔ</b> — Toàn bộ vị thế qua đêm chuyển dịch sang HĐ mới F2M (phiên tới là F1M)!\n`;
+  }
   msg += `━━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
   // 1. GIAO DỊCH RÒNG PHIÊN HÔM NAY
-  msg += `⚡ <b>1. GIAO DỊCH RÒNG PHIÊN HÔM NAY (${latest.date}):</b>\n`;
-  const nnFlowSide = foreign.sessionNet > 0 ? '🟢 MUA RÒNG (LONG)' : foreign.sessionNet < 0 ? '🔴 BÁN RÒNG (SHORT)' : '⚖️ CÂN BẰNG';
-  msg += `• 🌐 <b>Khối ngoại:</b> <b>${nnFlowSide} ${fmtSign(foreign.sessionNet)} HĐ</b>\n`;
-  msg += `   └ Mua: <code>${fmt(foreign.buy)}</code> (${foreign.buyRatio}%) | Bán: <code>${fmt(foreign.sell)}</code> (${foreign.sellRatio}%)\n`;
+  if (isExp) {
+    msg += `⚡ <b>1. GIAO DỊCH RÒNG PHIÊN ĐÁO HẠN (${latest.date}):</b>\n`;
+    msg += `📦 <b>A. HỢP ĐỒNG ĐÁO HẠN F1M (TẤT TOÁN VỀ 0 HĐ):</b>\n`;
+    const f1Net = latest.f1CloseNet !== undefined ? latest.f1CloseNet : foreign.sessionNet;
+    const f1Side = f1Net > 0 ? '🟢 MUA RÒNG' : f1Net < 0 ? '🔴 BÁN RÒNG' : '⚖️ CÂN BẰNG';
+    msg += `• 🌐 <b>Khối ngoại F1:</b> <b>${f1Side} ${fmtSign(f1Net)} HĐ</b> (Mua: <code>${fmt(foreign.buy)}</code> | Bán: <code>${fmt(foreign.sell)}</code>)\n`;
+    const f1TD = Math.round(-f1Net * 0.35);
+    const f1Cr = -(f1Net + f1TD);
+    msg += `• 🏛️ <b>Tự doanh F1:</b> <b>${fmtSign(f1TD)} HĐ</b> <i>(ước tính)</i> | 👥 <b>Cá nhân F1:</b> <b>${fmtSign(f1Cr)} HĐ</b>\n`;
+    msg += `⚠️ <i>BẢN CHẤT: Giao dịch trên F1M hôm nay là ĐÓNG VỊ THẾ CŨ (Cover/Close) để tất toán theo VN30, KHÔNG phản ánh xu hướng mở mới! F1M dừng giao dịch sau 14h45.</i>\n\n`;
 
-  const tdFlowSide = tuDoanh.sessionNet > 0 ? '🟢 MUA RÒNG (LONG)' : tuDoanh.sessionNet < 0 ? '🔴 BÁN RÒNG (SHORT)' : '⚖️ CÂN BẰNG';
-  const tdEstNote = tuDoanh.isEstimated ? ' <i>(ước ~35% hedging)</i>' : '';
-  msg += `• 🏛️ <b>Tự doanh:</b> <b>${tdFlowSide} ${fmtSign(tuDoanh.sessionNet)} HĐ</b>${tdEstNote}\n`;
+    msg += `🚀 <b>B. HỢP ĐỒNG THÁNG KẾ TIẾP F2M (CHU KỲ MỚI — MAI LÀ F1M):</b>\n`;
+    const f2Net = latest.f2Net !== undefined ? latest.f2Net : 0;
+    const f2Side = f2Net > 0 ? '🟢 MUA RÒNG' : f2Net < 0 ? '🔴 BÁN RÒNG' : '⚖️ CÂN BẰNG';
+    msg += `• 🌐 <b>Khối ngoại F2:</b> <b>${f2Side} ${fmtSign(f2Net)} HĐ</b>${latest.f2Buy || latest.f2Sell ? ` (Mua: <code>${fmt(latest.f2Buy)}</code> | Bán: <code>${fmt(latest.f2Sell)}</code>)` : ''}\n`;
+    const f2TD = Math.round(-f2Net * 0.35);
+    const f2Cr = -(f2Net + f2TD);
+    msg += `• 🏛️ <b>Tự doanh F2:</b> <b>${fmtSign(f2TD)} HĐ</b> <i>(ước tính)</i> | 👥 <b>Cá nhân F2:</b> <b>${fmtSign(f2Cr)} HĐ</b>\n`;
+    if (latest.f2Volume || latest.f2OI) {
+      msg += `• 📊 <b>KLGD F2:</b> <b>${fmt(latest.f2Volume)} HĐ</b> | <b>OI F2:</b> <b>${fmt(latest.f2OI)} HĐ</b>\n`;
+    }
+    msg += `🔥 <i>Ý ĐỒ THỰC: Dòng tiền trên F2M mới phản ánh đúng vị thế Smart Money mở mới cho chu kỳ tiếp theo!</i>\n\n`;
+  } else {
+    msg += `⚡ <b>1. GIAO DỊCH RÒNG PHIÊN HÔM NAY (${latest.date}):</b>\n`;
+    const nnFlowSide = foreign.sessionNet > 0 ? '🟢 MUA RÒNG (LONG)' : foreign.sessionNet < 0 ? '🔴 BÁN RÒNG (SHORT)' : '⚖️ CÂN BẰNG';
+    msg += `• 🌐 <b>Khối ngoại:</b> <b>${nnFlowSide} ${fmtSign(foreign.sessionNet)} HĐ</b>\n`;
+    msg += `   └ Mua: <code>${fmt(foreign.buy)}</code> (${foreign.buyRatio}%) | Bán: <code>${fmt(foreign.sell)}</code> (${foreign.sellRatio}%)\n`;
 
-  const crFlowSide = crowd.sessionNet > 0 ? '🟢 MUA RÒNG (LONG)' : crowd.sessionNet < 0 ? '🔴 BÁN RÒNG (SHORT)' : '⚖️ CÂN BẰNG';
-  msg += `• 👥 <b>Cá nhân (Đám đông):</b> <b>${crFlowSide} ${fmtSign(crowd.sessionNet)} HĐ</b>\n`;
-  msg += `• ⚖️ <i>Quy tắc Zero-Sum phiên:</i>\n`;
-  msg += `   <code>Ngoại (${fmtSign(foreign.sessionNet)}) + TD (${fmtSign(tuDoanh.sessionNet)}) + Cá nhân (${fmtSign(crowd.sessionNet)}) = 0 HĐ</code>\n\n`;
+    const tdFlowSide = tuDoanh.sessionNet > 0 ? '🟢 MUA RÒNG (LONG)' : tuDoanh.sessionNet < 0 ? '🔴 BÁN RÒNG (SHORT)' : '⚖️ CÂN BẰNG';
+    const tdEstNote = tuDoanh.isEstimated ? ' <i>(ước ~35% hedging)</i>' : '';
+    msg += `• 🏛️ <b>Tự doanh:</b> <b>${tdFlowSide} ${fmtSign(tuDoanh.sessionNet)} HĐ</b>${tdEstNote}\n`;
 
-  // 2. VỊ THẾ LŨY KẾ CẦM QUA ĐÊM
-  msg += `🔥 <b>2. VỊ THẾ LŨY KẾ CẦM QUA ĐÊM (HẾT NGÀY ${latest.date}):</b>\n`;
-  msg += `• 📊 <b>Tổng hợp đồng mở (OI):</b> <b>${fmt(market.totalOI)} HĐ</b>${market.f1mOI ? ` (F1M: <b>${fmt(market.f1mOI)} HĐ</b>)` : ''}\n`;
-  const oiIcon = market.oiChange > 0 ? '🟢' : market.oiChange < 0 ? '🔴' : '🟡';
-  const oiStatus = market.oiChange > 0 ? 'Dòng tiền mở mới thêm vị thế' : market.oiChange < 0 ? 'Chốt lời đóng bớt vị thế' : 'Đi ngang';
-  msg += `• 📈 <b>Biến động OI (ΔOI):</b> <b>${oiIcon} ${fmtSign(market.oiChange)} HĐ</b> <i>(${oiStatus})</i>\n`;
-
-  const nnCumSide = foreign.cumNN > 0 ? '🟢 CẦM LONG' : foreign.cumNN < 0 ? '🔴 CẦM SHORT' : '⚖️ CÂN BẰNG';
-  msg += `• 🌐 <b>Khối ngoại:</b> <b>${nnCumSide} ${fmtSign(foreign.cumNN)} HĐ</b>\n`;
-  if (foreign.sessionNet > 0 && foreign.cumNN < 0) {
-    msg += `   └ <i>Diễn biến: Giảm bớt ${fmt(foreign.sessionAbs)} HĐ Short so với hôm qua (${fmtSign(foreign.prevCumNN)} HĐ)</i>\n`;
-  } else if (foreign.sessionNet < 0 && foreign.cumNN < 0) {
-    msg += `   └ <i>Diễn biến: Gia tăng thêm ${fmt(foreign.sessionAbs)} HĐ Short so với hôm qua (${fmtSign(foreign.prevCumNN)} HĐ)</i>\n`;
+    const crFlowSide = crowd.sessionNet > 0 ? '🟢 MUA RÒNG (LONG)' : crowd.sessionNet < 0 ? '🔴 BÁN RÒNG (SHORT)' : '⚖️ CÂN BẰNG';
+    msg += `• 👥 <b>Cá nhân (Đám đông):</b> <b>${crFlowSide} ${fmtSign(crowd.sessionNet)} HĐ</b>\n`;
+    msg += `• ⚖️ <i>Quy tắc Zero-Sum phiên:</i>\n`;
+    msg += `   <code>Ngoại (${fmtSign(foreign.sessionNet)}) + TD (${fmtSign(tuDoanh.sessionNet)}) + Cá nhân (${fmtSign(crowd.sessionNet)}) = 0 HĐ</code>\n\n`;
   }
 
-  const tdCumSide = tuDoanh.cumTD > 0 ? '🟢 CẦM LONG' : tuDoanh.cumTD < 0 ? '🔴 CẦM SHORT' : '⚖️ CÂN BẰNG';
-  msg += `• 🏛️ <b>Tự doanh:</b> <b>${tdCumSide} ${fmtSign(tuDoanh.cumTD)} HĐ</b> <i>(ước tính đối ứng)</i>\n`;
+  // 2. VỊ THẾ LŨY KẾ CẦM QUA ĐÊM
+  if (isExp) {
+    msg += `🔥 <b>2. VỊ THẾ LŨY KẾ CẦM QUA ĐÊM (CHU KỲ MỚI TRÊN HĐ KẾ TIẾP):</b>\n`;
+    msg += `• 📦 <b>HĐ F1M cũ:</b> ĐÃ TẤT TOÁN VỀ 0 HĐ theo giá ATC rổ VN30 (${fmtDec(market.vn30Price, 2)}).\n`;
+    msg += `• 🚀 <b>Hợp đồng mới (F2M ➔ F1M phiên tới):</b>\n`;
+    const nnCumSide = foreign.cumNN > 0 ? '🟢 CẦM LONG' : foreign.cumNN < 0 ? '🔴 CẦM SHORT' : '⚖️ CÂN BẰNG';
+    msg += `   └ 🌐 <b>Khối ngoại:</b> <b>${nnCumSide} ${fmtSign(foreign.cumNN)} HĐ</b>\n`;
+    const tdCumSide = tuDoanh.cumTD > 0 ? '🟢 CẦM LONG' : tuDoanh.cumTD < 0 ? '🔴 CẦM SHORT' : '⚖️ CÂN BẰNG';
+    msg += `   └ 🏛️ <b>Tự doanh:</b> <b>${tdCumSide} ${fmtSign(tuDoanh.cumTD)} HĐ</b> <i>(ước tính đối ứng)</i>\n`;
+    const crCumSide = crowd.cumCrowd > 0 ? '🟢 CẦM LONG' : crowd.cumCrowd < 0 ? '🔴 CẦM SHORT' : '⚖️ CÂN BẰNG';
+    msg += `   └ 👥 <b>Cá nhân:</b> <b>${crCumSide} ${fmtSign(crowd.cumCrowd)} HĐ</b>\n`;
+    msg += `• ⚖️ <i>Quy tắc Zero-Sum lũy kế HĐ mới:</i>\n`;
+    msg += `   <code>Ngoại (${fmtSign(foreign.cumNN)}) + TD (${fmtSign(tuDoanh.cumTD)}) + Cá nhân (${fmtSign(crowd.cumCrowd)}) = 0 HĐ</code>\n\n`;
+  } else {
+    msg += `🔥 <b>2. VỊ THẾ LŨY KẾ CẦM QUA ĐÊM (HẾT NGÀY ${latest.date}):</b>\n`;
+    msg += `• 📊 <b>Tổng hợp đồng mở (OI):</b> <b>${fmt(market.totalOI)} HĐ</b>${market.f1mOI ? ` (F1M: <b>${fmt(market.f1mOI)} HĐ</b>)` : ''}\n`;
+    const oiIcon = market.oiChange > 0 ? '🟢' : market.oiChange < 0 ? '🔴' : '🟡';
+    const oiStatus = market.oiChange > 0 ? 'Dòng tiền mở mới thêm vị thế' : market.oiChange < 0 ? 'Chốt lời đóng bớt vị thế' : 'Đi ngang';
+    msg += `• 📈 <b>Biến động OI (ΔOI):</b> <b>${oiIcon} ${fmtSign(market.oiChange)} HĐ</b> <i>(${oiStatus})</i>\n`;
 
-  const crCumSide = crowd.cumCrowd > 0 ? '🟢 CẦM LONG' : crowd.cumCrowd < 0 ? '🔴 CẦM SHORT' : '⚖️ CÂN BẰNG';
-  msg += `• 👥 <b>Cá nhân (Đám đông):</b> <b>${crCumSide} ${fmtSign(crowd.cumCrowd)} HĐ</b>\n`;
-  msg += `• ⚖️ <i>Quy tắc Zero-Sum lũy kế:</i>\n`;
-  msg += `   <code>Ngoại (${fmtSign(foreign.cumNN)}) + TD (${fmtSign(tuDoanh.cumTD)}) + Cá nhân (${fmtSign(crowd.cumCrowd)}) = 0 HĐ</code>\n\n`;
+    const nnCumSide = foreign.cumNN > 0 ? '🟢 CẦM LONG' : foreign.cumNN < 0 ? '🔴 CẦM SHORT' : '⚖️ CÂN BẰNG';
+    msg += `• 🌐 <b>Khối ngoại:</b> <b>${nnCumSide} ${fmtSign(foreign.cumNN)} HĐ</b>\n`;
+    if (foreign.sessionNet > 0 && foreign.cumNN < 0) {
+      msg += `   └ <i>Diễn biến: Giảm bớt ${fmt(foreign.sessionAbs)} HĐ Short so với hôm qua (${fmtSign(foreign.prevCumNN)} HĐ)</i>\n`;
+    } else if (foreign.sessionNet < 0 && foreign.cumNN < 0) {
+      msg += `   └ <i>Diễn biến: Gia tăng thêm ${fmt(foreign.sessionAbs)} HĐ Short so với hôm qua (${fmtSign(foreign.prevCumNN)} HĐ)</i>\n`;
+    }
+
+    const tdCumSide = tuDoanh.cumTD > 0 ? '🟢 CẦM LONG' : tuDoanh.cumTD < 0 ? '🔴 CẦM SHORT' : '⚖️ CÂN BẰNG';
+    msg += `• 🏛️ <b>Tự doanh:</b> <b>${tdCumSide} ${fmtSign(tuDoanh.cumTD)} HĐ</b> <i>(ước tính đối ứng)</i>\n`;
+
+    const crCumSide = crowd.cumCrowd > 0 ? '🟢 CẦM LONG' : crowd.cumCrowd < 0 ? '🔴 CẦM SHORT' : '⚖️ CÂN BẰNG';
+    msg += `• 👥 <b>Cá nhân (Đám đông):</b> <b>${crCumSide} ${fmtSign(crowd.cumCrowd)} HĐ</b>\n`;
+    msg += `• ⚖️ <i>Quy tắc Zero-Sum lũy kế:</i>\n`;
+    msg += `   <code>Ngoại (${fmtSign(foreign.cumNN)}) + TD (${fmtSign(tuDoanh.cumTD)}) + Cá nhân (${fmtSign(crowd.cumCrowd)}) = 0 HĐ</code>\n\n`;
+  }
 
   // 3. BẢNG DIỄN BIẾN 5 PHIÊN GẦN NHẤT
   msg += `📅 <b>3. DIỄN BIẾN 5 PHIÊN GẦN NHẤT (CHUẨN XÁC ĐỐI ỨNG):</b>\n`;
@@ -747,27 +836,37 @@ function buildOIEveningNotificationSync(session = 'evening') {
     msg += `${dStr} | ${nDayStr} | ${nCumStr} | ${tdCumStr} | ${crCumStr} | ${oiStr} | ${dOIStr}\n`;
   });
   msg += `</pre>\n`;
-  if (market.f1mPrice) {
+  if (isExp) {
+    const f2PriceVal = latest.f2mPrice || market.f2mPrice || 0;
+    const f2BasisVal = latest.f2Basis !== undefined ? latest.f2Basis : (market.f2Basis !== undefined ? market.f2Basis : 0);
+    msg += `• <i>Chốt phiên đáo hạn: F1M = <b>${fmtDec(market.f1mPrice)}</b> (settle VN30) | F2M = <b>${fmtDec(f2PriceVal)}</b> (Basis F2: <b>${fmtSignDec(f2BasisVal, 2)}đ</b>)</i>\n`;
+  } else if (market.f1mPrice) {
     msg += `• <i>Chốt phiên: F1M = <b>${fmtDec(market.f1mPrice)}</b> | VN30 = <b>${fmtDec(market.vn30Price, 2)}</b> (Basis: <b>${fmtSignDec(market.basis, 2)}đ</b>)</i>\n`;
   }
   msg += `\n`;
 
   // 4. GIẢI MÃ DÒNG TIỀN & Ý ĐỒ CÁ MẬP
-  msg += `🧠 <b>4. GIẢI MÃ DÒNG TIỀN & Ý ĐỒ CÁ MẬP:</b>\n`;
-  if (foreign.sessionNet > 0 && foreign.cumNN < 0) {
-    msg += `• <b>Hành vi Khối ngoại:</b> Khối ngoại Mua ròng trong phiên (+${fmt(foreign.sessionAbs)} HĐ), chủ động Cover đóng bớt vị thế Short (thu hẹp từ ${fmtSign(foreign.prevCumNN)} HĐ về ${fmtSign(foreign.cumNN)} HĐ) khi thị trường bật tăng mạnh.\n`;
-  } else if (foreign.sessionNet < 0) {
-    msg += `• <b>Hành vi Khối ngoại:</b> Khối ngoại Bán ròng trong phiên (-${fmt(foreign.sessionAbs)} HĐ), tiếp tục găm hàng gia tăng vị thế Short lũy kế (${fmtSign(foreign.cumNN)} HĐ) nhằm gây sức ép điều chỉnh lên chỉ số.\n`;
+  msg += `🧠 <b>4. GIẢI MÃ DÒNG TIỀN & Ý ĐỒ CÁ MẬP${isExp ? ' (NGÀY ĐÁO HẠN)' : ''}:</b>\n`;
+  if (isExp) {
+    msg += `• <b>Hành vi Khối ngoại:</b> Khối ngoại Mua/Bán trên F1 hôm nay chủ yếu là hành động đóng/cover vị thế cũ trước giờ tất toán. Trên HĐ mới F2, Khối ngoại đang nắm giữ vị thế lũy kế <b>${foreign.cumNN >= 0 ? 'LONG' : 'SHORT'} ${fmtSign(foreign.cumNN)} HĐ</b>, khẳng định Smart Money tiếp tục duy trì chiến lược <b>${foreign.cumNN >= 0 ? 'LONG' : 'SHORT'}</b> cho chu kỳ tháng tới.\n`;
+    msg += `• <b>Tâm lý Đám đông:</b> Cá nhân nhỏ lẻ đang ${crowd.cumCrowd >= 0 ? 'ôm Long' : 'ôm Short'} ${fmtSign(crowd.cumCrowd)} HĐ đối ứng với khối ngoại.\n`;
+    msg += `• <b>Lưu ý giao dịch:</b> Phiên tới giao dịch trên hợp đồng F1M mới (F2M chuyển sang), dòng tiền sẽ tập trung 100% vào hợp đồng này.\n\n`;
   } else {
-    msg += `• <b>Hành vi Khối ngoại:</b> Giao dịch cân bằng, duy trì vị thế Short lũy kế ở mức ${fmtSign(foreign.cumNN)} HĐ.\n`;
+    if (foreign.sessionNet > 0 && foreign.cumNN < 0) {
+      msg += `• <b>Hành vi Khối ngoại:</b> Khối ngoại Mua ròng trong phiên (+${fmt(foreign.sessionAbs)} HĐ), chủ động Cover đóng bớt vị thế Short (thu hẹp từ ${fmtSign(foreign.prevCumNN)} HĐ về ${fmtSign(foreign.cumNN)} HĐ) khi thị trường bật tăng mạnh.\n`;
+    } else if (foreign.sessionNet < 0) {
+      msg += `• <b>Hành vi Khối ngoại:</b> Khối ngoại Bán ròng trong phiên (-${fmt(foreign.sessionAbs)} HĐ), tiếp tục găm hàng gia tăng vị thế Short lũy kế (${fmtSign(foreign.cumNN)} HĐ) nhằm gây sức ép điều chỉnh lên chỉ số.\n`;
+    } else {
+      msg += `• <b>Hành vi Khối ngoại:</b> Giao dịch cân bằng, duy trì vị thế Short lũy kế ở mức ${fmtSign(foreign.cumNN)} HĐ.\n`;
+    }
+    msg += `• <b>Tâm lý Đám đông:</b> ${crowd.sentiment}\n`;
+    const oiExpl = market.oiChange > 0
+      ? `Tổng OI toàn sàn tăng <b>${fmtSign(market.oiChange)} HĐ</b> (đạt ${fmt(market.totalOI)} HĐ) xác nhận dòng tiền lớn tiếp tục giữ vị thế neo qua đêm, thanh khoản dồi dào.`
+      : market.oiChange < 0
+        ? `Tổng OI toàn sàn giảm <b>${fmt(Math.abs(market.oiChange))} HĐ</b> cho thấy dòng tiền chủ động chốt lời bớt vị thế trước khi đóng cửa.`
+        : `Tổng OI đi ngang quanh mức ${fmt(market.totalOI)} HĐ.`;
+    msg += `• <b>Tín hiệu OI:</b> ${oiExpl}\n\n`;
   }
-  msg += `• <b>Tâm lý Đám đông:</b> ${crowd.sentiment}\n`;
-  const oiExpl = market.oiChange > 0
-    ? `Tổng OI toàn sàn tăng <b>${fmtSign(market.oiChange)} HĐ</b> (đạt ${fmt(market.totalOI)} HĐ) xác nhận dòng tiền lớn tiếp tục giữ vị thế neo qua đêm, thanh khoản dồi dào.`
-    : market.oiChange < 0
-      ? `Tổng OI toàn sàn giảm <b>${fmt(Math.abs(market.oiChange))} HĐ</b> cho thấy dòng tiền chủ động chốt lời bớt vị thế trước khi đóng cửa.`
-      : `Tổng OI đi ngang quanh mức ${fmt(market.totalOI)} HĐ.`;
-  msg += `• <b>Tín hiệu OI:</b> ${oiExpl}\n\n`;
 
   // 5. TÌNH THẾ & KỊCH BẢN PHIÊN KẾ TIẾP
   msg += `🎯 <b>5. TÌNH THẾ & KỊCH BẢN PHIÊN KẾ TIẾP:</b>\n`;
@@ -817,8 +916,17 @@ function recordDailySessionOI(entry) {
   const prevCumNN = prevF ? (prevF.cumulativeNN !== undefined ? prevF.cumulativeNN : -4600) : -4600;
   const prevCumTD = prevF ? (prevF.cumulativeTD !== undefined ? prevF.cumulativeTD : 1610) : 1610;
 
-  const cumulativeNN = entry.cumulativeNN !== undefined ? entry.cumulativeNN : (prevCumNN + overnightNet);
-  const cumulativeTD = entry.cumulativeTD !== undefined ? entry.cumulativeTD : (prevCumTD + tuDoanhOvernight);
+  // XỬ LÝ ĐẶC BIỆT KHI ĐÁO HẠN (ROLLOVER SANG HỢP ĐỒNG MỚI)
+  let cumulativeNN;
+  let cumulativeTD;
+  if (entry.isExpiryDay) {
+    // Ngày đáo hạn: Vị thế luỹ kế cho chu kỳ mới bắt đầu từ F2 tích lũy (-8000 HĐ Short + giao dịch F2)
+    cumulativeNN = entry.cumulativeNN !== undefined ? entry.cumulativeNN : (entry.f2CumulativeNN !== undefined ? entry.f2CumulativeNN : (-8000 + (entry.f2Net || 0)));
+    cumulativeTD = entry.cumulativeTD !== undefined ? entry.cumulativeTD : (entry.f2CumulativeTD !== undefined ? entry.f2CumulativeTD : Math.round(-cumulativeNN * 0.35));
+  } else {
+    cumulativeNN = entry.cumulativeNN !== undefined ? entry.cumulativeNN : (prevCumNN + overnightNet);
+    cumulativeTD = entry.cumulativeTD !== undefined ? entry.cumulativeTD : (prevCumTD + tuDoanhOvernight);
+  }
   const cumulativeCrowd = -(cumulativeNN + cumulativeTD);
 
   const fItem = {
@@ -831,6 +939,15 @@ function recordDailySessionOI(entry) {
     cumulativeNN,
     cumulativeTD,
     cumulativeCrowd,
+    isExpiryDay: !!entry.isExpiryDay,
+    f1CloseNet: entry.f1CloseNet !== undefined ? entry.f1CloseNet : (entry.isExpiryDay ? overnightNet : undefined),
+    f2Net: entry.f2Net !== undefined ? entry.f2Net : undefined,
+    f2Buy: entry.f2Buy !== undefined ? entry.f2Buy : undefined,
+    f2Sell: entry.f2Sell !== undefined ? entry.f2Sell : undefined,
+    f2Volume: entry.f2Volume !== undefined ? entry.f2Volume : undefined,
+    f2OI: entry.f2OI !== undefined ? entry.f2OI : undefined,
+    f2mPrice: entry.f2mPrice !== undefined ? entry.f2mPrice : undefined,
+    f2Basis: entry.f2Basis !== undefined ? entry.f2Basis : undefined,
   };
 
   if (fIdx >= 0) {
@@ -866,6 +983,11 @@ function recordDailySessionOI(entry) {
     basis: entry.basis || 0,
     volume: entry.volume || (prevO ? prevO.volume : 0),
     positionState: entry.positionState || 'NEUTRAL',
+    isExpiryDay: !!entry.isExpiryDay,
+    f2mPrice: entry.f2mPrice !== undefined ? entry.f2mPrice : undefined,
+    f2Basis: entry.f2Basis !== undefined ? entry.f2Basis : undefined,
+    f2OI: entry.f2OI !== undefined ? entry.f2OI : undefined,
+    f2Volume: entry.f2Volume !== undefined ? entry.f2Volume : undefined,
   };
 
   if (oIdx >= 0) {
@@ -1121,6 +1243,7 @@ async function buildPreATCNotificationAsync(simulatedData = null) {
   console.log('   ⚡ [Pre-ATC 14h29] Fetching realtime data from exchange...');
   let realtimeOI = null;
   let futuresPrice = null;
+  let f2PriceData = null;
   let vn30Price = null;
   let vnindexPrice = null;
   let realtimeVN30 = null;
@@ -1128,14 +1251,16 @@ async function buildPreATCNotificationAsync(simulatedData = null) {
   if (simulatedData) {
     realtimeOI = simulatedData.realtimeOI;
     futuresPrice = simulatedData.futuresPrice;
+    f2PriceData = simulatedData.f2PriceData;
     vn30Price = simulatedData.vn30Price;
     vnindexPrice = simulatedData.vnindexPrice;
     realtimeVN30 = simulatedData.realtimeVN30;
   } else {
     try {
-      [realtimeOI, futuresPrice, vn30Price, vnindexPrice, realtimeVN30] = await Promise.all([
+      [realtimeOI, futuresPrice, f2PriceData, vn30Price, vnindexPrice, realtimeVN30] = await Promise.all([
         dataFetcher.fetchDerivativesOIData().catch(e => null),
-        dataFetcher.fetchRealtimeFuturesPrice().catch(e => null),
+        dataFetcher.fetchRealtimeFuturesPrice('VN30F1M').catch(e => null),
+        dataFetcher.fetchRealtimeFuturesPrice('VN30F2M').catch(e => null),
         dataFetcher.fetchRealtimeVN30Price().catch(e => null),
         dataFetcher.fetchRealtimeVNINDEXPrice().catch(e => null),
         dataFetcher.fetchRealtimeVN30().catch(e => null),
@@ -1155,7 +1280,7 @@ async function buildPreATCNotificationAsync(simulatedData = null) {
 
   const lastKnown = dataFetcher.getLastKnownPrices ? dataFetcher.getLastKnownPrices() : {};
 
-  // Market prices
+  // Market prices F1M
   const f1mPrice = (futuresPrice && futuresPrice.price) || lastKnown.f1m || 0;
   const f1mPrev = (futuresPrice && futuresPrice.prevPrice) || lastKnown.f1mPrev || f1mPrice;
   const f1mChange = f1mPrice && f1mPrev ? (f1mPrice - f1mPrev) : 0;
@@ -1171,7 +1296,7 @@ async function buildPreATCNotificationAsync(simulatedData = null) {
   const vnidxPrev = (vnindexPrice && vnindexPrice.prevPrice) || lastKnown.vnindexPrev || vnidxVal;
   const vnidxChange = vnidxVal && vnidxPrev ? (vnidxVal - vnidxPrev) : 0;
 
-  // Realtime OI & Foreign
+  // Realtime OI & Foreign F1M
   const foreignBuy = realtimeOI ? (realtimeOI.foreignBuy || 0) : 0;
   const foreignSell = realtimeOI ? (realtimeOI.foreignSell || 0) : 0;
   const foreignNet = realtimeOI ? (realtimeOI.foreignNet !== undefined ? realtimeOI.foreignNet : (foreignBuy - foreignSell)) : 0;
@@ -1187,7 +1312,7 @@ async function buildPreATCNotificationAsync(simulatedData = null) {
     totalOIChange = totalOI - prevSession.totalOI;
   }
 
-  // Tự doanh & Đám đông & Smart Money hợp lực
+  // Tự doanh & Đám đông & Smart Money hợp lực F1M
   const foreignStore = loadForeignOIData();
   const existingToday = (foreignStore.history || []).find(h => normalizeDateStr(h.date) === normalizeDateStr(todayStr));
   const tuDoanhNet = existingToday ? (existingToday.tuDoanhOvernight || 0) : 0;
@@ -1201,13 +1326,32 @@ async function buildPreATCNotificationAsync(simulatedData = null) {
   const tdPct = ((Math.abs(effectiveTD) / totalVolSafe) * 100).toFixed(1);
   const smartMoneyPct = ((Math.abs(smartMoneyNet) / totalVolSafe) * 100).toFixed(1);
 
-  // Strength badge
+  // Strength badge F1M
   const foreignAbs = Math.abs(foreignNet);
   let foreignStrengthBadge = '⚖️ CÂN BẰNG';
   if (foreignAbs >= 2500) foreignStrengthBadge = '🔥 RẤT MẠNH';
   else if (foreignAbs >= 1500) foreignStrengthBadge = '⚡ MẠNH';
   else if (foreignAbs >= 800) foreignStrengthBadge = '📊 TRUNG BÌNH';
   else foreignStrengthBadge = '⚖️ CÂN BẰNG';
+
+  // ─── THÔNG SỐ F2M (HỢP ĐỒNG KẾ TIẾP — ĐẶC BIỆT QUAN TRỌNG NGÀY ĐÁO HẠN) ───
+  const isExpiry = (realtimeOI && realtimeOI.isExpiryDay) || dataFetcher.isDerivativesExpiryDay(vnTime, realtimeOI?.f1mMatureDate);
+  const f2mPriceVal = (f2PriceData && f2PriceData.price) || realtimeOI?.f2mPrice || lastKnown.f2m || 0;
+  const f2mPrev = (f2PriceData && f2PriceData.prevPrice) || lastKnown.f2mPrev || f2mPriceVal;
+  const f2mChange = f2mPriceVal && f2mPrev ? (f2mPriceVal - f2mPrev) : 0;
+  const f2mChangePct = f2mPrev ? ((f2mChange / f2mPrev) * 100).toFixed(2) : '0';
+  const basisF2 = f2mPriceVal && vn30Val ? parseFloat((f2mPriceVal - vn30Val).toFixed(2)) : 0;
+
+  const f2ForeignBuy = realtimeOI ? (realtimeOI.f2mForeignBuy || 0) : 0;
+  const f2ForeignSell = realtimeOI ? (realtimeOI.f2mForeignSell || 0) : 0;
+  const f2ForeignNet = realtimeOI ? (realtimeOI.f2mForeignNet !== undefined ? realtimeOI.f2mForeignNet : (f2ForeignBuy - f2ForeignSell)) : 0;
+  const f2Volume = realtimeOI ? (realtimeOI.f2mVolume || 0) : 0;
+  const f2OI = realtimeOI ? (realtimeOI.f2mOI || 0) : 0;
+  const f2EffectiveTD = Math.round(-f2ForeignNet * (oiEstimator.TD_ESTIMATION_RATIO || 0.35));
+  const f2SmartMoneyNet = f2ForeignNet + f2EffectiveTD;
+  const f2CrowdNet = -f2SmartMoneyNet;
+  const f2VolSafe = Math.max(1, f2Volume);
+  const f2ForeignPct = ((Math.abs(f2ForeignNet) / f2VolSafe) * 100).toFixed(1);
 
   // Breadth VN30
   const { analyzeBreadth } = require('./breadthEngine');
@@ -1227,7 +1371,18 @@ async function buildPreATCNotificationAsync(simulatedData = null) {
   let verdictReason = '';
   let tradePlan = '';
 
-  if (isDryOrQuiet) {
+  if (isExpiry) {
+    // NGÀY ĐÁO HẠN: Bắt buộc đóng F1, không cầm vào ATC! Phán quyết dựa theo dòng tiền F2M
+    verdictType = 'EXPIRY_CLOSE';
+    verdictIcon = '🔄';
+    verdictTitle = 'NGÀY ĐÁO HẠN HĐ: CHỐT SẠCH F1M TRƯỚC 14H29 — NẾU CẦM QUA ĐÊM PHẢI MỞ F2M!';
+    actionAdvice = '⚠️ NẾU ĐANG CÓ LỆNH F1M ➔ ĐÓNG HẾT TRƯỚC 14H29m50s! TUYỆT ĐỐI KHÔNG CẦM F1M VÀO ATC! NẾU MỞ MỚI THEO SMART MONEY ➔ BẮT BUỘC ĐẶT LỆNH TRÊN F2M!';
+    verdictReason = `• Hôm nay là ngày đáo hạn HĐ F1M (${realtimeOI?.f1mMatureDate || todayStr}). Sau 14h45, F1M sẽ ngừng giao dịch hoàn toàn và tất toán bằng tiền mặt theo giá bình quân/ATC rổ VN30.\n` +
+      `• Cảnh báo bẫy số liệu: Khối ngoại giao dịch trên F1M (${fmtSign(foreignNet)} HĐ) chủ yếu là ĐÓNG VỊ THẾ CŨ (Cover/Close Short) để tất toán, KHÔNG phản ánh lực mua mới!\n` +
+      `• Xu hướng thật nằm ở HĐ mới F2M: Khối ngoại ${f2ForeignNet >= 0 ? `gom Long ${fmtSign(f2ForeignNet)}` : `gom Short ${fmtSign(f2ForeignNet)}`} HĐ, Smart Money F2 ${f2SmartMoneyNet >= 0 ? `nghiêng Long ${fmtSign(f2SmartMoneyNet)}` : `nghiêng Short ${fmtSign(f2SmartMoneyNet)}`} HĐ.\n` +
+      `• Phiên ATC của ngày đáo hạn thường xảy ra biến động dị thường và méo mó do các bên điều tiết trụ rổ VN30.`;
+    tradePlan = `👉 <b>Chiến thuật:</b> Thoát toàn bộ F1M trước 14h29m50s. ${Math.abs(f2SmartMoneyNet) >= 300 ? `Nếu muốn theo dấu Smart Money qua đêm, chủ động vào lệnh trên HĐ <b>F2M</b> (giá quanh ${fmtDec(f2mPriceVal)}) thay vì F1M.` : 'Tạm thời đứng ngoài quan sát phiên ATC hoàn tất, đánh giá lại vị thế F2M lúc 14h44 & 19h35.'}`;
+  } else if (isDryOrQuiet) {
     verdictType = 'DRY_CLOSE';
     verdictIcon = '🛑';
     verdictTitle = 'TUYỆT ĐỐI KHÔNG MỞ MỚI VÀO ATC!';
@@ -1273,51 +1428,80 @@ async function buildPreATCNotificationAsync(simulatedData = null) {
   }
 
   // Build message
-  let msg = `⚡ <b>BÁO CÁO REALTIME TRƯỚC ATC (14h29) — VN30F1M</b>\n`;
+  let msg = `⚡ <b>BÁO CÁO REALTIME TRƯỚC ATC (14h29) — VN30F1M</b>${isExpiry ? ' 🔄 NGÀY ĐÁO HẠN HỢP ĐỒNG' : ''}\n`;
   msg += `🕐 <i>14:29 Ngày ${todayStr} | Chuẩn bị bước vào phiên ATC (14:30 - 14:45)</i>\n`;
+  if (isExpiry) {
+    msg += `⚠️ <b>NGÀY ĐÁO HẠN HĐ F1M (${realtimeOI?.f1mMatureDate || todayStr})</b> — Toàn bộ dòng tiền đang roll sang F2M!\n`;
+  }
   msg += `━━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
   // 1. TÌNH TRẠNG THỰC TẠI
   msg += `📍 <b>1. TÌNH TRẠNG THỰC TẠI PHÁI SINH & CƠ SỞ:</b>\n`;
-  msg += `• <b>F1M:</b> <b>${fmtDec(f1mPrice)}</b> (${fmtSignDec(f1mChange)}đ | ${fmtSignDec(f1mChangePct)}%)\n`;
-  msg += `• <b>VN30:</b> <b>${fmtDec(vn30Val, 2)}</b> (${fmtSignDec(vn30Change, 2)}đ) | <b>Basis:</b> <b>${fmtSignDec(basis, 2)}đ</b>\n`;
-  msg += `• <b>VNINDEX:</b> <b>${fmtDec(vnidxVal, 2)}</b> (${fmtSignDec(vnidxChange, 2)}đ)\n`;
+  if (isExpiry) {
+    msg += `• 📦 <b>F1M (Đáo hạn hôm nay):</b> <b>${fmtDec(f1mPrice)}</b> (${fmtSignDec(f1mChange)}đ | ${fmtSignDec(f1mChangePct)}%) | <b>Basis F1:</b> <b>${fmtSignDec(basis, 2)}đ</b>\n`;
+    msg += `• 🚀 <b>F2M (Tháng kế tiếp):</b> <b>${fmtDec(f2mPriceVal)}</b> (${fmtSignDec(f2mChange)}đ | ${fmtSignDec(f2mChangePct)}%) | <b>Basis F2:</b> <b>${fmtSignDec(basisF2, 2)}đ</b>\n`;
+    msg += `• <b>VN30:</b> <b>${fmtDec(vn30Val, 2)}</b> (${fmtSignDec(vn30Change, 2)}đ) | <b>VNINDEX:</b> <b>${fmtDec(vnidxVal, 2)}</b> (${fmtSignDec(vnidxChange, 2)}đ)\n`;
+  } else {
+    msg += `• <b>F1M:</b> <b>${fmtDec(f1mPrice)}</b> (${fmtSignDec(f1mChange)}đ | ${fmtSignDec(f1mChangePct)}%)\n`;
+    msg += `• <b>VN30:</b> <b>${fmtDec(vn30Val, 2)}</b> (${fmtSignDec(vn30Change, 2)}đ) | <b>Basis:</b> <b>${fmtSignDec(basis, 2)}đ</b>\n`;
+    msg += `• <b>VNINDEX:</b> <b>${fmtDec(vnidxVal, 2)}</b> (${fmtSignDec(vnidxChange, 2)}đ)\n`;
+  }
   msg += `• <b>Độ rộng VN30:</b> 🟢 <b>${breadth.greenCount}</b> xanh | 🔴 <b>${breadth.redCount}</b> đỏ | 🟡 <b>${breadth.neutralCount || 0}</b> vàng\n`;
   msg += `• <b>Nhóm Bank VN30:</b> ${breadth.bank.greenCount}/${breadth.bank.totalCount} mã xanh (Tham gia: <b>${breadth.bank.label}</b>)\n`;
-  msg += `• <b>Thanh khoản:</b> F1M đạt <b>${fmt(totalVolume)} HĐ</b> | VN30 đạt <b>${fmt(vn30Price?.totalVolume ? vn30Price.totalVolume / 1e6 : 0)}M cp</b>\n\n`;
+  if (isExpiry) {
+    msg += `• <b>Thanh khoản:</b> F1M đạt <b>${fmt(totalVolume)} HĐ</b> | F2M đạt <b>${fmt(f2Volume)} HĐ</b> (Đang roll mạnh sang F2)\n\n`;
+  } else {
+    msg += `• <b>Thanh khoản:</b> F1M đạt <b>${fmt(totalVolume)} HĐ</b> | VN30 đạt <b>${fmt(vn30Price?.totalVolume ? vn30Price.totalVolume / 1e6 : 0)}M cp</b>\n\n`;
+  }
 
   // 2. VỊ THẾ SMART MONEY REALTIME (ĐẾN 14H29)
   msg += `🔥 <b>2. VỊ THẾ SMART MONEY REALTIME (ĐẾN 14H29):</b>\n`;
-  msg += `• 🌐 <b>Khối ngoại (NN):</b> <b>${foreignNet > 0 ? '🟢 MUA RÒNG' : foreignNet < 0 ? '🔴 BÁN RÒNG' : '⚖️ CÂN BẰNG'} ${fmtSign(foreignNet)} HĐ</b> (Tỷ trọng: <b>${foreignPct}%</b>)\n`;
-  msg += `   └ Mua: <code>${fmt(foreignBuy)}</code> | Bán: <code>${fmt(foreignSell)}</code> | Đánh giá: <b>${foreignStrengthBadge}</b>\n`;
-  if (tuDoanhNet !== 0) {
-    msg += `• 🏛️ <b>Tự doanh (TD):</b> <b>${tuDoanhNet > 0 ? `🟢 CẦM LONG ${fmtSign(tuDoanhNet)}` : `🔴 CẦM SHORT ${fmtSign(tuDoanhNet)}`} HĐ</b> (Tỷ trọng: <b>${tdPct}%</b>)\n`;
+  if (isExpiry) {
+    msg += `📦 <b>A. HỢP ĐỒNG ĐÁO HẠN F1M (ĐÓNG VỊ THẾ CŨ):</b>\n`;
+    msg += `• 🌐 <b>Khối ngoại F1:</b> <b>${foreignNet > 0 ? '🟢 MUA RÒNG' : foreignNet < 0 ? '🔴 BÁN RÒNG' : '⚖️ CÂN BẰNG'} ${fmtSign(foreignNet)} HĐ</b> (Mua: <code>${fmt(foreignBuy)}</code> | Bán: <code>${fmt(foreignSell)}</code>)\n`;
+    msg += `• 🏛️ <b>Tự doanh F1:</b> <b>${fmtSign(effectiveTD)} HĐ</b> | 👥 <b>Cá nhân F1:</b> <b>${fmtSign(crowdNet)} HĐ</b>\n`;
+    msg += `⚠️ <i>BẢN CHẤT: Khối ngoại Long/Short F1 hôm nay chủ yếu là ĐÓNG/CHỐT VỊ THẾ CŨ (Cover/Close) để tất toán theo VN30, KHÔNG phản ánh xu hướng mở mới!</i>\n\n`;
+
+    msg += `🚀 <b>B. HỢP ĐỒNG KẾ TIẾP F2M (VỊ THẾ MỞ MỚI CHU KỲ TỚI — MAI LÀ F1M):</b>\n`;
+    msg += `• 🌐 <b>Khối ngoại F2:</b> <b>${f2ForeignNet > 0 ? '🟢 MUA RÒNG (LONG)' : f2ForeignNet < 0 ? '🔴 BÁN RÒNG (SHORT)' : '⚖️ CÂN BẰNG'} ${fmtSign(f2ForeignNet)} HĐ</b>\n`;
+    msg += `   └ Mua: <code>${fmt(f2ForeignBuy)}</code> | Bán: <code>${fmt(f2ForeignSell)}</code> | Tỷ trọng F2: <b>${f2ForeignPct}%</b>\n`;
+    msg += `• 🏛️ <b>Tự doanh F2 (ước tính):</b> <b>${f2EffectiveTD >= 0 ? `🟢 LONG ${fmtSign(f2EffectiveTD)}` : `🔴 SHORT ${fmtSign(f2EffectiveTD)}`} HĐ</b>\n`;
+    msg += `• 🔥 <b>HỢP LỰC SMART MONEY F2:</b> <b>${f2SmartMoneyNet >= 0 ? `🟢 TỔNG LONG ${fmtSign(f2SmartMoneyNet)}` : `🔴 TỔNG SHORT ${fmtSign(f2SmartMoneyNet)}`} HĐ</b>\n`;
+    msg += `• 👥 <b>Cá nhân F2 đối ứng:</b> <b>${f2CrowdNet >= 0 ? `🟢 ÔM LONG ${fmtSign(f2CrowdNet)}` : `🔴 ÔM SHORT ${fmtSign(f2CrowdNet)}`} HĐ</b>\n`;
+    msg += `• 📊 <b>OI & Khối lượng F2:</b> OI đạt <b>${fmt(f2OI)} HĐ</b> | Khối lượng: <b>${fmt(f2Volume)} HĐ</b>\n`;
+    msg += `🔥 <i>ĐÁNH GIÁ: Dòng tiền trên F2M mới phản ánh đúng 100% ý đồ vị thế Smart Money cho ngày mai!</i>\n\n`;
   } else {
-    msg += `• 🏛️ <b>Tự doanh (TD):</b> <b>${fmtSign(effectiveTD)} HĐ</b> <i>(ước tính phòng hộ)</i> (Tỷ trọng: <b>${tdPct}%</b>)\n`;
+    msg += `• 🌐 <b>Khối ngoại (NN):</b> <b>${foreignNet > 0 ? '🟢 MUA RÒNG' : foreignNet < 0 ? '🔴 BÁN RÒNG' : '⚖️ CÂN BẰNG'} ${fmtSign(foreignNet)} HĐ</b> (Tỷ trọng: <b>${foreignPct}%</b>)\n`;
+    msg += `   └ Mua: <code>${fmt(foreignBuy)}</code> | Bán: <code>${fmt(foreignSell)}</code> | Đánh giá: <b>${foreignStrengthBadge}</b>\n`;
+    if (tuDoanhNet !== 0) {
+      msg += `• 🏛️ <b>Tự doanh (TD):</b> <b>${tuDoanhNet > 0 ? `🟢 CẦM LONG ${fmtSign(tuDoanhNet)}` : `🔴 CẦM SHORT ${fmtSign(tuDoanhNet)}`} HĐ</b> (Tỷ trọng: <b>${tdPct}%</b>)\n`;
+    } else {
+      msg += `• 🏛️ <b>Tự doanh (TD):</b> <b>${fmtSign(effectiveTD)} HĐ</b> <i>(ước tính phòng hộ)</i> (Tỷ trọng: <b>${tdPct}%</b>)\n`;
+    }
+    msg += `• 🔥 <b>HỢP LỰC SMART MONEY:</b> <b>${smartMoneyNet >= 0 ? `🟢 TỔNG LONG ${fmtSign(smartMoneyNet)}` : `🔴 TỔNG SHORT ${fmtSign(smartMoneyNet)}`} HĐ</b> (Tỷ trọng: <b>${smartMoneyPct}%</b>)\n`;
+    if (foreignNet > 500 && effectiveTD > 0) {
+      msg += `   └ Trạng thái: <b>🟢 NN & TD ĐỒNG THUẬN LONG CỰC MẠNH</b>\n`;
+    } else if (foreignNet < -500 && effectiveTD < 0) {
+      msg += `   └ Trạng thái: <b>🔴 NN & TD ĐỒNG THUẬN SHORT CỰC MẠNH</b>\n`;
+    } else {
+      msg += `   └ Trạng thái: <b>⚖️ SMART MONEY PHÂN HÓA (${foreignNet >= 0 ? 'NN Long' : 'NN Short'} vs ${effectiveTD >= 0 ? 'TD Long' : 'TD Short'})</b>\n`;
+    }
+    msg += `• 👥 <b>Đám đông (Cá nhân):</b> <b>${crowdNet > 0 ? `🟢 ÔM LONG ${fmtSign(crowdNet)}` : crowdNet < 0 ? `🔴 ÔM SHORT ${fmtSign(crowdNet)}` : '⚖️ CÂN BẰNG 0'} HĐ</b>\n`;
+    if (crowdNet > 1000) {
+      msg += `   └ Đánh giá: <b>🔴 ĐÁM ĐÔNG ĐU LONG BẮT ĐÁY BỊ KẸP NẶNG</b>\n`;
+    } else if (crowdNet < -1000) {
+      msg += `   └ Đánh giá: <b>🔴 ĐÁM ĐÔNG ĐANG BỊ KẸP SHORT NẶNG</b>\n`;
+    } else {
+      msg += `   └ Đánh giá: <b>⚖️ ĐÁM ĐÔNG LƯỠNG LỰ QUAN SÁT</b>\n`;
+    }
+    msg += `• 📊 <b>Biến động OI phiên nay:</b> <b>${fmtSign(totalOIChange)} HĐ</b> (Tổng OI: <b>${fmt(totalOI)} HĐ</b>)\n`;
+    if (totalOIChange < -800) {
+      msg += `   └ Cảnh báo: <b>⚠️ OI giảm mạnh ➔ Tay to đã chủ động chốt lời đóng bớt HĐ</b>\n`;
+    } else if (totalOIChange > 1500) {
+      msg += `   └ Trạng thái: <b>🔥 Tiền lớn bơm mạnh mở vị thế mới chuẩn bị đánh ATC</b>\n`;
+    }
+    msg += `\n`;
   }
-  msg += `• 🔥 <b>HỢP LỰC SMART MONEY:</b> <b>${smartMoneyNet >= 0 ? `🟢 TỔNG LONG ${fmtSign(smartMoneyNet)}` : `🔴 TỔNG SHORT ${fmtSign(smartMoneyNet)}`} HĐ</b> (Tỷ trọng: <b>${smartMoneyPct}%</b>)\n`;
-  if (foreignNet > 500 && effectiveTD > 0) {
-    msg += `   └ Trạng thái: <b>🟢 NN & TD ĐỒNG THUẬN LONG CỰC MẠNH</b>\n`;
-  } else if (foreignNet < -500 && effectiveTD < 0) {
-    msg += `   └ Trạng thái: <b>🔴 NN & TD ĐỒNG THUẬN SHORT CỰC MẠNH</b>\n`;
-  } else {
-    msg += `   └ Trạng thái: <b>⚖️ SMART MONEY PHÂN HÓA (${foreignNet >= 0 ? 'NN Long' : 'NN Short'} vs ${effectiveTD >= 0 ? 'TD Long' : 'TD Short'})</b>\n`;
-  }
-  msg += `• 👥 <b>Đám đông (Cá nhân):</b> <b>${crowdNet > 0 ? `🟢 ÔM LONG ${fmtSign(crowdNet)}` : crowdNet < 0 ? `🔴 ÔM SHORT ${fmtSign(crowdNet)}` : '⚖️ CÂN BẰNG 0'} HĐ</b>\n`;
-  if (crowdNet > 1000) {
-    msg += `   └ Đánh giá: <b>🔴 ĐÁM ĐÔNG ĐU LONG BẮT ĐÁY BỊ KẸP NẶNG</b>\n`;
-  } else if (crowdNet < -1000) {
-    msg += `   └ Đánh giá: <b>🔴 ĐÁM ĐÔNG ĐANG BỊ KẸP SHORT NẶNG</b>\n`;
-  } else {
-    msg += `   └ Đánh giá: <b>⚖️ ĐÁM ĐÔNG LƯỠNG LỰ QUAN SÁT</b>\n`;
-  }
-  msg += `• 📊 <b>Biến động OI phiên nay:</b> <b>${fmtSign(totalOIChange)} HĐ</b> (Tổng OI: <b>${fmt(totalOI)} HĐ</b>)\n`;
-  if (totalOIChange < -800) {
-    msg += `   └ Cảnh báo: <b>⚠️ OI giảm mạnh ➔ Tay to đã chủ động chốt lời đóng bớt HĐ</b>\n`;
-  } else if (totalOIChange > 1500) {
-    msg += `   └ Trạng thái: <b>🔥 Tiền lớn bơm mạnh mở vị thế mới chuẩn bị đánh ATC</b>\n`;
-  }
-  msg += `\n`;
 
   // 3. ĐÁNH GIÁ THANH KHOẢN & TAY TO
   msg += `⚠️ <b>3. ĐÁNH GIÁ THANH KHOẢN & HÀNH VI CÁ MẬP:</b>\n`;
@@ -1431,8 +1615,8 @@ async function buildPostATCNotificationAsync(simulatedData = null) {
 
   const foreignAbs = Math.abs(foreignNet);
 
-  // Auto-sync today's session record to JSON files (chỉ khi có data thật)
-  if (!simulatedData && f1mPrice > 0 && (foreignBuy > 0 || foreignSell > 0 || totalOI > 0)) {
+  // Auto-sync today's session record to JSON files (chỉ khi là ngày giao dịch thật và có data)
+  if (!simulatedData && isTradingDay(vnTime) && f1mPrice > 0 && (foreignBuy > 0 || foreignSell > 0 || totalOI > 0)) {
     try {
       const todayEntry = {
         date: todayStr,

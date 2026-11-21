@@ -1,5 +1,5 @@
 {
-  "lastUpdated": "2026-11-16T14:17:51.556Z",
+  "lastUpdated": "2026-11-21T11:27:55.744Z",
   "history": [
     {
       "date": "16/10/2026",
@@ -198,6 +198,58 @@
       "basis": -1.25,
       "volume": 201401,
       "positionState": "NEUTRAL"
+    },
+    {
+      "date": "17/11/2026",
+      "totalOI": 36800,
+      "f1mOI": 34300,
+      "oiChange": -242,
+      "f1mPrice": 1837.3,
+      "vn30Price": 1837.13,
+      "basis": 0.17,
+      "volume": 195000,
+      "positionState": "SHORT_ACCUMULATION",
+      "isExpiryDay": false
+    },
+    {
+      "date": "18/11/2026",
+      "totalOI": 36200,
+      "f1mOI": 33700,
+      "oiChange": -600,
+      "f1mPrice": 1815,
+      "vn30Price": 1806.54,
+      "basis": 8.46,
+      "volume": 212000,
+      "positionState": "SHORT_ACCUMULATION",
+      "isExpiryDay": false
+    },
+    {
+      "date": "19/11/2026",
+      "totalOI": 34500,
+      "f1mOI": 8200,
+      "oiChange": -1700,
+      "f1mPrice": 1787.9,
+      "vn30Price": 1788.51,
+      "basis": -0.61,
+      "volume": 245000,
+      "positionState": "SHORT_COVERING",
+      "isExpiryDay": true,
+      "f2mPrice": 1791.1,
+      "f2Basis": 2.59,
+      "f2OI": 26300,
+      "f2Volume": 12500
+    },
+    {
+      "date": "20/11/2026",
+      "totalOI": 27657,
+      "f1mOI": 25410,
+      "oiChange": -6843,
+      "f1mPrice": 1780.2,
+      "vn30Price": 1786.84,
+      "basis": -6.64,
+      "volume": 185882,
+      "positionState": "SHORT_ACCUMULATION",
+      "isExpiryDay": false
     }
   ]
 }
