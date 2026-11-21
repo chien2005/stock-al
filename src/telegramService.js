@@ -26,7 +26,22 @@ async function sendMessageSafe(chatId, text) {
       disable_web_page_preview: true,
     });
   } catch (error) {
-    const desc = error.response?.data?.description || error.message;
+    const data = error.response?.data;
+    const desc = data?.description || error.message;
+
+    // Tự động chuyển đổi nếu nhóm Telegram được nâng cấp lên Supergroup
+    const migrateTo = data?.parameters?.migrate_to_chat_id;
+    if (migrateTo) {
+      console.warn(`🔄 Telegram group chat migrated to supergroup: ${chatId} ➔ ${migrateTo}`);
+      if (config.telegram.chatIdDerivatives === chatId || config.telegram.chatIdDerivatives == chatId) {
+        config.telegram.chatIdDerivatives = migrateTo;
+      }
+      if (config.telegram.chatId === chatId || config.telegram.chatId == chatId) {
+        config.telegram.chatId = migrateTo;
+      }
+      return await sendMessageSafe(migrateTo, text);
+    }
+
     if (desc && (desc.includes("can't parse entities") || desc.includes("Bad Request: can't parse"))) {
       console.warn(`⚠️ Telegram HTML entity parse error, retrying as plain text... (${desc})`);
       const plainText = text.replace(/<[^>]+>/g, '');
