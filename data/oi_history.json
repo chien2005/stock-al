@@ -219,9 +219,14 @@
       "f1mPrice": 1815,
       "vn30Price": 1806.54,
       "basis": 8.46,
-      "volume": 212000,
+      "volume": 172252,
       "positionState": "SHORT_ACCUMULATION",
-      "isExpiryDay": false
+      "isExpiryDay": false,
+      "isPreExpiryDay": true,
+      "f2Volume": 12958,
+      "f2OI": 11591,
+      "f2mPrice": 1808,
+      "f2Basis": 1.46
     },
     {
       "date": "19/11/2026",
@@ -231,13 +236,14 @@
       "f1mPrice": 1787.9,
       "vn30Price": 1788.51,
       "basis": -0.61,
-      "volume": 245000,
+      "volume": 187495,
       "positionState": "SHORT_COVERING",
       "isExpiryDay": true,
       "f2mPrice": 1791.1,
       "f2Basis": 2.59,
-      "f2OI": 26300,
-      "f2Volume": 12500
+      "f2OI": 27657,
+      "f2Volume": 34518,
+      "isPreExpiryDay": false
     },
     {
       "date": "20/11/2026",
@@ -249,7 +255,8 @@
       "basis": -6.64,
       "volume": 185882,
       "positionState": "SHORT_ACCUMULATION",
-      "isExpiryDay": false
+      "isExpiryDay": false,
+      "isPreExpiryDay": false
     }
   ]
 }

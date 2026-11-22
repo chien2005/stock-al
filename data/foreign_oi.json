@@ -208,7 +208,18 @@
       "cumulativeNN": -6469,
       "cumulativeTD": 2499,
       "cumulativeCrowd": 3970,
-      "isExpiryDay": false
+      "isExpiryDay": false,
+      "isPreExpiryDay": true,
+      "f2Net": -2230,
+      "f2Buy": 1250,
+      "f2Sell": 3480,
+      "f2Volume": 12958,
+      "f2OI": 11591,
+      "f2mPrice": 1808,
+      "f2Basis": 1.46,
+      "f2CumulativeNN": -3250,
+      "f2CumulativeTD": 1140,
+      "f2CumulativeCrowd": 2110
     },
     {
       "date": "19/11/2026",
@@ -217,18 +228,22 @@
       "overnightNet": 8000,
       "tuDoanhOvernight": 0,
       "crowdOvernight": -8000,
-      "cumulativeNN": -8000,
-      "cumulativeTD": 2800,
-      "cumulativeCrowd": 5200,
+      "cumulativeNN": -8020,
+      "cumulativeTD": 2807,
+      "cumulativeCrowd": 5213,
       "isExpiryDay": true,
       "f1CloseNet": 8000,
-      "f2Net": 0,
-      "f2Buy": 0,
-      "f2Sell": 0,
-      "f2Volume": 12500,
-      "f2OI": 26300,
+      "f2Net": -4770,
+      "f2Buy": 2120,
+      "f2Sell": 6890,
+      "f2Volume": 34518,
+      "f2OI": 27657,
       "f2mPrice": 1791.1,
-      "f2Basis": 2.59
+      "f2Basis": 2.59,
+      "isPreExpiryDay": false,
+      "f2CumulativeNN": -8020,
+      "f2CumulativeTD": 2807,
+      "f2CumulativeCrowd": 5213
     },
     {
       "date": "20/11/2026",
@@ -237,10 +252,11 @@
       "overnightNet": -46,
       "tuDoanhOvernight": 16,
       "crowdOvernight": 30,
-      "cumulativeNN": -8046,
-      "cumulativeTD": 2816,
-      "cumulativeCrowd": 5230,
-      "isExpiryDay": false
+      "cumulativeNN": -8066,
+      "cumulativeTD": 2823,
+      "cumulativeCrowd": 5243,
+      "isExpiryDay": false,
+      "isPreExpiryDay": false
     }
   ]
 }

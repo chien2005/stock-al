@@ -538,6 +538,7 @@ async function buildEveningPlanNotification() {
   const vnTime = dataFetcher.getVnTime();
   const oiData = await dataFetcher.fetchDerivativesOIData();
   const isExpiry = (oiData && oiData.isExpiryDay) || dataFetcher.isDerivativesExpiryDay(vnTime, oiData?.f1mMatureDate);
+  const isPreExpiry = (oiData && oiData.isPreExpiryDay) || dataFetcher.isDerivativesPreExpiryDay(vnTime, oiData?.f1mMatureDate);
   const targetSymbol = isExpiry ? 'VN30F2M' : 'VN30F1M';
 
   // Fetch tất cả data cần thiết
@@ -630,6 +631,10 @@ async function buildEveningPlanNotification() {
     if (basis) {
       dataSection += `  Basis: ${basis.basis >= 0 ? '+' : ''}${basis.basis}đ — ${basis.description}\n`;
     }
+    if (isPreExpiry) {
+      const f2Basis = f2mPriceVal && vn30PriceVal ? (f2mPriceVal - vn30PriceVal).toFixed(1) : '0';
+      dataSection += `  • ⏳ <i>Mai đáo hạn: HĐ F2M = <b>${f2mPriceVal?.toFixed(1) || 'N/A'}</b> (Basis F2: ${f2Basis >= 0 ? '+' : ''}${f2Basis}đ) | Vol F2: <b>${(oiData?.f2mVolume || 0).toLocaleString()} HĐ</b> | OI F2: <b>${(oiData?.f2mOI || 0).toLocaleString()} HĐ</b></i>\n`;
+    }
     dataSection += `\n`;
   }
 
@@ -701,7 +706,10 @@ ${isExpiry ? `\n⚠️ ĐẶC BIỆT LƯU Ý: HÔM NAY LÀ NGÀY ĐÁO HẠN PH�
 - Hợp đồng cũ F1 đã đóng vị thế và tất toán tiền mặt tại giá settlement ${f1mPrice?.toFixed(1)}. Khối ngoại mua F1 chỉ là ĐÓNG SHORT cũ, KHÔNG PHẢI MUA GOM LONG!
 - Toàn bộ dữ liệu phân tích kỹ thuật, S/R, nến và dòng tiền dưới đây được trích xuất từ HỢP ĐỒNG MỚI F2 (ngày mai chính thức trở thành F1, giá ${activePrice?.toFixed(1)}).
 - Khối ngoại đang giữ vị thế lũy kế ${smartMoney?.cumNN?.toLocaleString()} HĐ (${(smartMoney?.cumNN || 0) < 0 ? 'SHORT' : 'LONG'}) trên HỢP ĐỒNG MỚI.
-- Toàn bộ kế hoạch và điểm vào lệnh phiên mai phải dựa trên HỢP ĐỒNG MỚI!\n` : ''}
+- Toàn bộ kế hoạch và điểm vào lệnh phiên mai phải dựa trên HỢP ĐỒNG MỚI!\n` : isPreExpiry ? `\n⚠️ ĐẶC BIỆT LƯU Ý: NGÀY MAI LÀ NGÀY ĐÁO HẠN PHÁI SINH (THỨ 5 TUẦN 3)!
+- HĐ F1M sẽ đáo hạn chốt sổ vào phiên ATC ngày mai.
+- Nhắc nhở trader đóng sạch vị thế F1M trước 14h29p50, tuyệt đối không ôm qua ATC để tránh bẫy biến động giật ATC ngày đáo hạn.
+- Đánh giá xu hướng dòng tiền lớn đang chuyển dịch sang F2M.\n` : ''}
 DỮ LIỆU KẾT PHIÊN (${dataFetcher.vnNow()}):
 
 GIÁ:

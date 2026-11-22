@@ -86,7 +86,28 @@ function getStartOfDayTimestamp() {
   return Math.floor(vnTime.getTime() / 1000);
 }
 
-// Kiểm tra xem hôm nay có phải ngày đáo hạn hợp đồng phái sinh không
+/**
+ * Tính ngày thứ 5 tuần thứ 3 trong tháng (Ngày đáo hạn chuẩn phái sinh VN30F)
+ * @param {number} year - Năm (vd 2026)
+ * @param {number} month - Tháng 1-12 (vd 11)
+ * @returns {number} Ngày trong tháng (từ 15 đến 21)
+ */
+function getThirdThursdayOfMonth(year, month) {
+  // Tìm ngày thứ 5 đầu tiên của tháng
+  // JS Date: month là 0-indexed (0=Tháng 1, ..., 11=Tháng 12)
+  const firstDay = new Date(year, month - 1, 1);
+  const dayOfWeek = firstDay.getDay(); // 0 = CN, 1 = T2, ..., 4 = T5
+  let firstThursdayDate;
+  if (dayOfWeek <= 4) {
+    firstThursdayDate = 1 + (4 - dayOfWeek);
+  } else {
+    firstThursdayDate = 1 + (11 - dayOfWeek);
+  }
+  // Thứ 5 tuần thứ 3 = Thứ 5 đầu tiên + 14 ngày
+  return firstThursdayDate + 14;
+}
+
+// Kiểm tra xem hôm nay có phải ngày đáo hạn hợp đồng phái sinh không (Thứ 5 tuần thứ 3)
 function isDerivativesExpiryDay(date = new Date(), matureDateStr = null) {
   const vnTime = new Date(date.toLocaleString('en-US', { timeZone: config.timezone || 'Asia/Ho_Chi_Minh' }));
   const d = vnTime.getDate();
@@ -100,8 +121,35 @@ function isDerivativesExpiryDay(date = new Date(), matureDateStr = null) {
     }
   }
 
-  // Thứ 5 thứ 3 của tháng (ngày từ 15 đến 21)
-  return vnTime.getDay() === 4 && d >= 15 && d <= 21;
+  // Tự động tính thứ 5 tuần thứ 3 của tháng
+  const thirdThursday = getThirdThursdayOfMonth(y, m);
+  return vnTime.getDay() === 4 && d === thirdThursday;
+}
+
+// Kiểm tra xem hôm nay có phải ngày T-1 trước ngày đáo hạn không (Thứ 4 ngay trước Thứ 5 tuần 3)
+function isDerivativesPreExpiryDay(date = new Date(), matureDateStr = null) {
+  const vnTime = new Date(date.toLocaleString('en-US', { timeZone: config.timezone || 'Asia/Ho_Chi_Minh' }));
+  const d = vnTime.getDate();
+  const m = vnTime.getMonth() + 1;
+  const y = vnTime.getFullYear();
+
+  if (matureDateStr && typeof matureDateStr === 'string') {
+    const parts = matureDateStr.trim().split('/').map(p => parseInt(p, 10));
+    if (parts.length === 3 && parts[1] === m && parts[2] === y) {
+      const matureDay = parts[0];
+      if (d === matureDay - 1 && vnTime.getDay() === 3) {
+        return true;
+      }
+    }
+  }
+
+  const thirdThursday = getThirdThursdayOfMonth(y, m);
+  return vnTime.getDay() === 3 && d === (thirdThursday - 1);
+}
+
+// Kiểm tra xem hôm nay có nằm trong kỳ theo dõi F2 sát sao không (Thứ 4 T-1 HOẶC Thứ 5 Đáo hạn)
+function isDerivativesExpiryOrPreExpiryDay(date = new Date(), matureDateStr = null) {
+  return isDerivativesExpiryDay(date, matureDateStr) || isDerivativesPreExpiryDay(date, matureDateStr);
 }
 
 // ─── FETCH OHLCV (Multi-source fallback) ─────────────────────
@@ -583,6 +631,7 @@ async function fetchDerivativesOIData() {
     // Kiểm tra ngày đáo hạn từ matureDate F1M
     const f1mMatureDate = f1mData ? (f1mData.matureDate || null) : null;
     const isExpiry = isDerivativesExpiryDay(new Date(), f1mMatureDate);
+    const isPreExpiry = isDerivativesPreExpiryDay(new Date(), f1mMatureDate);
 
     let totalOI = 0;
     let totalOIChange = 0;
@@ -669,8 +718,10 @@ async function fetchDerivativesOIData() {
         foreignNet: f2mForeignBuy - f2mForeignSell,
         matureDate: f2mMatureDate,
       },
-      // Ngày đáo hạn
+      // Ngày đáo hạn & T-1
       isExpiryDay: isExpiry,
+      isPreExpiryDay: isPreExpiry,
+      isExpiryOrPreExpiry: isExpiry || isPreExpiry,
       derivSymbols,
     };
   } catch (e) {
@@ -780,7 +831,10 @@ module.exports = {
   getBreadthSnapshots,
   resetDailyCache,
   getCurrentDerivativeSymbols,
+  getThirdThursdayOfMonth,
   isDerivativesExpiryDay,
+  isDerivativesPreExpiryDay,
+  isDerivativesExpiryOrPreExpiryDay,
   vnNow,
   getVnTime,
   isMarketHours,
