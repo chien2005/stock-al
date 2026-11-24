@@ -2259,12 +2259,15 @@ function start() {
   stop();
   console.log(`   🔮 VN30F v8.0 Senior Quant AI Agent: Started (Dominance Classifier, Predictive Entry, Profit Lock Guard, Entrade Demo execution)`);
 
-  // Khởi động quy trình buổi sáng của Day Manager (Đăng nhập Entrade, chốt vốn, báo cáo 8h59)
-  try {
-    const dayMgr = getDayManager();
-    dayMgr.startMorningRoutine().catch(e => console.error('   ⚠️ [Scalper] Morning routine error:', e.message));
-  } catch (e) {
-    console.error('   ⚠️ [Scalper] DayManager init error:', e.message);
+  // Chỉ chạy Morning Routine nếu đang là khung giờ mở cửa buổi sáng (08:50 - 09:05)
+  const currentHM = getVnTimeHHMM();
+  if (currentHM >= '08:50' && currentHM <= '09:05') {
+    try {
+      const dayMgr = getDayManager();
+      dayMgr.startMorningRoutine().catch(e => console.error('   ⚠️ [Scalper] Morning routine error:', e.message));
+    } catch (e) {
+      console.error('   ⚠️ [Scalper] DayManager init error:', e.message);
+    }
   }
 
   // Poll nến 1p & 5p mỗi 60s

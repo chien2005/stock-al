@@ -26,6 +26,14 @@ class EntradeClient {
     const username = this.credentials.username;
     const password = this.credentials.password;
 
+    if (!username || !password) {
+      console.warn(`[Entrade ${this.env}] ⚠️ Chưa cấu hình ENTRADE_USERNAME hoặc ENTRADE_PASSWORD!`);
+      return {
+        success: false,
+        error: 'Chưa cấu hình ENTRADE_USERNAME hoặc ENTRADE_PASSWORD trên Render Dashboard (tab Environment)'
+      };
+    }
+
     console.log(`[Entrade ${this.env}] Đang đăng nhập tài khoản Entrade: ${username}...`);
     try {
       const res = await axios.post(entradeConfig.endpoints.authUrl, {

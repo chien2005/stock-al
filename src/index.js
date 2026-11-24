@@ -518,9 +518,23 @@ async function main() {
     syncActiveState();
   }, 5 * 60 * 1000);
 
-  // ─── START VOLUME SCALPER v5.0 (chạy cả khi khởi động lại trong phiên) ───
+  // ─── START VOLUME SCALPER v8.0 (chạy cả khi khởi động lại trong phiên) ───
   startVolumeScalper();
   // Đã lược bỏ Alert Monitor, BigTrade Flush và Whale Tracker theo yêu cầu của user để tối giản group cơ sở
+
+  // ─── SCHEDULE: ENTRADE DEMO MORNING ROUTINE (08:59 T2-T6) ───
+  cron.schedule('59 8 * * 1-5', async () => {
+    if (!isCurrentInstanceActive()) return;
+    if (!isWeekday()) return;
+    console.log('\n🌅 [Entrade Demo] Kích hoạt quy trình kiểm tra đầu ngày 08:59...');
+    try {
+      const { getDayManager } = require('./derivatives/volumeScalper');
+      await getDayManager().startMorningRoutine();
+    } catch (err) {
+      console.error('🌅 [Entrade Demo 08:59] Lỗi:', err.message);
+    }
+  }, { scheduled: true, timezone: config.timezone });
+  console.log('   🌅 Entrade Demo Morning Routine: 08:59 (T2-T6)');
 
   // ─── SCHEDULE: DERIVATIVES — RESET & START VOLUME SCALPER 9h00 ───
   cron.schedule('0 9 * * 1-5', async () => {
