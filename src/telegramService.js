@@ -82,6 +82,22 @@ async function sendTelegramMessage(message) {
  * @param {string} message - Nội dung message (hỗ trợ HTML)
  */
 async function sendDerivativesMessage(message) {
+  // Kiểm tra nếu là Báo cáo tối quan trọng (19h35, 19h50, v.v.): LUÔN GIỮ LẠI VÀ GỬI ĐI!
+  const isEveningReport = message && (
+    message.includes('BÁO CÁO OI') || 
+    message.includes('EVENING PLAN') || 
+    message.includes('KẾ HOẠCH TÁC CHIẾN') ||
+    message.includes('CHÍNH THỨC VSDC') ||
+    message.includes('19h35') ||
+    message.includes('19h50') ||
+    message.includes('TAY TO')
+  );
+
+  // Nếu đang bật tắt noti nhóm Ps cũ, CHỈ tắt các thông báo tín hiệu trong phiên, GIỮ LẠI Báo cáo tối
+  if (config.telegram.disableLegacyPsNoti && !isEveningReport) {
+    console.log('🔇 [MUTE] Thông báo tín hiệu trong phiên nhóm Phái sinh cũ đã tạm tắt.');
+    return false;
+  }
   try {
     const chatId = config.telegram.chatIdDerivatives || config.telegram.chatId;
     const chunks = splitMessage(message, 4000);
@@ -454,4 +470,28 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-module.exports = { sendTelegramMessage, sendDerivativesMessage, formatStockMessage };
+/**
+ * Gửi message tới nhóm Trading Demo mới (-5509642518)
+ * @param {string} message - Nội dung message (hỗ trợ HTML)
+ */
+async function sendTradingDemoMessage(message) {
+  try {
+    const chatId = config.telegram.chatIdTradingDemo || '-5509642518';
+    const chunks = splitMessage(message, 4000);
+
+    for (const chunk of chunks) {
+      await sendMessageSafe(chatId, chunk);
+      if (chunks.length > 1) {
+        await sleep(500);
+      }
+    }
+
+    console.log('📩 Đã gửi message Telegram (Trading Demo: ' + chatId + ') thành công!');
+    return true;
+  } catch (error) {
+    console.error('❌ Lỗi gửi Telegram (Trading Demo):', error.response?.data?.description || error.message);
+    return false;
+  }
+}
+
+module.exports = { sendTelegramMessage, sendDerivativesMessage, sendTradingDemoMessage, formatStockMessage };

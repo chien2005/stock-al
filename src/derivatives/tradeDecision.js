@@ -14,6 +14,8 @@
  * ╚═══════════════════════════════════════════════════════════════╝
  */
 
+const dominanceClassifier = require('./dominanceClassifier');
+
 // ─── VSA PATTERN DETECTION (Hỗ trợ Dynamic & Tương đối) ───────
 /**
  * Nhận diện mẫu hình nến kết hợp Volume Spread Analysis
@@ -154,7 +156,22 @@ function detectPlaybookSetup(params) {
     marketStructureData,
     flowData,
     vsaPatterns = [],
+    predictiveSignal = null,
   } = params;
+
+  // 0. ƯU TIÊN CAO NHẤT: SETUP ĐÓN ĐẦU THANH KHOẢN (PREDICTIVE ENTRY)
+  if (predictiveSignal && predictiveSignal.direction === direction) {
+    return {
+      type: predictiveSignal.type,
+      label: `🎯 ĐÓN ĐẦU: ${predictiveSignal.description}`,
+      quality: 'EXCELLENT',
+      description: predictiveSignal.reason,
+      sl: predictiveSignal.sl,
+      tp1: predictiveSignal.tp1,
+      tp2: predictiveSignal.tp2,
+      slDistance: predictiveSignal.slDistance,
+    };
+  }
 
   if (!marketStructureData || !candle) {
     return { type: 'STANDARD_MOMENTUM', label: 'Xung lực thông thường', quality: 'NORMAL' };
@@ -280,6 +297,8 @@ function calculateConfidence(params) {
     flowData,             // Từ flowEngine.analyzeFlow() + detectAbsorption()
     pillarAnalysis,       // Từ pillarMonitor.analyzePillars()
     setupInfo,            // Từ detectPlaybookSetup()
+    dominanceResult = null, // MỚI: Từ dominanceClassifier.classifyDominance()
+    predictiveSignal = null,// MỚI: Từ predictiveEntry.analyzePredictiveEntry()
   } = params;
 
   let score = 0;
@@ -288,10 +307,40 @@ function calculateConfidence(params) {
   const isLong = direction === 'LONG';
 
   // ═════════════════════════════════════════════════════════════
+  // LỚP 0: ĐỘ ĐỒNG THUẬN THỊ TRƯỜNG & CHỐNG ĐU CAO TRÀO (PRE-FILTER)
+  // ═════════════════════════════════════════════════════════════
+  let layer0HardBlock = null;
+
+  // 1. Dominance Classifier (Trend Day Lock)
+  if (dominanceResult) {
+    const dirCheck = dominanceClassifier.isDirectionAllowed ? dominanceClassifier.isDirectionAllowed(direction) : null;
+    if (dirCheck && !dirCheck.allowed) {
+      layer0HardBlock = dirCheck.reason;
+    }
+  }
+
+  // 2. Chống đu lệnh cao trào (Anti-Climax Chasing)
+  if (volRatio && volRatio > 2.5) {
+    layer0HardBlock = `🚫 ANTI-CLIMAX: Vol nến ${(volRatio * 100).toFixed(0)}% MA20 (>250%) — CẤM ĐU LỆNH CAO TRÀO! Smart Money đã phân phối/gom xong, đu theo làm thanh khoản!`;
+  }
+
+  // Thưởng điểm nếu có tín hiệu Đón đầu (Predictive Signal) cùng chiều
+  if (predictiveSignal && predictiveSignal.direction === direction) {
+    score += 12;
+    reasons.push(`🎯 Tín hiệu ĐÓN ĐẦU: ${predictiveSignal.description}`);
+  }
+
+  // ═════════════════════════════════════════════════════════════
   // LỚP 1: CẤU TRÚC THỊ TRƯỜNG (MARKET STRUCTURE) — TỐI ĐA 25 ĐIỂM
   // ═════════════════════════════════════════════════════════════
   let layer1Score = 0;
-  if (marketStructureData) {
+  const isPredictiveReversal = predictiveSignal && (predictiveSignal.type === 'SPRING' || predictiveSignal.type === 'UPTHRUST' || predictiveSignal.type === 'EXHAUSTION');
+
+  if (isPredictiveReversal && predictiveSignal.direction === direction) {
+    // Với setup Đón Đầu Đảo Chiều (Spring/Upthrust/Exhaustion): Bản chất là bắt điểm xoay cực trị tại cản/hỗ trợ
+    layer1Score += 22;
+    reasons.push(`Cấu trúc đảo chiều cực trị (${predictiveSignal.type}) — Quét thanh khoản S/R đón đầu`);
+  } else if (marketStructureData) {
     const { waveStructure, trendBias } = marketStructureData;
 
     // A. Sóng đỉnh đáy (HH/HL vs LH/LL)
@@ -349,7 +398,10 @@ function calculateConfidence(params) {
 
     // A. Vị trí so với VWAP (Neo giá tổ chức)
     if (vwap) {
-      if (isLong && price >= vwap) {
+      if (isPredictiveReversal && predictiveSignal.direction === direction) {
+        layer2Score += 8;
+        reasons.push(`Giá ${price.toFixed(1)} đón đầu đảo chiều hướng về VWAP (${vwap.toFixed(1)})`);
+      } else if (isLong && price >= vwap) {
         layer2Score += 8;
         reasons.push(`Giá ${price.toFixed(1)} nằm TRÊN VWAP (${vwap.toFixed(1)}) — Phe Mua kiểm soát sân chơi`);
       } else if (!isLong && price <= vwap) {
@@ -366,10 +418,10 @@ function calculateConfidence(params) {
     const supportPrice = marketStructureData.nearestSupport?.price ?? marketStructureData.val ?? marketStructureData.todayRange?.low;
     const resistPrice = marketStructureData.nearestResistance?.price ?? marketStructureData.vah ?? marketStructureData.todayRange?.high;
 
-    if (isLong && currentZone === 'AT_SUPPORT') {
+    if (isLong && (currentZone === 'AT_SUPPORT' || (isPredictiveReversal && predictiveSignal.type === 'SPRING'))) {
       layer2Score += 7;
       reasons.push(`Vị thế tại vùng Hỗ trợ (${supportPrice ? supportPrice.toFixed(1) : 'VAL'}) — Điểm vào an toàn`);
-    } else if (!isLong && currentZone === 'AT_RESISTANCE') {
+    } else if (!isLong && (currentZone === 'AT_RESISTANCE' || (isPredictiveReversal && predictiveSignal.type === 'UPTHRUST'))) {
       layer2Score += 7;
       reasons.push(`Vị thế tại vùng Kháng cự (${resistPrice ? resistPrice.toFixed(1) : 'VAH'}) — Điểm vào an toàn`);
     } else if (isLong && (currentZone === 'AT_RESISTANCE' || (resistPrice && Math.abs(candle.close - resistPrice) <= 1.8))) {
@@ -568,7 +620,7 @@ function calculateConfidence(params) {
   // 4. CẤM LONG KHI RSI QUÁ MUA (> 68) HOẶC RƯỚN QUÁ XA VWAP
   // 5. CẤM MỞ MỚI KHUNG GIỜ NGUY HIỂM 14h00 - 14h25
   // ═════════════════════════════════════════════════════════════
-  let hardBlockReason = null;
+  let hardBlockReason = layer0HardBlock || null;
   const price = candle.close;
 
   // Trích xuất RSI
@@ -689,52 +741,42 @@ function generateTradePlan(entry, direction, timeframe = '1M', options = {}) {
 
   const isLong = direction === 'LONG';
 
-  // 1. Tính toán khoảng cách SL dựa trên Key Level gần nhất hoặc ATR
-  // Chuẩn nâng cấp: SL tối đa 5.0đ (Hard cap), tối ưu trong vùng 3.5 - 4.5đ gần cản/hỗ trợ/sideway/nến break
-  let slDistance = 4.0; // Mặc định 4.0đ (nằm giữa 3.5 - 4.5đ)
+  // 1. Tính toán khoảng cách SL theo Chuẩn Plan v4.0 (1.2đ - 1.8đ, tuyệt đối không thả trôi 3-4đ)
+  let slDistance = options.slDistance || null;
+  if (!slDistance && options.sl) {
+    slDistance = parseFloat(Math.abs(entry - options.sl).toFixed(1));
+  }
 
-  // Nếu có Key Level gần đó, đặt SL ngoài mức đó 0.4đ buffer
-  if (keyLevels && keyLevels.length > 0) {
-    if (isLong) {
-      const nearestSupport = keyLevels.filter(l => l.price < entry).sort((a, b) => b.price - a.price)[0];
-      if (nearestSupport) {
-        const rawDist = parseFloat((entry - nearestSupport.price + 0.4).toFixed(1));
-        if (rawDist >= 3.5 && rawDist <= 4.5) {
-          slDistance = rawDist;
-        } else if (rawDist < 3.5) {
-          slDistance = Math.min(4.0, Math.max(3.5, rawDist + 0.6));
-        } else {
-          slDistance = Math.min(5.0, rawDist);
+  if (!slDistance) {
+    // Nếu có Key Level gần đó, đặt SL ngoài mức đó 0.3đ buffer
+    if (keyLevels && keyLevels.length > 0) {
+      if (isLong) {
+        const nearestSupport = keyLevels.filter(l => l.price < entry).sort((a, b) => b.price - a.price)[0];
+        if (nearestSupport) {
+          slDistance = parseFloat((entry - nearestSupport.price + 0.3).toFixed(1));
         }
-      }
-    } else {
-      const nearestResist = keyLevels.filter(l => l.price > entry).sort((a, b) => a.price - b.price)[0];
-      if (nearestResist) {
-        const rawDist = parseFloat((nearestResist.price - entry + 0.4).toFixed(1));
-        if (rawDist >= 3.5 && rawDist <= 4.5) {
-          slDistance = rawDist;
-        } else if (rawDist < 3.5) {
-          slDistance = Math.min(4.0, Math.max(3.5, rawDist + 0.6));
-        } else {
-          slDistance = Math.min(5.0, rawDist);
+      } else {
+        const nearestResist = keyLevels.filter(l => l.price > entry).sort((a, b) => a.price - b.price)[0];
+        if (nearestResist) {
+          slDistance = parseFloat((nearestResist.price - entry + 0.3).toFixed(1));
         }
       }
     }
   }
-  slDistance = Math.max(3.0, Math.min(5.0, slDistance)); // Tuyệt đối không quá 5đ
 
-  // 2. Tính toán TP1 và TP2 theo chế độ thanh khoản
-  let tp1Distance = 0;
-  let tp2Distance = 0;
+  // Fallback theo ATR hoặc mặc định 1.5đ (kẹp chặt giữa 1.2đ - 1.8đ theo Plan v4.0)
+  if (!slDistance) {
+    slDistance = Math.min(1.8, Math.max(1.2, parseFloat((atr * 0.7).toFixed(1))));
+  }
+  slDistance = Math.max(1.0, Math.min(1.8, slDistance)); // Kỷ luật thép Plan v4.0: Max 1.8đ
 
-  if (liquidityMode === 'SCALP') {
-    // Thị trường thanh khoản thấp (< 16k tỷ) → Ăn nhanh 3 - 5 điểm, bảo toàn vốn
-    tp1Distance = parseFloat(Math.max(2.5, slDistance * 1.25).toFixed(1));
-    tp2Distance = parseFloat(Math.max(4.5, slDistance * 2.2).toFixed(1));
-  } else {
-    // Thị trường thanh khoản tốt (>= 16k tỷ) → Cho phép gồng trend với Trailing Stop
-    tp1Distance = parseFloat(Math.max(3.5, slDistance * 1.5).toFixed(1));
-    tp2Distance = parseFloat(Math.max(7.0, slDistance * 3.0).toFixed(1));
+  // 2. Tính toán TP1 và TP2 (Tối thiểu R:R 1:1.5 và 1:2.5)
+  let tp1Distance = parseFloat(Math.max(2.0, slDistance * 1.5).toFixed(1));
+  let tp2Distance = parseFloat(Math.max(3.5, slDistance * 2.5).toFixed(1));
+
+  if (liquidityMode !== 'SCALP') {
+    // Thanh khoản tốt: Nới TP2 theo trend
+    tp2Distance = parseFloat(Math.max(5.0, slDistance * 3.5).toFixed(1));
   }
 
   const sl = isLong ? parseFloat((entry - slDistance).toFixed(1)) : parseFloat((entry + slDistance).toFixed(1));

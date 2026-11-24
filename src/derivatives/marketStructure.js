@@ -166,7 +166,17 @@ function findSwingPoints(intradayData, lookback = 4) {
 /**
  * Build complete Price Map
  */
-function buildPriceMap({ intradayF1M, dailyF1M, dailyVN30 }) {
+function buildPriceMap(input, rawVN30 = null) {
+  let intradayF1M, dailyF1M, dailyVN30;
+  if (input && (input.intradayF1M || input.dailyF1M)) {
+    intradayF1M = input.intradayF1M;
+    dailyF1M = input.dailyF1M;
+    dailyVN30 = input.dailyVN30;
+  } else {
+    intradayF1M = input;
+    dailyVN30 = rawVN30;
+    dailyF1M = null;
+  }
   const levels = [];
 
   // ─── Previous Day Levels ──────────────────────────

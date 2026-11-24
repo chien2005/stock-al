@@ -53,3 +53,11 @@ services:
         sync: false
       - key: OPENROUTER_MODEL
         value: "openrouter/free"
+      - key: ENTRADE_USERNAME
+        sync: false
+      - key: ENTRADE_PASSWORD
+        sync: false
+      - key: ENTRADE_ACCOUNT_NO
+        sync: false
+      - key: ENTRADE_ENV
+        value: "DEMO"

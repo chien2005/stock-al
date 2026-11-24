@@ -24,8 +24,23 @@ const flowEngine = require('./flowEngine');
 const pillarMonitor = require('./pillarMonitor');
 const intradaySignalEngine = require('./intradaySignalEngine');
 const tapeAccelerationEngine = require('./tapeAccelerationEngine');
+const dominanceClassifier = require('./dominanceClassifier');
+const predictiveEntry = require('./predictiveEntry');
+const AutonomousDayManager = require('../entrade/autonomousDayManager');
 const { sendDerivativesMessage } = require('../telegramService');
 const { config, isCurrentInstanceActive } = require('../config');
+
+// ─── ENTRADE AUTONOMOUS MANAGER SINGLETON ────────────────────
+let _dayManager = null;
+function getDayManager() {
+  if (!_dayManager) {
+    _dayManager = new AutonomousDayManager({
+      env: process.env.ENTRADE_ENV || 'DEMO',
+      chatId: config.telegram?.chatIdTradingDemo || '-5509642518',
+    });
+  }
+  return _dayManager;
+}
 
 // ─── CONSTANTS ───────────────────────────────────────────────
 const POLL_INTERVAL_MS = 60 * 1000;       // 60 giây (Nến 1p)
@@ -189,6 +204,11 @@ const _state = {
   lastPillarAnalysis: null,      // Cache trạng thái 7 trụ gần nhất
   lastMarketStructure: null,     // Cache Price Map (VWAP/POC/VAH/VAL)
   lastLiquidityInfo: null,       // Cache tốc độ & dự phóng thanh khoản
+  // Quant v8.0 Predictive & Dominance
+  lastDominanceResult: null,     // Phân loại Dominance (STRONG_BULL, STRONG_BEAR, SIDEWAY...)
+  lastPredictiveAnalysis: null,  // Tín hiệu đón đầu thanh khoản (Spring, Upthrust, Quiet Accumulation...)
+  consecutiveLosses: 0,          // Số lệnh lỗ liên tiếp
+  circuitBreakerUntil: 0,        // Timestamp hết cúp cầu dao 30p
 };
 
 // ─── HELPERS ─────────────────────────────────────────────────
@@ -616,6 +636,38 @@ async function processNewCandle(candle, allCandles, oiData, extraData = {}) {
   const context = marketContext.buildMarketContext(candle.close, vn30Price, oiData, candle.time);
   _state.lastMarketContext = context;
 
+  // 7b. Dominance Classifier (Phân loại Xu hướng: Trend Day vs Sideway / Choppy)
+  let dominanceResult = null;
+  try {
+    dominanceResult = dominanceClassifier.classifyDominance({
+      flowData: flowCombined,
+      pillarAnalysis,
+      oiData,
+      marketStructureData,
+      currentPrice: candle.close,
+      allCandles,
+    });
+    _state.lastDominanceResult = dominanceResult;
+  } catch (e) {
+    console.error('   ⚠️ [Scalper] Lỗi classifyDominance:', e.message);
+  }
+
+  // 7c. Predictive Entry Engine (Đón đầu thanh khoản trước khi nổ Vol)
+  let predictiveAnalysis = null;
+  try {
+    predictiveAnalysis = predictiveEntry.analyzePredictiveEntry({
+      candle,
+      allCandles,
+      flowData: flowCombined,
+      marketStructureData,
+      dominanceResult,
+      volMA20,
+    });
+    _state.lastPredictiveAnalysis = predictiveAnalysis;
+  } catch (e) {
+    console.error('   ⚠️ [Scalper] Lỗi analyzePredictiveEntry:', e.message);
+  }
+
   // 8. VSA Pattern Detection (theo ngưỡng Dynamic)
   const vsaPatterns = tradeDecision.detectVSAPatterns(allCandles, dynamicThresholds, volRatio);
 
@@ -705,6 +757,27 @@ async function processNewCandle(candle, allCandles, oiData, extraData = {}) {
       };
       _state.tradeLog.push(trade);
 
+      // Đóng lệnh trên sàn Entrade Demo qua DayManager
+      try {
+        const dayMgr = getDayManager();
+        if (dayMgr && dayMgr.activePosition) {
+          await dayMgr.closePosition(exitResult.exitPrice, exitResult.reason);
+        }
+      } catch (e) {
+        console.error('   ⚠️ [Scalper Entrade] Lỗi đóng vị thế LONG:', e.message);
+      }
+
+      // Quản trị chuỗi thua liên tiếp (Plan v4.0: 2 thua = nghỉ 30p)
+      if (pnl <= 0) {
+        _state.consecutiveLosses = (_state.consecutiveLosses || 0) + 1;
+        if (_state.consecutiveLosses >= 2) {
+          _state.circuitBreakerUntil = now + 30 * 60 * 1000;
+          console.log(`   🚨 [Scalper] CÚP CẦU DAO 30 PHÚT: 2 lệnh thua liên tiếp!`);
+        }
+      } else {
+        _state.consecutiveLosses = 0;
+      }
+
       const isBBLowerBlocked = bb && candle.close < bb.lower;
       const isMAUptrendBlocked = ma9_26Analysis && ma9_26Analysis.isUptrend && ma26 && candle.close > ma26;
 
@@ -777,6 +850,27 @@ async function processNewCandle(candle, allCandles, oiData, extraData = {}) {
       };
       _state.tradeLog.push(trade);
 
+      // Đóng lệnh trên sàn Entrade Demo qua DayManager
+      try {
+        const dayMgr = getDayManager();
+        if (dayMgr && dayMgr.activePosition) {
+          await dayMgr.closePosition(exitResult.exitPrice, exitResult.reason);
+        }
+      } catch (e) {
+        console.error('   ⚠️ [Scalper Entrade] Lỗi đóng vị thế SHORT:', e.message);
+      }
+
+      // Quản trị chuỗi thua liên tiếp (Plan v4.0: 2 thua = nghỉ 30p)
+      if (pnl <= 0) {
+        _state.consecutiveLosses = (_state.consecutiveLosses || 0) + 1;
+        if (_state.consecutiveLosses >= 2) {
+          _state.circuitBreakerUntil = now + 30 * 60 * 1000;
+          console.log(`   🚨 [Scalper] CÚP CẦU DAO 30 PHÚT: 2 lệnh thua liên tiếp!`);
+        }
+      } else {
+        _state.consecutiveLosses = 0;
+      }
+
       const isBBUpperBlocked = bb && candle.close > bb.upper;
       const isMADowntrendBlocked = ma9_26Analysis && ma9_26Analysis.isDowntrend && ma26 && candle.close < ma26;
 
@@ -840,6 +934,13 @@ async function processNewCandle(candle, allCandles, oiData, extraData = {}) {
   // ═════════════════════════════════════════════════════════════
   if (_state.position === 'NONE' && candle.time >= START_TIME && candle.time <= STOP_ENTRY_TIME) {
 
+    // 0. CẦU DAO QUẢN TRỊ RỦI RO (2 LỆNH THUA LIÊN TIẾP = CÚP CẦU DAO 30 PHÚT)
+    if (_state.circuitBreakerUntil && now < _state.circuitBreakerUntil) {
+      const remMin = Math.ceil((_state.circuitBreakerUntil - now) / 60000);
+      console.log(`   🚨 [CircuitBreaker] Đang cúp cầu dao 2 lệnh thua liên tiếp. Còn ${remMin} phút.`);
+      return;
+    }
+
     // Khóa lệnh bởi Trap Shield
     if (now < _state.trapLockUntil) {
       console.log(`   🛡️ [Trap Shield] Entry LOCKED cho đến ${new Date(_state.trapLockUntil).toLocaleTimeString('vi-VN', { timeZone: config.timezone })}`);
@@ -868,8 +969,32 @@ async function processNewCandle(candle, allCandles, oiData, extraData = {}) {
       return;
     }
 
-    // Hướng đề xuất từ hành động giá cây nến hiện tại
-    const proposedDirection = candle.isGreen ? 'LONG' : 'SHORT';
+    // Chặn Anti-Climax Chasing (Vol > 2.5x MA20 — Smart Money đã ăn cỗ xong)
+    if (predictiveAnalysis?.antiClimaxBlock) {
+      console.log(`   🚫 [Scalper] ${predictiveAnalysis.reason}`);
+      return;
+    }
+
+    // Hướng đề xuất: ƯU TIÊN 1 là Tín hiệu ĐÓN ĐẦU (Predictive Entry), ƯU TIÊN 2 là Momentum nến
+    let proposedDirection = null;
+    let isPredictiveTrigger = false;
+
+    if (predictiveAnalysis?.signal) {
+      proposedDirection = predictiveAnalysis.signal.direction;
+      isPredictiveTrigger = true;
+      console.log(`   🎯 [Scalper 1M] TÍN HIỆU ĐÓN ĐẦU: ${predictiveAnalysis.signal.type} -> ${proposedDirection} (Conf: ${predictiveAnalysis.signal.confidence}%)`);
+    } else {
+      proposedDirection = candle.isGreen ? 'LONG' : 'SHORT';
+    }
+
+    // Kiểm tra Dominance Lock (Trend Day Lock — Khóa Short nếu Trend Bull, Khóa Long nếu Trend Bear)
+    if (dominanceResult) {
+      const dirAllowed = dominanceClassifier.isDirectionAllowed(proposedDirection);
+      if (!dirAllowed.allowed) {
+        console.log(`   🚫 [DominanceLock] ${dirAllowed.reason}`);
+        return;
+      }
+    }
 
     // Nhận diện Setup Playbook
     const setupInfo = tradeDecision.detectPlaybookSetup({
@@ -878,6 +1003,7 @@ async function processNewCandle(candle, allCandles, oiData, extraData = {}) {
       marketStructureData,
       flowData: flowCombined,
       vsaPatterns,
+      predictiveSignal: predictiveAnalysis?.signal || null,
     });
 
     // Chấm điểm tin cậy 5 lớp toàn diện
@@ -893,6 +1019,8 @@ async function processNewCandle(candle, allCandles, oiData, extraData = {}) {
       flowData: flowCombined,
       pillarAnalysis,
       setupInfo,
+      dominanceResult,
+      predictiveSignal: predictiveAnalysis?.signal || null,
     });
 
     // Kiểm tra các bộ lọc an toàn bổ sung
@@ -962,14 +1090,30 @@ async function processNewCandle(candle, allCandles, oiData, extraData = {}) {
       _state.maxProfit = 0;
       _state.breakevenActive = false;
 
-      // Tạo Kế hoạch Giao dịch Thích ứng
+      // Tạo Kế hoạch Giao dịch Thích ứng với SL chặt Plan v4.0 (1.2đ - 1.8đ)
       const plan = tradeDecision.generateTradePlan(candle.close, proposedDirection, '1M', {
         atr,
         keyLevels: marketStructureData?.levels,
         liquidityMode: liquidityInfo?.mode,
         setupType: setupInfo.type,
+        slDistance: predictiveAnalysis?.signal?.slDistance || null,
+        sl: predictiveAnalysis?.signal?.sl || null,
       });
       _state.currentPlan = plan;
+
+      // THỰC THI ENTRADE API QUA AUTONOMOUS DAY MANAGER (DEMO)
+      try {
+        const dayMgr = getDayManager();
+        await dayMgr.openPosition({
+          side: proposedDirection,
+          entryPrice: candle.close,
+          slPrice: plan.sl,
+          tpTarget: `TP1 ${plan.tp1} (+${plan.tp1Distance}đ) / TP2 ${plan.tp2} (+${plan.tp2Distance}đ)`,
+          reason: `${setupInfo.label || 'Tín hiệu 5 lớp'} (Conf: ${decision.confidence}%)`,
+        });
+      } catch (err) {
+        console.error('   ⚠️ [Scalper Entrade] Lỗi mở lệnh:', err.message);
+      }
 
       // Gửi Notification 5 Lớp Chuẩn Playbook
       await intradaySignalEngine.runIntradaySignal({
@@ -1381,6 +1525,24 @@ async function fastTickCycle() {
 
     // Gọi Tape Reading & Volume Acceleration Engine xử lý gia tốc dồn dập & bẫy lật màu
     tapeAccelerationEngine.onFastTick({ ...futuresPrice, time: now }).catch(e => console.error('   ⚠️ [TapeEngine] tick error:', e.message));
+
+    // Đồng bộ giám sát PnL & Khóa Lợi Nhuận (Profit Lock Guard) theo thời gian thực trên Entrade Demo
+    try {
+      const dayMgr = getDayManager();
+      if (dayMgr && dayMgr.activePosition) {
+        await dayMgr.onPriceTick(currentPrice);
+        // Nếu Profit Lock Guard đã chốt/cắt lệnh trên sàn -> đồng bộ trạng thái Scalper
+        if (!dayMgr.activePosition && _state.position !== 'NONE') {
+          console.log(`   🔒 [ProfitLockSync] Lệnh đã đóng trên Entrade -> Đồng bộ Scalper về STAND_ASIDE`);
+          _state.position = 'NONE';
+          _state.marketState = 'STAND_ASIDE';
+          _state.standAsideReason = 'Đã chốt/cắt bảo toàn vốn qua Profit Lock Guard';
+          _state.currentPlan = null;
+        }
+      }
+    } catch (e) {
+      console.error('   ⚠️ [DayManager Tick] error:', e.message);
+    }
 
     // Giữ tick trong vòng 70 giây gần nhất
     const cutoff = now - 70 * 1000;
@@ -2095,14 +2257,22 @@ async function pollCycle() {
 // ─── START / STOP / RESET ────────────────────────────────────
 function start() {
   stop();
-  console.log(`   🔮 VN30F v7.0 Senior Trader AI Agent: Started (Market Structure, Key Levels, Flow Engine, 7 Pillars Monitor, Dynamic Vol Thresholds, Hybrid 5-Layer Confidence, 1M/5M scalper, fast tick 5s, entry ${START_TIME}-${STOP_ENTRY_TIME})`);
+  console.log(`   🔮 VN30F v8.0 Senior Quant AI Agent: Started (Dominance Classifier, Predictive Entry, Profit Lock Guard, Entrade Demo execution)`);
+
+  // Khởi động quy trình buổi sáng của Day Manager (Đăng nhập Entrade, chốt vốn, báo cáo 8h59)
+  try {
+    const dayMgr = getDayManager();
+    dayMgr.startMorningRoutine().catch(e => console.error('   ⚠️ [Scalper] Morning routine error:', e.message));
+  } catch (e) {
+    console.error('   ⚠️ [Scalper] DayManager init error:', e.message);
+  }
 
   // Poll nến 1p & 5p mỗi 60s
   _state.timer = setInterval(() => {
     pollCycle().catch(e => console.error('   ⚠️ [Scalper] cycle error:', e.message));
   }, POLL_INTERVAL_MS);
 
-  // Fast tick mỗi 5s bắt Flash Crash & Bẫy Realtime
+  // Fast tick mỗi 5s bắt Flash Crash & Bẫy Realtime & Profit Lock Guard
   _state.fastTimer = setInterval(() => {
     fastTickCycle().catch(e => console.error('   ⚠️ [Scalper] fast tick error:', e.message));
   }, FAST_TICK_INTERVAL_MS);
@@ -2162,8 +2332,14 @@ function reset() {
   _state.lastPillarAnalysis = null;
   _state.lastMarketStructure = null;
   _state.lastLiquidityInfo = null;
+  // Reset v8.0 Predictive & Dominance state
+  dominanceClassifier.resetClassification();
+  _state.lastDominanceResult = null;
+  _state.lastPredictiveAnalysis = null;
+  _state.consecutiveLosses = 0;
+  _state.circuitBreakerUntil = 0;
   tapeAccelerationEngine.reset();
-  console.log('   🔄 Volume Scalper v7.0: State reset');
+  console.log('   🔄 Volume Scalper v8.0: State reset');
 }
 
 function getState() {
@@ -2175,6 +2351,7 @@ module.exports = {
   stop,
   reset,
   getState,
+  getDayManager,
   pollCycle,
   fastTickCycle,
   processNewCandle,

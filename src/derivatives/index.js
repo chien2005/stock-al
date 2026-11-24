@@ -24,6 +24,8 @@ const tapeAccelerationEngine = require('./tapeAccelerationEngine');
 const eveningPlanEngine = require('./eveningPlanEngine');
 const intradaySignalEngine = require('./intradaySignalEngine');
 const pillarMonitor = require('./pillarMonitor');
+const dominanceClassifier = require('./dominanceClassifier');
+const predictiveEntry = require('./predictiveEntry');
 
 // ─── AI DERIVATIVES JOB ─────────────────────────────────────
 async function runAIDerivativesJob(session) {
@@ -265,6 +267,9 @@ module.exports = {
   fetchOHLCV: dataFetcher.fetchOHLCV,
   pillarMonitor,
   tapeAccelerationEngine,
+  dominanceClassifier,
+  predictiveEntry,
+  getDayManager: volumeScalper.getDayManager,
   getDerivativesState: () => ({
     scalper: volumeScalper.getState(),
     intradaySignal: intradaySignalEngine.getState(),
