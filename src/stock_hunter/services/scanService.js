@@ -19,6 +19,7 @@ const { runDecisionPipeline } = require('../engines/decisionEngine');
 const { evaluateExitForSymbol } = require('../engines/exitEngine');
 const { LedgerService } = require('./ledgerService');
 const { StateStore } = require('./stateStore');
+const { recordScanSnapshot } = require('./replayService');
 const { formatMainScanReport, formatUrgentExitAlert } = require('./notifierService');
 const { sendTelegramMessage } = require('../../telegramService');
 
@@ -110,9 +111,11 @@ async function runStockHunterScan({ label = null, isMainReport = false, sendTele
   // 2. Build Universe Gates
   const universeResult = buildActiveUniverse(dailyBarsBySymbol, quotesBySymbol);
 
-  // 3. Fetch 15m có chọn lọc cho Top ứng viên + Vị thế + Special Watch
+  // 3. V2.1: Fetch 15m (45 ngày) cho TOÀN BỘ 131 mã nếu scanAll15mUniverse = true, ngược lại Top 25
   const stateData = stateStore.getState();
-  const m15Targets = selectIntraday15mCandidates(universeResult, quotesBySymbol, ledgerSnapshot, stateData, 25);
+  const m15Targets = STOCK_HUNTER_CONFIG.market.scanAll15mUniverse
+    ? symbols
+    : selectIntraday15mCandidates(universeResult, quotesBySymbol, ledgerSnapshot, stateData, 25);
   const bars15mBySymbol = await fetchIntraday15mBatch(m15Targets, exchangeMap);
 
   // 4. Tổng hợp 1W / 1M point-in-time từ 1D
@@ -140,8 +143,14 @@ async function runStockHunterScan({ label = null, isMainReport = false, sendTele
     asOf,
   });
 
-  // Cập nhật Trailing Stop tự động vào Ledger nếu Guardian đề xuất nâng SL
+  // V2.1: Cập nhật NAV đỉnh, lưu trạng thái SL bị xuyên & Trailing Stop tự động vào Ledger
+  if (result.portfolioRiskState?.navVnd) {
+    ledgerService.updateNavTracking(result.portfolioRiskState.navVnd, asOf);
+  }
   for (const exitRes of result.exitDecisions || []) {
+    if (exitRes.priority === 'P1' && exitRes.reasonCodes?.includes('HARD_STOP_HIT')) {
+      ledgerService.markSymbolStopBreached(exitRes.symbol, exitRes.observedPriceVnd, asOf);
+    }
     if (exitRes.proposedTrailStopVnd) {
       const lots = ledgerService.state.positionLots.filter(l => l.symbol === exitRes.symbol && l.qty > 0);
       for (const lot of lots) {
@@ -151,6 +160,7 @@ async function runStockHunterScan({ label = null, isMainReport = false, sendTele
   }
 
   stateStore.updateFromPipeline(result);
+  recordScanSnapshot(result, quotesBySymbol);
 
   // 6. Routing Thông Báo Telegram
   if (sendTelegram) {
@@ -243,6 +253,9 @@ async function runFastPositionGuardian() {
     });
 
     if (res && (res.priority === 'P0' || res.priority === 'P1')) {
+      if (res.priority === 'P1' && res.reasonCodes?.includes('HARD_STOP_HIT')) {
+        ledgerService.markSymbolStopBreached(sym, res.observedPriceVnd, asOf);
+      }
       const key = `FAST_EXIT_${sym}_${res.action}_${vn.dateStr}`;
       if (stateStore.shouldSend(key, reminderMs, nowMs)) {
         await sendTelegramMessage(formatUrgentExitAlert(res, asOf));

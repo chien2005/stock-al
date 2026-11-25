@@ -57,8 +57,9 @@ function evaluateExitForSymbol({
   const grossPnlPct = parseFloat((((price - avgEntry) / avgEntry) * 100).toFixed(2));
   const highestStop = Math.max(...activeLots.map(l => l.stopVnd || 0));
 
-  // Kiểm tra P1: Hard Stop Hit (Intrabar low chạm/thủng stop cũng ghi nhận event SL! Test E01)
-  const isHardStopHit = price <= highestStop || lowIntrabar <= highestStop;
+  // Kiểm tra P1: Hard Stop Hit (Intrabar low chạm/thủng stop HOẶC trước đó đã bị xuyên SL stopBreached=true, V2.1!)
+  const alreadyBreached = activeLots.some(l => l.stopBreached === true);
+  const isHardStopHit = alreadyBreached || price <= highestStop || lowIntrabar <= highestStop;
   if (isHardStopHit) {
     if (quote.isLimitDownLocked) {
       return {

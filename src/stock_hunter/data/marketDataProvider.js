@@ -100,6 +100,10 @@ function normalizeTradingViewBars(symbol, rawTv, timeframe, priceUnit = 'THOUSAN
       }
     }
 
+    // V2.1: Bộ lọc nến chưa đóng (nến 15m có timestamp thuộc khung 15p đang chạy chưa kết thúc)
+    const nowSec = Math.floor(Date.now() / 1000);
+    const isFinalBar = timeframe === '15m' ? (tsSec <= nowSec - 60 || (vn.minute % 15 === 0 && nowSec >= tsSec)) : true;
+
     const bar = {
       symbol,
       exchange,
@@ -117,7 +121,7 @@ function normalizeTradingViewBars(symbol, rawTv, timeframe, priceUnit = 'THOUSAN
       matchedValueEstimated: true,
       noTrade: volume === 0,
       source,
-      final: true,
+      final: isFinalBar,
       quality: 'VALID',
     };
 
@@ -403,10 +407,11 @@ async function refreshDailyCache(instruments, force = false) {
     })),
   ];
 
-  // Nếu cache đã update trong hôm nay và đủ dữ liệu, bỏ qua các mã đã có trừ khi force=true
+  // Nếu cache đã update trong hôm nay và đủ dữ liệu (850 ngày), bỏ qua các mã đã có trừ khi force=true
+  const lookbackDays = STOCK_HUNTER_CONFIG.market.dailyLookbackDays || 850;
   const toFetch = force
     ? targets
-    : targets.filter(t => !barsBySymbol[t.symbol] || barsBySymbol[t.symbol].length < 40 || existing.dateStr !== todayStr);
+    : targets.filter(t => !barsBySymbol[t.symbol] || barsBySymbol[t.symbol].length < 180 || existing.dateStr !== todayStr);
 
   if (toFetch.length === 0) {
     return existing;
@@ -416,7 +421,7 @@ async function refreshDailyCache(instruments, force = false) {
   for (let i = 0; i < toFetch.length; i += batchSize) {
     const batch = toFetch.slice(i, i + batchSize);
     const fetched = await Promise.all(
-      batch.map(t => fetchTvHistory(t.symbol, 'D', 200, t.priceUnit, t.exchange))
+      batch.map(t => fetchTvHistory(t.symbol, 'D', lookbackDays, t.priceUnit, t.exchange))
     );
     batch.forEach((t, idx) => {
       if (fetched[idx] && fetched[idx].length > 0) {
@@ -424,7 +429,7 @@ async function refreshDailyCache(instruments, force = false) {
       }
     });
     if (i + batchSize < toFetch.length) {
-      await sleep(250);
+      await sleep(200);
     }
   }
 
@@ -438,23 +443,24 @@ async function refreshDailyCache(instruments, force = false) {
 }
 
 /**
- * Fetch nến 15m có chọn lọc cho danh sách ứng viên (batch 6 mã/lần)
+ * V2.1: Fetch nến 15m lịch sử 45 ngày cho TOÀN BỘ Universe (batch 8 mã/lần, delay nhẹ chống rate-limit)
  */
 async function fetchIntraday15mBatch(symbols, exchangeMap = {}) {
   const result = new Map();
   if (!Array.isArray(symbols) || symbols.length === 0) return result;
-  const batchSize = 6;
+  const lookback15m = STOCK_HUNTER_CONFIG.market.intraday15mLookbackDays || 45;
+  const batchSize = 8;
   for (let i = 0; i < symbols.length; i += batchSize) {
     const batch = symbols.slice(i, i + batchSize);
     const fetched = await Promise.all(
-      batch.map(sym => fetchTvHistory(sym, '15', 7, 'THOUSAND_VND', exchangeMap[sym] || 'HOSE'))
+      batch.map(sym => fetchTvHistory(sym, '15', lookback15m, 'THOUSAND_VND', exchangeMap[sym] || 'HOSE'))
     );
     batch.forEach((sym, idx) => {
       if (fetched[idx] && fetched[idx].length > 0) {
         result.set(sym, fetched[idx]);
       }
     });
-    if (i + batchSize < symbols.length) await sleep(150);
+    if (i + batchSize < symbols.length) await sleep(120);
   }
   return result;
 }

@@ -1,12 +1,16 @@
 /**
- * AI STOCK HUNTER - Configuration v2.0
- * Toàn bộ tham số khởi tạo (Seed Config) tuân thủ Master Plan V2.0 Section 22.5.
- * Mọi tỷ lệ phần trăm dùng dạng số thập phân (fraction: 0.04 = 4%).
+ * AI STOCK HUNTER - Configuration v2.1
+ * Nâng cấp V2.1:
+ * - Quét chart 15m toàn bộ 131 mã (lịch sử 45 ngày)
+ * - Lịch sử nến ngày 850 ngày (đủ dữ liệu Tuần/Tháng dài hạn)
+ * - RVOL cùng giờ yêu cầu tối thiểu 15 phiên cùng khung giờ
+ * - Khóa BUY khi độ phủ dữ liệu < minUniverseCoverage
+ * - Lưu trạng thái SL đã bị xuyên (persistent stop-breach) & cập nhật NAV đỉnh
  */
 
 const STOCK_HUNTER_CONFIG = {
-  schemaVersion: '2.0',
-  ruleVersion: '2.0.0',
+  schemaVersion: '2.1',
+  ruleVersion: '2.1.0',
   mode: (process.env.SH_MODE || 'paper').toLowerCase(), // 'research' | 'paper' | 'live_advisory'
 
   market: {
@@ -18,7 +22,9 @@ const STOCK_HUNTER_CONFIG = {
     minMarketCoverage: 0.90,
     fastGuardianPollSeconds: 30,
     staleQuoteSeconds: 90,
-    // Ngày nghỉ lễ TTCK VN (YYYY-MM-DD) - bổ sung hàng năm qua config/env
+    dailyLookbackDays: 850,        // V2.1: 850 ngày cho nến D/W/M
+    intraday15mLookbackDays: 45,   // V2.1: 45 ngày cho nến 15m
+    scanAll15mUniverse: true,      // V2.1: Quét 15m toàn bộ 131 mã
     holidays: [
       '2026-01-01',
       '2026-02-16', '2026-02-17', '2026-02-18', '2026-02-19', '2026-02-20',
@@ -28,7 +34,7 @@ const STOCK_HUNTER_CONFIG = {
   },
 
   universe: {
-    version: 'seed-2026.11',
+    version: 'seed-2026.11-v2.1',
     targetMin: 100,
     targetMax: 150,
     supportedExchanges: ['HOSE', 'HNX'],
@@ -37,39 +43,39 @@ const STOCK_HUNTER_CONFIG = {
     minMarketCapVnd: 3_000_000_000_000,        // 3,000 tỷ VND
     minQualityScore: 65,
     minQualityCoverage: 0.80,
+    requireVerifiedQualityProfile: false, // Bật true nếu chỉ cho phép mã đã thẩm định BCTC chi tiết
     minDailyBars: 60,
-    idealDailyBars: 120,
-    minWeeklyBars: 20,
+    idealDailyBars: 250,
+    minWeeklyBars: 40,
   },
 
   risk: {
-    initialNavVnd: parseInt(process.env.SH_INITIAL_NAV || '60000000', 10), // 60 triệu VND
+    initialNavVnd: parseInt(process.env.SH_INITIAL_NAV || '60000000', 10),
     marginEnabled: false,
     lotSize: 100,
     maxPositions: 4,
-    maxSymbolExposure: 0.35,      // 35% NAV
-    maxClusterExposure: 0.40,     // 40% NAV
-    riskPerTrade: 0.005,          // 0.5% NAV
-    reversalRiskPerTrade: 0.0025, // 0.25% NAV
-    maxPlannedOpenRisk: 0.02,     // 2.0% NAV
-    maxStressedLoss: 0.04,        // 4.0% NAV
-    maxInitialStopPct: 0.04,      // 4.0% hard cap cho setup chuẩn (có thể cấu hình tối đa 4.5% nếu policy cho phép)
-    minInitialStopPct: 0.015,     // Tránh stop quá chặt bị quét noise
-    tPlus2StressShockPct: 0.14,   // Stress kịch bản 2 phiên xấu (~2 cây sàn HOSE) nếu cần kiểm định
-    dailyLossGuard: 0.02,         // -2% NAV ngày -> khóa mua mới
-    weeklyLossGuard: 0.04,        // -4% NAV tuần -> khóa mua mới
-    drawdownReview: 0.05,         // -5% từ đỉnh NAV -> giảm quy mô
-    drawdownKill: 0.08,           // -8% từ đỉnh NAV -> kill switch khóa entry
-    maxHoldSessions: 19,          // < 1 tháng (19 phiên giao dịch)
+    maxSymbolExposure: 0.35,
+    maxClusterExposure: 0.40,
+    riskPerTrade: 0.005,
+    reversalRiskPerTrade: 0.0025,
+    maxPlannedOpenRisk: 0.02,
+    maxStressedLoss: 0.04,
+    maxInitialStopPct: 0.04,
+    minInitialStopPct: 0.015,
+    tPlus2StressShockPct: 0.14,
+    dailyLossGuard: 0.02,
+    weeklyLossGuard: 0.04,
+    drawdownReview: 0.05,
+    drawdownKill: 0.08,
+    maxHoldSessions: 19,
     maxHoldCalendarDays: 29,
     noAveragingDown: true,
     neverLowerStop: true,
     requireAvailableQuantityToExit: true,
-    // Chi phí giao dịch thực tế
-    buyFeeRate: parseFloat(process.env.SH_BUY_FEE || '0.0015'),   // 0.15%
-    sellFeeRate: parseFloat(process.env.SH_SELL_FEE || '0.0015'), // 0.15%
-    sellTaxRate: 0.001,                                           // 0.10% thuế chuyển nhượng (Nghị định 253/2026)
-    exitSlippageBuffer: 0.0015,                                   // 0.15% dự phòng trượt giá khi thoát
+    buyFeeRate: parseFloat(process.env.SH_BUY_FEE || '0.0015'),
+    sellFeeRate: parseFloat(process.env.SH_SELL_FEE || '0.0015'),
+    sellTaxRate: 0.001,
+    exitSlippageBuffer: 0.0015,
   },
 
   strategies: {
@@ -78,12 +84,12 @@ const STOCK_HUNTER_CONFIG = {
     reversalScoreMin: 85,
     minRrNet: 1.5,
     reversalMinRrNet: 2.0,
-    minRoomPct: 0.03,           // Tối thiểu 3% tới vùng cung gần nhất
-    maxEntryChaseAtr: 0.5,      // Không vào quá xa trigger > 0.5 ATR_D
-    maxSingleDayGainChase: 5.5, // % tăng trong phiên quá +5.5% -> cấm mua đuổi
+    minRoomPct: 0.03,
+    maxEntryChaseAtr: 0.5,
+    maxSingleDayGainChase: 5.5,
     reversalLiveEnabled: process.env.SH_ENABLE_REVERSAL_LIVE === 'true',
     gapLiveEnabled: false,
-    signalTtlMinutes: 30,       // Tín hiệu 15m có hiệu lực tối đa 2 nến (30 phút)
+    signalTtlMinutes: 30,
   },
 
   features: {
@@ -92,6 +98,7 @@ const STOCK_HUNTER_CONFIG = {
     rsiPeriod: 14,
     rvolHistorySessions: 20,
     minRvolHistory: 15,
+    minSameSlot15mSessions: 15, // V2.1: Tối thiểu 15 phiên cùng khung giờ cho RVOL15
     pivotLeftBars: 2,
     pivotRightBars: 2,
     zoneClusterAtrFactor: 0.3,

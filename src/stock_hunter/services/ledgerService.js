@@ -318,6 +318,49 @@ class LedgerService {
     this.reconcileAt(new Date());
     this.save();
   }
+
+  /**
+   * V2.1: Lưu trạng thái SL đã bị xuyên (persistent) — không mất tín hiệu thoát khi giá hồi lại
+   */
+  markSymbolStopBreached(symbol, breachedPriceVnd, asOf = new Date()) {
+    const sym = String(symbol).toUpperCase().trim();
+    let changed = false;
+    for (const lot of this.state.positionLots) {
+      if (lot.symbol === sym && lot.qty > 0 && !lot.stopBreached) {
+        lot.stopBreached = true;
+        lot.stopBreachedAt = new Date(asOf).toISOString();
+        lot.stopBreachedPriceVnd = breachedPriceVnd;
+        changed = true;
+      }
+    }
+    if (changed) this.save();
+    return changed;
+  }
+
+  /**
+   * V2.1: Cập nhật NAV đỉnh, NAV đầu ngày & Kill Switch vào ledger
+   */
+  updateNavTracking(navVnd, asOf = new Date()) {
+    if (!Number.isFinite(navVnd) || navVnd <= 0) return;
+    const todayStr = toVnComponents(asOf).dateStr;
+    let changed = false;
+
+    if (this.state.dailyStartDate !== todayStr) {
+      this.state.dailyStartDate = todayStr;
+      this.state.dailyStartNavVnd = navVnd;
+      changed = true;
+    }
+    if (!this.state.navPeakVnd || navVnd > this.state.navPeakVnd) {
+      this.state.navPeakVnd = navVnd;
+      changed = true;
+    }
+    const dd = this.state.navPeakVnd > 0 ? (this.state.navPeakVnd - navVnd) / this.state.navPeakVnd : 0;
+    if (dd >= STOCK_HUNTER_CONFIG.risk.drawdownKill && !this.state.killSwitchActive) {
+      this.state.killSwitchActive = true;
+      changed = true;
+    }
+    if (changed) this.save();
+  }
 }
 
 module.exports = { LedgerService, createInitialLedger };

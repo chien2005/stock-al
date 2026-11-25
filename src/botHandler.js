@@ -58,6 +58,7 @@ function startBotHandler() {
     bot.onText(/^\/quet/i, handleScanCommand);
     bot.onText(/^\/mua\s+(.+)/i, handleBuyFillCommand);
     bot.onText(/^\/ban\s+(.+)/i, handleSellFillCommand);
+    bot.onText(/^\/xacnhanhang\s+(.+)/i, handleConfirmBrokerCommand);
     bot.onText(/^\/danhmuc/i, handlePortfolioCommand);
     bot.onText(/^\/(oi|vithe|ps)/i, handleOICommand);
     bot.onText(/^\/(atc|preatc|pre_atc)/i, handlePreATCCommand);
@@ -206,6 +207,14 @@ async function handleSellFillCommand(msg, match) {
     `• Tiền về T+2 ngày: <b>${res.settleDate}</b>`,
     { parse_mode: 'HTML' }
   );
+}
+
+async function handleConfirmBrokerCommand(msg, match) {
+  const chatId = msg.chat.id;
+  const symbol = match[1].trim().toUpperCase();
+  const ledger = getLedgerService();
+  ledger.confirmBrokerAvailable(symbol, true);
+  await bot.sendMessage(chatId, `✅ Đã xác nhận hàng <b>${symbol}</b> khả dụng trên broker.`, { parse_mode: 'HTML' });
 }
 
 async function handlePortfolioCommand(msg) {

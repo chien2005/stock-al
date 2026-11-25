@@ -8,6 +8,7 @@
 
 const { STOCK_HUNTER_CONFIG } = require('../config/stockHunterConfig');
 const { SEED_INSTRUMENTS } = require('../config/universeSeed');
+const { getQualityProfile } = require('../config/qualityProfiles');
 
 function computeMedian(values) {
   if (!Array.isArray(values) || values.length === 0) return 0;
@@ -110,7 +111,11 @@ function buildActiveUniverse(dailyBarsBySymbol = {}, quotesBySymbol = new Map(),
   for (const inst of SEED_INSTRUMENTS) {
     const bars = dailyBarsBySymbol[inst.symbol] || [];
     const quote = quotesBySymbol instanceof Map ? quotesBySymbol.get(inst.symbol) : quotesBySymbol[inst.symbol];
-    const meta = metadataBySymbol[inst.symbol] || {};
+    const profile = getQualityProfile(inst.symbol);
+    const meta = {
+      ...profile,
+      ...(metadataBySymbol[inst.symbol] || {}),
+    };
     const evalRes = evaluateInstrumentGates(inst, bars, quote, meta);
     if (evalRes.eligibleForBuy) {
       eligible.push(evalRes);

@@ -249,6 +249,8 @@ function runDecisionPipeline({
     if (avoid) avoidCandidates.push({ ...avoid, sector: inst.sector });
 
     // Nếu không đạt Universe Hard Gates hoặc có Hard Block -> dừng xét MUA
+    // V2.1: Khóa BUY toàn thị trường nếu độ phủ dữ liệu Universe < minUniverseCoverage (98%)
+    if ((marketRegime.breadth?.coverage ?? 0) < cfg.market.minUniverseCoverage) continue;
     if (!inst.eligibleForBuy || !feat || !zones || !sd) continue;
     if (metaFlags.materialRisk || metaFlags.highRiskUpcomingEvent) continue;
     if (marketRegime.regime === 'UNKNOWN' || marketRegime.regime === 'PANIC') continue;

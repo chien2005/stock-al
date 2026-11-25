@@ -144,25 +144,23 @@ function computeWilderRSI(closes, period = 14) {
 }
 
 /**
- * Tính RVOL15 theo cùng khung giờ của 20 phiên trước (loại trừ nến hiện tại, Test F02)
+ * V2.1: Tính RVOL15 BẮT BUỘC tối thiểu 15 phiên cùng khung giờ (không fallback sang khung giờ khác)
  */
-function computeRVOL15(bars15m, historySessions = 20) {
-  if (!Array.isArray(bars15m) || bars15m.length < 10) return null;
-  const current = bars15m[bars15m.length - 1];
-  const prior = bars15m.slice(0, -1);
+function computeRVOL15(bars15m, historySessions = 20, minSameSlot = STOCK_HUNTER_CONFIG.features.minSameSlot15mSessions || 15) {
+  if (!Array.isArray(bars15m) || bars15m.length < minSameSlot) return null;
+  const closed15m = bars15m.filter(b => b.final !== false);
+  if (closed15m.length < minSameSlot) return null;
+
+  const current = closed15m[closed15m.length - 1];
+  const prior = closed15m.slice(0, -1);
 
   const sameSlot = prior
     .filter(b => b.timeLabel === current.timeLabel && b.dateStr !== current.dateStr && b.volume >= 0)
     .slice(-historySessions)
     .map(b => b.volume);
 
-  let baseline = null;
-  if (sameSlot.length >= 3) {
-    baseline = median(sameSlot);
-  } else {
-    const recentPrior = prior.slice(-20).map(b => b.volume);
-    baseline = median(recentPrior);
-  }
+  if (sameSlot.length < minSameSlot) return null;
+  const baseline = median(sameSlot);
 
   if (!Number.isFinite(baseline) || baseline <= 0) return null;
   return parseFloat((current.volume / baseline).toFixed(2));
@@ -290,19 +288,20 @@ function computeSymbolFeatures({
     ? (closesM[closesM.length - 1] > ma12M ? 'ABOVE_MA12M' : 'BELOW_MA12M')
     : 'UNKNOWN';
 
-  // Khung 15m (nếu có dữ liệu intraday cho mã này)
+  // Khung 15m (V2.1: chỉ dùng các nến đã đóng final !== false)
   let m15 = null;
-  if (Array.isArray(bars15m) && bars15m.length >= 10) {
-    const last15 = bars15m[bars15m.length - 1];
-    const prev15 = bars15m[bars15m.length - 2];
-    const closes15 = bars15m.map(b => b.close);
+  const closedBars15m = Array.isArray(bars15m) ? bars15m.filter(b => b.final !== false) : [];
+  if (closedBars15m.length >= 10) {
+    const last15 = closedBars15m[closedBars15m.length - 1];
+    const prev15 = closedBars15m[closedBars15m.length - 2];
+    const closes15 = closedBars15m.map(b => b.close);
     const ema5_15 = computeEMASeries(closes15, 5);
     const ma10_15 = computeSMASeries(closes15, 10);
-    const atr15 = computeWilderATR(bars15m, 14);
+    const atr15 = computeWilderATR(closedBars15m, 14);
     const metrics15 = computeBarMetrics(last15, prev15.close);
-    const rvol15 = computeRVOL15(bars15m, 20);
+    const rvol15 = computeRVOL15(closedBars15m, 20);
     m15 = {
-      barsCount: bars15m.length,
+      barsCount: closedBars15m.length,
       lastBar: last15,
       metrics: metrics15,
       rvol15,
@@ -310,8 +309,8 @@ function computeSymbolFeatures({
       ma10: ma10_15[ma10_15.length - 1],
       atr15: atr15.atr,
       atr15Prior: atr15.atrPrior,
-      recentHigh5: Math.max(...bars15m.slice(-6, -1).map(b => b.high)),
-      recentLow5: Math.min(...bars15m.slice(-6, -1).map(b => b.low)),
+      recentHigh5: Math.max(...closedBars15m.slice(-6, -1).map(b => b.high)),
+      recentLow5: Math.min(...closedBars15m.slice(-6, -1).map(b => b.low)),
     };
   }
 

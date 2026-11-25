@@ -339,6 +339,50 @@ test('N01', 'Bản tin NO_TRADE khi không có kèo đạt chuẩn & không ép 
   assert(msg.includes('Xu hướng giảm'));
 });
 
+// ── 9. V2.1 UPGRADE INVARIANTS ──
+test('V21-01', 'RVOL15 yêu cầu tối thiểu 15 phiên cùng khung giờ, thiếu trả null; lọc bỏ nến 15m chưa đóng', () => {
+  const short15m = Array.from({ length: 12 }, (_, idx) => ({
+    timeLabel: '09:30', dateStr: `2026-11-${String(idx + 1).padStart(2, '0')}`, volume: 10000, final: true, open: 20000, high: 20200, low: 19900, close: 20100,
+  }));
+  assert.strictEqual(sh.features.computeRVOL15(short15m, 20, 15), null);
+
+  const full15m = Array.from({ length: 17 }, (_, idx) => ({
+    timeLabel: '09:30', dateStr: `2026-10-${String(idx + 1).padStart(2, '0')}`, volume: idx === 16 ? 25000 : 10000, final: true, open: 20000, high: 20200, low: 19900, close: 20100,
+  }));
+  // Thêm 1 nến chưa đóng final: false ở cuối -> phải bị lọc bỏ, không làm sai RVOL15
+  full15m.push({ timeLabel: '09:45', dateStr: '2026-10-18', volume: 999999, final: false, open: 20100, high: 20500, low: 20000, close: 20400 });
+  assert.strictEqual(sh.features.computeRVOL15(full15m, 20, 15), 2.5);
+});
+
+test('V21-02', 'SL đã bị xuyên -> lưu stopBreached=true, giá hồi lên trên SL vẫn bắt buộc P1 EXIT + cập nhật NAV đỉnh', () => {
+  const tmpPath = path.join(os.tmpdir(), `sh_v21_ledger_${Date.now()}.json`);
+  const ledger = new sh.LedgerService(tmpPath, 60000000);
+  const buy = ledger.recordBuyFill({
+    fillId: 'V21-1', symbol: 'DEMO', qty: 500, priceVnd: 20000, stopVnd: 19200,
+    buyTimestamp: new Date('2026-11-20T10:00:00+07:00'),
+  });
+  assert.strictEqual(buy.ok, true);
+
+  ledger.markSymbolStopBreached('DEMO', 19100, new Date('2026-11-24T10:00:00+07:00'));
+  // Giá hồi lại lên 19,500 (> SL 19,200) -> Vẫn phải bắt buộc EXIT!
+  const exitRes = sh.exitEngine.evaluateExitForSymbol({
+    symbol: 'DEMO',
+    lots: ledger.state.positionLots,
+    quote: { priceVnd: 19500, lowVnd: 19400, quality: 'VALID' },
+    asOf: new Date('2026-11-25T14:00:00+07:00'),
+  });
+  assert.strictEqual(exitRes.priority, 'P1');
+  assert.strictEqual(exitRes.action, 'EXIT');
+
+  // NAV đỉnh cập nhật & Kill Switch khi drawdown >= 8%
+  ledger.updateNavTracking(65000000, new Date('2026-11-25T14:00:00+07:00'));
+  assert.strictEqual(ledger.state.navPeakVnd, 65000000);
+  ledger.updateNavTracking(59000000, new Date('2026-11-25T14:15:00+07:00'));
+  assert.strictEqual(ledger.state.killSwitchActive, true);
+
+  try { fs.unlinkSync(tmpPath); } catch (e) { /* ignore */ }
+});
+
 console.log('\n═══════════════════════════════════════════════════════════════');
 console.log(`🏁 KẾT QUẢ TEST STOCK HUNTER: ${passed} PASSED | ${failed} FAILED`);
 console.log('═══════════════════════════════════════════════════════════════\n');
