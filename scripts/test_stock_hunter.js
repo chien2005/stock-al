@@ -335,8 +335,8 @@ test('N01', 'Bản tin NO_TRADE khi không có kèo đạt chuẩn & không ép 
     avoidList: [],
     exitDecisions: [],
   }, '14:00');
-  assert(msg.includes('NO_TRADE'));
-  assert(msg.includes('DOWNTREND'));
+  assert(msg.includes('KHÔNG CÓ KÈO ĐẠT CHUẨN'));
+  assert(msg.includes('Xu hướng giảm'));
 });
 
 console.log('\n═══════════════════════════════════════════════════════════════');

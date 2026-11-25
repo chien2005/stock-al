@@ -60,7 +60,7 @@ function evaluateAvoidReasons({
     reasons.push({
       code: 'A05_SELLING_PRESSURE',
       severity: 80,
-      detail: `Áp lực bán lớn (CLV ${supplyDemand.clvD ?? 'N/A'}, RVOL ${supplyDemand.rvolD ?? 'N/A'}x)`,
+      detail: `Áp lực bán lớn (vị trí đóng nến ${supplyDemand.clvD ?? 'N/A'}, KL gấp ${supplyDemand.rvolD ?? 'N/A'}x TB)`,
     });
   }
 
