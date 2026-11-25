@@ -1,532 +1,205 @@
 /**
  * ╔═══════════════════════════════════════════════════════════════╗
- * ║                                                               ║
- * ║     🇻🇳  VN STOCK BOT v2.5.0  📊                            ║
- * ║     Multi-AI Team + Global Market System                      ║
- * ║                                                               ║
- * ║     📊 Báo giá: 10:00 | 13:00 | 15:01  (T2-T6)              ║
- * ║     🤖 AI Report: 20:30                (T2-T6)              ║
- * ║     🌍 TTCK Quốc tế + Vàng: 21:00    (Mỗi ngày)           ║
- * ║     📅 Weekly: 8:30                    (Thứ 2)              ║
- * ║     💬 Interactive Bot: 24/7 (chat hỏi AI)                  ║
- * ║     🌙 Evening Plan: 19:50 (T2-CN, chiến lược ngày tiếp)    ║
- * ║     ⚡ Intraday Signal: 15p/noti (9:15-11:30, 13:00-14:25)  ║
- * ║                                                               ║
- * ║     🤖 AI 1: Trigger + Báo giá  (Gemini 2.5 Flash - Key 1)    ║
- * ║     📊 AI 2: Chuyên gia        (Gemini 2.5 Pro   - Key 2)    ║
- * ║     💬 AI 3: Chuyên gia Flash  (Gemini 2.5 Flash - Key 1)    ║
- * ║     ⚔️  AI 4: Phản biện + Cuối ngày (Gemini 2.5 Pro - Key 2)  ║
- * ║     🔒 Anti-spam: 60s giãn cách giữa 2 lần gọi cùng key       ║
- * ║                                                               ║
+ * ║     🇻🇳  VN STOCK BOT v3.0 — AI STOCK HUNTER T+ & VN30F       ║
  * ╠═══════════════════════════════════════════════════════════════╣
- * ║  Source: VPS (VPBank Securities) + CNBC API + Vang.Today      ║
- * ║  Stack:  Node.js + node-cron + Google Gemini (FREE)           ║
+ * ║  CƠ SỞ T+:                                                    ║
+ * ║   • 08:45: Refresh Cache D/W/M (131 mã Universe)              ║
+ * ║   • 09:30, 11:30, 13:30, 14:00, 14:46: Báo cáo chính T+       ║
+ * ║   • Mỗi 15p trong phiên: Quét Delta & Bắt đáy / Tránh xa      ║
+ * ║   • Mỗi 45s trong phiên: Fast Position Guardian (SL/T+2)      ║
+ * ║   • 15:05: Reconcile EOD & Cập nhật nến Đóng cửa              ║
+ * ║   • 21:00: TTCK Quốc tế + Giá Vàng (hàng ngày)                ║
+ * ║  PHÁI SINH VN30F: Giữ nguyên toàn bộ engine & Entrade Demo    ║
  * ╚═══════════════════════════════════════════════════════════════╝
  */
 
 const cron = require('node-cron');
 const http = require('http');
 const { config, validateConfig, isCurrentInstanceActive } = require('./config');
-const { fetchAllStocks, fetchVN30Index, fetchMarketScan, fetchTopBoughtStocks, fetchMarketLiquidity } = require('./stockService');
-const { sendTelegramMessage, sendDerivativesMessage, formatStockMessage } = require('./telegramService');
-const { initAIEngines, runScheduledAnalysis, runDailyGlobalSummaryReport } = require('./aiTeam');
-const { runWeeklyAnalysis } = require('./weeklyAnalysis');
+const { sendTelegramMessage, sendDerivativesMessage } = require('./telegramService');
+const { runDailyGlobalSummaryReport } = require('./globalMarketService');
 const { startBotHandler, stopBotHandler } = require('./botHandler');
-const { startAlertMonitor, stopAlertMonitor, resetDailyData, flushBigTradeBuffer } = require('./alertService');
-const { runSmartMoneyReport } = require('./smartMoneyReport');
-const { runWhaleTrackerReport } = require('./whaleTracker');
-const { runAIDerivativesJob, runDerivativesOIJob, runMarginCutoffJob, runPreATCJob, runPostATCJob, resetDerivativesState, startVolumeScalper, stopVolumeScalper, runEveningPlanJob, runIntradaySignalJob, resetIntradayState } = require('./derivatives');
+const {
+  runStockHunterScan,
+  runFastPositionGuardian,
+  refreshPreMarketCache,
+  STOCK_HUNTER_CONFIG,
+} = require('./stock_hunter');
+const {
+  runAIDerivativesJob,
+  runDerivativesOIJob,
+  runMarginCutoffJob,
+  runPreATCJob,
+  runPostATCJob,
+  resetDerivativesState,
+  startVolumeScalper,
+  stopVolumeScalper,
+  runEveningPlanJob,
+  runIntradaySignalJob,
+  resetIntradayState,
+} = require('./derivatives');
 
-// ─── Thời điểm khởi động (cho health check) ─────────────
 const startedAt = new Date();
-
-// ─── DATA CACHE: Lưu data cuối phiên (15h01) cho report 20h30 ──
-let lastStockData = null;
-let lastStockDataTime = 0;
-let lastMarketScan = null;
-let lastVN30Index = null;
-let lastLiquidity = null;
-
-// ─── DEDUP LOCK: Chống double message ──────────────────────
 const lastJobRun = {};
-const DEDUP_WINDOW = 2 * 60 * 1000; // 2 phút (chống double trigger)
+const DEDUP_WINDOW = 2 * 60 * 1000;
+const jobLastSuccess = {};
+const jobLastError = {};
+let guardianTimer = null;
 
-// ─── JOB TRACKING: Ghi nhận lần chạy cuối của mỗi job ─────
-const jobLastSuccess = {};  // { jobName: timestamp }
-const jobLastError = {};    // { jobName: { time, message } }
-
-/**
- * Check xem job đã chạy trong window chưa (chống double)
- * @param {string} jobName - Tên job
- * @returns {boolean} true nếu đã chạy gần đây (nên skip)
- */
 function isDuplicate(jobName) {
   const now = Date.now();
   const lastRun = lastJobRun[jobName] || 0;
-  if (now - lastRun < DEDUP_WINDOW) {
-    console.log(`⏭️  [DEDUP] ${jobName} đã chạy ${Math.round((now - lastRun) / 1000)}s trước. SKIP!`);
-    return true;
-  }
+  if (now - lastRun < DEDUP_WINDOW) return true;
   lastJobRun[jobName] = now;
   return false;
 }
 
-// ─── GUARD: Check ngày giờ hợp lệ ─────────────────────────
-
-/**
- * Check xem có phải ngày giao dịch không (T2-T6)
- * Runtime check bổ sung cho cron expression
- */
 function isWeekday() {
-  const now = new Date();
-  // Tạo date theo timezone Việt Nam
-  const vnTime = new Date(now.toLocaleString('en-US', { timeZone: config.timezone }));
-  const day = vnTime.getDay(); // 0=CN, 1=T2, ..., 6=T7
+  const vnTime = new Date(new Date().toLocaleString('en-US', { timeZone: config.timezone }));
+  const day = vnTime.getDay();
   return day >= 1 && day <= 5;
 }
 
-/**
- * Check xem có phải thứ 2 không
- */
-function isMonday() {
-  const now = new Date();
-  const vnTime = new Date(now.toLocaleString('en-US', { timeZone: config.timezone }));
-  return vnTime.getDay() === 1;
-}
-
-// ─── JOB 1: BÁO GIÁ (10h, 13h, 16h T2-T6) ───────────────
-
-async function runStockJob() {
-  // Guard: check active days
-  if (!isCurrentInstanceActive()) return;
-
-  // Guard: skip nếu không phải ngày giao dịch
-  if (!isWeekday()) {
-    console.log('⏭️  [GUARD] Hôm nay T7/CN - skip báo giá');
-    return;
-  }
-
-  // Guard: chống double message
-  if (isDuplicate('stockJob')) return;
-
-  const startTime = Date.now();
-  console.log('\n' + '═'.repeat(55));
-  console.log('📊 BÁO GIÁ CHỨNG KHOÁN...');
-  console.log('═'.repeat(55));
-
-  try {
-    // Fetch stock data + VN30 index + liquidity song song
-    const [stocks, vn30Index, liquidity] = await Promise.all([
-      fetchAllStocks(),
-      fetchVN30Index(),
-      fetchMarketLiquidity(),
-    ]);
-
-    if (stocks.length === 0) {
-      console.error('❌ Không lấy được dữ liệu nào!');
-      await sendTelegramMessage('⚠️ VN Stock Bot: Không lấy được dữ liệu chứng khoán.');
-      jobLastError['stockJob'] = { time: Date.now(), message: 'Không lấy được dữ liệu' };
-      return;
-    }
-
-    // Fetch tự doanh cho các mã thành công song song
-    const { fetchProprietaryTrading } = require('./stockService');
-    const validSymbols = stocks.filter(s => !s.error).map(s => s.symbol);
-    const propResults = await Promise.all(
-      validSymbols.map(sym => fetchProprietaryTrading(sym).catch(() => null))
-    );
-    const propData = {};
-    validSymbols.forEach((sym, idx) => {
-      if (propResults[idx]) {
-        propData[sym] = propResults[idx];
-      }
-    });
-
-    // Cache data cho báo cáo cuối ngày 20h30
-    lastStockData = stocks;
-    lastStockDataTime = Date.now();
-    lastVN30Index = vn30Index;
-    lastLiquidity = liquidity;
-    console.log('   💾 Đã cache dữ liệu cho báo cáo cuối ngày');
-
-    // Format message với VN30 index và tự doanh
-    let message = formatStockMessage(stocks, liquidity, vn30Index, propData);
-    const sent = await sendTelegramMessage(message);
-    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-
-    if (sent) {
-      jobLastSuccess['stockJob'] = Date.now();
-      console.log(`\n✅ BÁO GIÁ HOÀN THÀNH! (${elapsed}s)`);
-      console.log(`   📊 ${stocks.filter(s => !s.error).length}/${stocks.length} mã thành công`);
-    } else {
-      jobLastError['stockJob'] = { time: Date.now(), message: 'Gửi Telegram thất bại' };
-      console.log(`\n⚠️ Lấy dữ liệu OK nhưng gửi Telegram thất bại (${elapsed}s)`);
-    }
-  } catch (error) {
-    jobLastError['stockJob'] = { time: Date.now(), message: error.message };
-    console.error('\n💥 LỖI:', error.message);
-    try {
-      await sendTelegramMessage(`💥 VN Stock Bot lỗi báo giá:\n<code>${error.message}</code>`);
-    } catch (e) { /* ignore */ }
-  }
-}
-
-// ─── JOB 1.5: AI PHÂN TÍCH CUỐI PHIÊN (16h05 T2-T6) ──────────
-// Chạy ngay sau báo giá 16h, dùng data thật từ VPS (thay cho Gemini scheduled action)
-// Gửi data chính xác cho AI phân tích, không dựa vào Google Search (bị sai data)
-
-async function runAfterCloseJob() {
-  // Guard: check active days
-  if (!isCurrentInstanceActive()) return;
-
-  // Guard: skip T7/CN
-  if (!isWeekday()) {
-    console.log('⏭️  [GUARD] Hôm nay T7/CN - skip AI cuối phiên');
-    return;
-  }
-
-  // Guard: chống double
-  if (isDuplicate('afterCloseJob')) return;
-
-  const startTime = Date.now();
-  console.log('\n' + '═'.repeat(55));
-  console.log('🧠 AI PHÂN TÍCH CUỐI PHIÊN 16h...');
-  console.log('═'.repeat(55));
-
-  try {
-    // Dùng data cache từ báo giá 16h (vừa fetch xong 5 phút trước)
-    if (!lastStockData || lastStockData.length === 0) {
-      console.log('   ⚠️ Không có data cache từ 16h, fetch mới...');
-      lastStockData = await fetchAllStocks();
-      lastStockDataTime = Date.now();
-      lastVN30Index = await fetchVN30Index();
-      lastLiquidity = await fetchMarketLiquidity();
-    }
-
-    if (!lastStockData || lastStockData.length === 0) {
-      console.error('❌ Không có dữ liệu!');
-      jobLastError['afterCloseJob'] = { time: Date.now(), message: 'Không có dữ liệu' };
-      return;
-    }
-
-    // Gọi AI phân tích với data thật
-    await runScheduledAnalysis(lastStockData, { vn30Index: lastVN30Index, liquidity: lastLiquidity });
-
-    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-    jobLastSuccess['afterCloseJob'] = Date.now();
-    console.log(`\n✅ AI PHÂN TÍCH CUỐI PHIÊN HOÀN THÀNH! (${elapsed}s)`);
-
-  } catch (error) {
-    jobLastError['afterCloseJob'] = { time: Date.now(), message: error.message };
-    console.error('\n💥 LỖI AI cuối phiên:', error.message);
-    try {
-      await sendTelegramMessage(`💥 VN Stock Bot lỗi AI cuối phiên:\n<code>${error.message}</code>`);
-    } catch (e) { /* ignore */ }
-  }
-}
-
-const { runTPlusSwingReport } = require('./tPlusSwingSignal');
-
-// ─── JOB 2: AI PHÂN TÍCH ĐẦU TƯ NGẮN HẠN T+ & KIỆT BÁN (20h30 T2-T6) ────────
-// Thay thế 3 noti trùng cũ bằng 1 Báo cáo AI T+ Swing Investment tập trung vào Kiệt bán & Tín hiệu kỹ thuật cao
-
-async function runAiJob() {
-  // Guard: check active days
-  if (!isCurrentInstanceActive()) return;
-
-  // Guard: skip nếu T7/CN
-  if (!isWeekday()) {
-    console.log('⏭️  [GUARD] Hôm nay T7/CN - skip T+ Swing AI report');
-    return;
-  }
-
-  // Guard: chống double
-  if (isDuplicate('aiJob')) return;
-
-  const startTime = Date.now();
-  console.log('\n' + '═'.repeat(55));
-  console.log('🚀 AI BÁO CÁO ĐẦU TƯ NGẮN HẠN T+ (20h30)...');
-  console.log('═'.repeat(55));
-
-  try {
-    await runTPlusSwingReport();
-    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-    jobLastSuccess['aiJob'] = Date.now();
-    console.log(`\n✅ BÁO CÁO T+ SWING 20H30 HOÀN THÀNH! (${elapsed}s)`);
-  } catch (error) {
-    jobLastError['aiJob'] = { time: Date.now(), message: error.message };
-    console.error('\n💥 LỖI AI T+ Swing:', error.message);
-  }
-}
-
-// ─── JOB 3: WEEKLY ANALYSIS (8h30 Thứ 2) ──────────────────
-
-async function runWeeklyJob() {
-  // Guard: check active days
-  if (!isCurrentInstanceActive()) return;
-
-  // Guard: phải là thứ 2
-  if (!isMonday()) {
-    console.log('⏭️  [GUARD] Không phải thứ 2 - skip weekly report');
-    return;
-  }
-
-  // Guard: chống double
-  if (isDuplicate('weeklyJob')) return;
-
-  console.log('\n' + '═'.repeat(55));
-  console.log('📅 PHÂN TÍCH THỊ TRƯỜNG ĐẦU TUẦN...');
-  console.log('═'.repeat(55));
-
-  try {
-    const report = await runWeeklyAnalysis();
-    const sent = await sendTelegramMessage(report);
-
-    if (sent) {
-      jobLastSuccess['weeklyJob'] = Date.now();
-      console.log('\n✅ WEEKLY REPORT HOÀN THÀNH!');
-    }
-  } catch (error) {
-    jobLastError['weeklyJob'] = { time: Date.now(), message: error.message };
-    console.error('\n💥 LỖI WEEKLY:', error.message);
-    try {
-      await sendTelegramMessage(`💥 VN Stock Bot lỗi weekly analysis:\n<code>${error.message}</code>`);
-    } catch (e) { /* ignore */ }
-  }
-}
-
-// ─── JOB 4: BÁO CÁO TTCK QUỐC TẾ + GIÁ VÀNG (21h00 MỖI NGÀY) ───
-// Lấy chỉ số TTCK Trung Quốc, Mỹ, Hàn, Indo, Thái, Nhật...
-// + Giá vàng thế giới + Giá vàng Việt Nam (1 lượng, 1 chỉ)
-
 async function runDailyGlobalSummaryJob() {
-  // Guard: check active days
   if (!isCurrentInstanceActive()) return;
-
-  // KHÔNG check weekday - chạy mỗi ngày kể cả T7/CN
-
-  // Guard: chống double
   if (isDuplicate('dailyGlobalSummaryJob')) return;
-
-  const startTime = Date.now();
-  console.log('\n' + '═'.repeat(55));
-  console.log('🌍 BÁO CÁO TTCK QUỐC TẾ + GIÁ VÀNG...');
-  console.log('═'.repeat(55));
-
   try {
     await runDailyGlobalSummaryReport();
-
-    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
     jobLastSuccess['dailyGlobalSummaryJob'] = Date.now();
-    console.log(`\n✅ BÁO CÁO TTCK QUỐC TẾ + VÀNG HOÀN THÀNH! (${elapsed}s)`);
-
   } catch (error) {
     jobLastError['dailyGlobalSummaryJob'] = { time: Date.now(), message: error.message };
-    console.error('\n💥 LỖI TTCK QUỐC TẾ + VÀNG:', error.message);
-    try {
-      await sendTelegramMessage(`💥 VN Stock Bot lỗi báo cáo TTCK quốc tế + vàng:\n<code>${error.message}</code>`);
-    } catch (e) { /* ignore */ }
   }
 }
-
-
-
-// ─── STARTUP ──────────────────────────────────────────────
 
 async function main() {
   console.log(`
   ╔═══════════════════════════════════════════════════════════╗
-  ║                                                           ║
-  ║   🇻🇳  VN STOCK BOT v${config.version}  📊                       ║
-  ║   Multi-AI Team + Global Market (ALL FREE)                ║
-  ║                                                           ║
-  ║   📊 Báo giá:  10:00 | 13:00 | 15:01  (T2-T6)           ║
-  ║   🤖 AI Report: 20:30                 (T2-T6)           ║
-  ║   🌍 TTCK+Vàng: 21:00                 (Mỗi ngày)        ║
-  ║   📅 Weekly:    8:30                  (Thứ 2)           ║
-  ║   💬 Interactive Bot: 24/7                                ║
-  ║                                                           ║
-  ║   🤖 AI 1: Trigger + Báo giá (Gemini Flash - Key 1)        ║
-  ║   📊 AI 2: Chuyên gia        (Gemini Flash - Key 2→1)      ║
-  ║   💬 AI 3: Chuyên gia Flash  (Gemini Flash - Key 1)        ║
-  ║   ⚔️  AI 4: Phản biện + Cuối ngày (Gemini Flash - Key 2→1)  ║
-  ║   🔒 Anti-spam: 15s giãn cách / key                        ║
-  ║                                                           ║
+  ║   🇻🇳  VN STOCK BOT — AI STOCK HUNTER T+ v2.0 & VN30F      ║
+  ╠═══════════════════════════════════════════════════════════╣
+  ║   📊 Cơ sở T+: 08:45 Cache | 15m Scan | 45s Guardian      ║
+  ║   📋 Báo cáo chính: 09:30 | 11:30 | 13:30 | 14:00 | 14:46 ║
+  ║   🌍 TTCK+Vàng: 21:00 (Mỗi ngày)                          ║
+  ║   🔮 Phái sinh VN30F: Active                              ║
   ╚═══════════════════════════════════════════════════════════╝
   `);
 
-  // Validate config
   validateConfig();
 
-  // Init AI engines
-  console.log('\n🧠 Khởi tạo AI Engines...');
-  initAIEngines();
-
-  console.log('\n📋 Cấu hình:');
-  console.log(`   📌 Mã theo dõi:  ${config.stockSymbols.join(', ')}`);
-  console.log(`   ⏰ Báo giá:      ${config.cronSchedule}`);
-  console.log(`   ⚙️ AI Cuối phiên: ${config.cronAfterCloseSchedule}`);
-  console.log(`   🤖 AI phân tích: ${config.cronAiSchedule}`);
-  console.log(`   🌍 TTCK+Vàng:    ${config.cronGlobalSchedule}`);
-  console.log(`   📅 Weekly:       ${config.cronWeeklySchedule}`);
-  console.log(`   🌏 Timezone:     ${config.timezone}`);
-  console.log(`   📩 Chat ID:      ${config.telegram.chatId}`);
-  console.log(`   💬 Interactive:  ${config.enableInteractiveBot ? 'ON' : 'OFF'}`);
-  const hasKey1 = config.geminiAI1.apiKey;
-  const hasKey2 = config.geminiAI2.apiKey;
-  console.log(`   🔑 Key 1 (AI 1+3): ${hasKey1 ? '✅ OK' : '❌ Thiếu'}`);
-  console.log(`   🔑 Key 2 (AI 2+4): ${hasKey2 ? '✅ OK' : '❌ Thiếu'}`);
-  console.log(`   🔒 Anti-spam: 15s giãn cách / key`);
-  console.log(`   💾 Cache: Dùng data 15h01 cho báo cáo 20h30`);
-  console.log(`   💰 Chi phí: $0 (100% FREE Gemini Flash + CNBC API)`);
-  console.log('');
-
-  // Validate cron expressions
-  const cronChecks = [
-    { name: 'Báo giá', expr: config.cronSchedule },
-    { name: 'Báo giá kết phiên', expr: config.cronCloseSchedule },
-    { name: 'AI Cuối phiên', expr: config.cronAfterCloseSchedule },
-    { name: 'AI Report', expr: config.cronAiSchedule },
-    { name: 'TTCK+Vàng', expr: config.cronGlobalSchedule },
-    { name: 'Weekly', expr: config.cronWeeklySchedule },
-  ];
-
-  for (const { name, expr } of cronChecks) {
-    if (!cron.validate(expr)) {
-      console.error(`❌ Cron ${name} không hợp lệ: ${expr}`);
-      process.exit(1);
-    }
-  }
-
-  // ═══════════════════════════════════════════════════════════
-  // BUG FIX: KHÔNG chạy job khi khởi động (gây noti dư thừa)
-  // Railway/Render restart container → trigger noti ngoài giờ
-  // ═══════════════════════════════════════════════════════════
-  console.log('☁️  Chờ đến giờ schedule (không chạy khi khởi động)...');
-
-  // ─── GỬI THÔNG BÁO KHỞI ĐỘNG VỀ TELEGRAM (CHỈ GỬI KHI ACTIVE) ─────────────
   const startupTime = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
   if (isCurrentInstanceActive()) {
     try {
       await sendTelegramMessage(
-        `🟢 <b>VN Stock Bot v${config.version} đã khởi động! (Nhóm Cơ Sở)</b>\n` +
+        `🟢 <b>AI Stock Hunter T+ v${STOCK_HUNTER_CONFIG.schemaVersion} đã khởi động!</b>\n` +
         `🕐 ${startupTime}\n` +
-        `📊 Theo dõi: ${config.stockSymbols.length} mã\n` +
-        `📅 Ngày hoạt động: <b>${config.activeDays}</b> (ACTIVE)\n` +
-        `⏰ Báo giá: ${config.cronSchedule}\n` +
-        `🤖 AI Report: ${config.cronAiSchedule}\n` +
-        `🌍 TTCK+Vàng: ${config.cronGlobalSchedule} (mỗi ngày)\n` +
-        `💬 Interactive: ${config.enableInteractiveBot ? 'ON' : 'OFF'}\n` +
-        `━━━━━━━━━━━━━━━━━━━━━━\n` +
-        `<i>Nếu bạn thấy tin này nhiều lần → bot đang bị restart liên tục!</i>`
+        `📊 Universe: ${config.stockSymbols.length} mã | Chế độ: <b>${STOCK_HUNTER_CONFIG.mode.toUpperCase()}</b>\n` +
+        `⏰ Báo cáo chính: ${STOCK_HUNTER_CONFIG.market.reports.join(' | ')}\n` +
+        `🛡️ Fast Position Guardian: mỗi 45s trong phiên`
       );
-
       if (config.telegram.chatIdDerivatives && config.telegram.chatIdDerivatives !== config.telegram.chatId) {
-        await sendDerivativesMessage(
-          `🔮 <b>VN Stock Bot v${config.version} đã kết nối! (Nhóm Phái Sinh VN30F)</b>\n` +
-          `🕐 ${startupTime}\n` +
-          `📊 Chế độ: <b>Radar Fibonacci & Cung Cầu Realtime v9.0</b>\n` +
-          `📅 Ngày hoạt động: <b>${config.activeDays}</b> (ACTIVE)\n` +
-          `⚡ <b>MỚI:</b> Nhận diện Thế & Cấu trúc thị trường ngay dòng đầu, Bản đồ Fibonacci Cung/Cầu sắp quét tới, Cảnh báo VSA Kiệt bán / Kéo cố & Chống 50/50 tài xỉu!\n` +
-          `⏰ Khung giờ Intraday (5p/lần): Sáng 09:10-11:30 (29 noti) & Chiều 13:05-14:20 (16 noti)\n` +
-          `⚡ Xung lực sau cắt margin (Smart Money soi ATC/ATO): 14h25\n` +
-          `⚡ Pre-ATC (Vào ATC hay không? Smart Money NN + TD): 14h29\n` +
-          `🌙 Post-ATC (Cầm qua đêm hay Đóng?): 14h44\n` +
-          `📊 OI Sơ bộ sau ATC: 14h47\n` +
-          `📊 OI & Basis (Chính thức HNX/VSDC): 19h35\n` +
-          `🌙 Evening Plan: 19h50 (chiến lược ngày tiếp theo)\n` +
-          `━━━━━━━━━━━━━━━━━━━━━━\n` +
-          `<i>Kênh chuyên biệt phân tích & tín hiệu phái sinh realtime 24/24</i>`
-        );
+        await sendDerivativesMessage(`🔮 <b>VN30F Derivatives Engine đã kết nối!</b> (${startupTime})`);
       }
-      console.log('📩 Đã gửi thông báo khởi động về Telegram');
     } catch (e) {
-      console.error('⚠️ Không gửi được thông báo khởi động:', e.message);
+      console.error('⚠️ Lỗi gửi thông báo khởi động:', e.message);
     }
-  } else {
-    console.log(`⏸️ [STANDBY] Instance ngoài ngày hoạt động (${config.activeDays}) — Chờ đến lượt xoay tua.`);
   }
 
-  // ─── SCHEDULE JOB 1: BÁO GIÁ CƠ SỞ (TỐI GIẢN: DUY NHẤT 15h01 KẾT PHIÊN) ────
-  // Đã lược bỏ các thông báo ban ngày (10h00, 13h35, 14h10, 14h40) để tránh loãng group cơ sở
-  cron.schedule(config.cronCloseSchedule, () => {
-    if (!isCurrentInstanceActive()) return;
-    const now = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
-    console.log(`\n⏰ [Báo giá kết phiên 15h01] Cron triggered: ${now}`);
-    runStockJob();
-  }, {
+  // ─── 1. PRE-MARKET CACHE & EOD RECONCILE (CƠ SỞ T+) ─────────
+  cron.schedule('45 8 * * 1-5', async () => {
+    if (!isCurrentInstanceActive() || !isWeekday()) return;
+    if (isDuplicate('shPreMarketCache')) return;
+    try {
+      await refreshPreMarketCache(true);
+      jobLastSuccess['shPreMarketCache'] = Date.now();
+    } catch (err) {
+      jobLastError['shPreMarketCache'] = { time: Date.now(), message: err.message };
+      console.error('❌ [StockHunter 08:45 Cache]:', err.message);
+    }
+  }, { scheduled: true, timezone: config.timezone });
+
+  cron.schedule('5 15 * * 1-5', async () => {
+    if (!isCurrentInstanceActive() || !isWeekday()) return;
+    if (isDuplicate('shEodReconcile')) return;
+    try {
+      await refreshPreMarketCache(true);
+      await runStockHunterScan({ label: '15:05 EOD', isMainReport: false, sendTelegram: false });
+      jobLastSuccess['shEodReconcile'] = Date.now();
+    } catch (err) {
+      jobLastError['shEodReconcile'] = { time: Date.now(), message: err.message };
+      console.error('❌ [StockHunter 15:05 EOD]:', err.message);
+    }
+  }, { scheduled: true, timezone: config.timezone });
+
+  // ─── 2. LỊCH QUÉT 15 PHÚT & 5 BÁO CÁO CHÍNH CƠ SỞ T+ ───────
+  const stockHunterSlots = [
+    { cron: '30 9 * * 1-5',  label: '09:30', main: true },
+    { cron: '45 9 * * 1-5',  label: '09:45', main: false },
+    { cron: '0 10 * * 1-5',  label: '10:00', main: false },
+    { cron: '15 10 * * 1-5', label: '10:15', main: false },
+    { cron: '30 10 * * 1-5', label: '10:30', main: false },
+    { cron: '45 10 * * 1-5', label: '10:45', main: false },
+    { cron: '0 11 * * 1-5',  label: '11:00', main: false },
+    { cron: '15 11 * * 1-5', label: '11:15', main: false },
+    { cron: '30 11 * * 1-5', label: '11:30', main: true },
+    { cron: '15 13 * * 1-5', label: '13:15', main: false },
+    { cron: '30 13 * * 1-5', label: '13:30', main: true },
+    { cron: '45 13 * * 1-5', label: '13:45', main: false },
+    { cron: '0 14 * * 1-5',  label: '14:00', main: true },
+    { cron: '15 14 * * 1-5', label: '14:15', main: false },
+    { cron: '30 14 * * 1-5', label: '14:30', main: false },
+    { cron: '46 14 * * 1-5', label: '14:46', main: true },
+  ];
+
+  for (const slot of stockHunterSlots) {
+    cron.schedule(slot.cron, async () => {
+      if (!isCurrentInstanceActive() || !isWeekday()) return;
+      const key = `shScan_${slot.label}`;
+      if (isDuplicate(key)) return;
+      console.log(`\n📊 [StockHunter ${slot.label}] Bắt đầu quét...`);
+      try {
+        await runStockHunterScan({ label: slot.label, isMainReport: slot.main, sendTelegram: true });
+        jobLastSuccess[key] = Date.now();
+      } catch (err) {
+        jobLastError[key] = { time: Date.now(), message: err.message };
+        console.error(`❌ [StockHunter ${slot.label}]:`, err.message);
+      }
+    }, { scheduled: true, timezone: config.timezone });
+  }
+
+  // ─── 3. FAST POSITION GUARDIAN (45s/lần trong phiên) ────────
+  guardianTimer = setInterval(async () => {
+    if (!isCurrentInstanceActive() || !isWeekday()) return;
+    try {
+      await runFastPositionGuardian();
+    } catch (e) {
+      console.error('⚠️ [FastGuardian]:', e.message);
+    }
+  }, 45 * 1000);
+
+  // ─── 4. TTCK QUỐC TẾ + VÀNG (21:00 MỖI NGÀY) ─────────────────
+  cron.schedule(config.cronGlobalSchedule, runDailyGlobalSummaryJob, {
     scheduled: true,
     timezone: config.timezone,
   });
-  console.log('   📊 Báo giá Cơ sở: DUY NHẤT 15h01 Kết phiên (T2-T6)');
 
-  // ─── SCHEDULE JOB 2: AI REPORT (T2-T6, 20h30) ─────────
-  cron.schedule(config.cronAiSchedule, () => {
-    if (!isCurrentInstanceActive()) return;
-    const now = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
-    console.log(`\n🤖 [AI Analysis] Cron triggered: ${now}`);
-    runAiJob();
-  }, {
-    scheduled: true,
-    timezone: config.timezone,
-  });
-
-  // ─── SCHEDULE JOB 3: WEEKLY (Thứ 2, 8h30) ─────────────
-  cron.schedule(config.cronWeeklySchedule, () => {
-    if (!isCurrentInstanceActive()) return;
-    const now = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
-    console.log(`\n📅 [Weekly Analysis] Cron triggered: ${now}`);
-    runWeeklyJob();
-  }, {
-    scheduled: true,
-    timezone: config.timezone,
-  });
-
-  // ─── SCHEDULE JOB 4: TTCK QUỐC TẾ + VÀNG (MỖI NGÀY, 21h00) ────
-  cron.schedule(config.cronGlobalSchedule, () => {
-    if (!isCurrentInstanceActive()) return;
-    const now = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
-    console.log(`\n🌍 [TTCK+Vàng] Cron triggered: ${now}`);
-    runDailyGlobalSummaryJob();
-  }, {
-    scheduled: true,
-    timezone: config.timezone,
-  });
-
-  // ─── DYNAMIC INTERACTIVE BOT & ACTIVE STATE SYNCHRONIZATION ──
+  // ─── 5. INTERACTIVE TELEGRAM BOT SYNC ────────────────────────
   let lastActiveState = null;
-
   function syncActiveState() {
     const active = isCurrentInstanceActive();
     if (active === lastActiveState) return;
     lastActiveState = active;
-
     if (config.enableInteractiveBot) {
-      if (active) {
-        startBotHandler();
-      } else {
-        stopBotHandler();
-      }
+      if (active) startBotHandler();
+      else stopBotHandler();
     }
   }
-
-  // Khởi động đồng bộ ban đầu
   syncActiveState();
+  setInterval(syncActiveState, 5 * 60 * 1000);
 
-  // Kiểm tra mỗi 5 phút để tự động chuyển giao giữa các ngày xoay tua
-  setInterval(() => {
-    syncActiveState();
-  }, 5 * 60 * 1000);
-
-  // ─── START VOLUME SCALPER v8.0 (chạy cả khi khởi động lại trong phiên) ───
+  // ─── 6. DERIVATIVES VN30F ENGINE (GIỮ NGUYÊN 100%) ───────────
   startVolumeScalper();
-  // Đã lược bỏ Alert Monitor, BigTrade Flush và Whale Tracker theo yêu cầu của user để tối giản group cơ sở
 
-  // ─── SCHEDULE: ENTRADE DEMO MORNING ROUTINE (08:59 T2-T6) ───
   cron.schedule('59 8 * * 1-5', async () => {
-    if (!isCurrentInstanceActive()) return;
-    if (!isWeekday()) return;
-    console.log('\n🌅 [Entrade Demo] Kích hoạt quy trình kiểm tra đầu ngày 08:59...');
+    if (!isCurrentInstanceActive() || !isWeekday()) return;
     try {
       const { getDayManager } = require('./derivatives/volumeScalper');
       await getDayManager().startMorningRoutine();
@@ -534,437 +207,94 @@ async function main() {
       console.error('🌅 [Entrade Demo 08:59] Lỗi:', err.message);
     }
   }, { scheduled: true, timezone: config.timezone });
-  console.log('   🌅 Entrade Demo Morning Routine: 08:59 (T2-T6)');
 
-  // ─── SCHEDULE: DERIVATIVES — RESET & START VOLUME SCALPER 9h00 ───
-  cron.schedule('0 9 * * 1-5', async () => {
-    if (!isCurrentInstanceActive()) return;
-    if (!isWeekday()) return;
-    console.log('\n🔮 [VN30F v6.0] Reset daily state & start Senior Trader AI Scalper');
-    try { 
+  cron.schedule('0 9 * * 1-5', () => {
+    if (!isCurrentInstanceActive() || !isWeekday()) return;
+    try {
       resetDerivativesState();
+      resetIntradayState();
       startVolumeScalper();
     } catch (err) { console.error('🔮 [Derivatives Reset] Lỗi:', err.message); }
   }, { scheduled: true, timezone: config.timezone });
 
-  // Senior Trader AI Scalper v6.0: Market Context, Trap Shield v6.0, VSA patterns, Confidence scoring, 1M/5M
-  console.log('   🔮 VN30F v6.0: Senior Trader AI Agent (Context + Trap Shield + VSA + Pro Notifier)');
-
-  // ─── SCHEDULE: AI DERIVATIVES FORECAST (9h22, 10h22 & 13h50, T2-T6) ───
-  cron.schedule('22 9 * * 1-5', async () => {
-    if (!isWeekday()) return;
-    if (isDuplicate('aiDerivativesMorning')) return;
-    console.log(`\n🤖 [Senior Trader AI Morning v6.0] Cron triggered`);
-    try {
-      await runAIDerivativesJob('morning');
-      jobLastSuccess['aiDerivativesMorning'] = Date.now();
-    } catch (err) {
-      console.error('🤖 [AI Derivatives Morning] Lỗi:', err.message);
-    }
-  }, { scheduled: true, timezone: config.timezone });
-
-  cron.schedule('22 10 * * 1-5', async () => {
-    if (!isWeekday()) return;
-    if (isDuplicate('aiDerivativesMidMorning')) return;
-    console.log(`\n🤖 [Senior Trader AI Mid-Morning v6.0] Cron triggered`);
-    try {
-      await runAIDerivativesJob('midmorning');
-      jobLastSuccess['aiDerivativesMidMorning'] = Date.now();
-    } catch (err) {
-      console.error('🤖 [AI Derivatives Mid-Morning] Lỗi:', err.message);
-    }
-  }, { scheduled: true, timezone: config.timezone });
-
-  cron.schedule('50 13 * * 1-5', async () => {
-    if (!isWeekday()) return;
-    if (isDuplicate('aiDerivativesAfternoon')) return;
-    console.log(`\n🤖 [Senior Trader AI Afternoon v6.0] Cron triggered`);
-    try {
-      await runAIDerivativesJob('afternoon');
-      jobLastSuccess['aiDerivativesAfternoon'] = Date.now();
-    } catch (err) {
-      console.error('🤖 [AI Derivatives Afternoon] Lỗi:', err.message);
-    }
-  }, { scheduled: true, timezone: config.timezone });
-  console.log('   🤖 AI Derivatives Forecast: 9:22, 10:22 & 13:50 (T2-T6)');
-
-  // ─── SCHEDULE: DERIVATIVES MARGIN CUTOFF & SMART MONEY (14h25 T2-T6) ────
-  // Đo xung lực sau khi cắt margin xong (14h00 - 14h20), soi 5-10p cuối Smart Money nhồi Long/Short cho ATC & ATO
-  cron.schedule('25 14 * * 1-5', async () => {
-    if (!isWeekday()) return;
-    if (isDuplicate('derivativesMarginCutoff_1425')) return;
-    const now = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
-    console.log(`\n⚡ [Derivatives Margin Cutoff 14h25] Cron triggered: ${now}`);
-    try {
-      await runMarginCutoffJob();
-      jobLastSuccess['derivativesMarginCutoff_1425'] = Date.now();
-    } catch (err) {
-      console.error('⚡ [Derivatives Margin Cutoff 14h25] Lỗi:', err.message);
-      jobLastError['derivativesMarginCutoff_1425'] = { time: Date.now(), message: err.message };
-    }
-  }, { scheduled: true, timezone: config.timezone });
-  console.log('   ⚡ Derivatives Margin Cutoff (Xung lực & Smart Money soi ATC/ATO): 14:25 (T2-T6)');
-
-  // ─── SCHEDULE: DERIVATIVES PRE-ATC REALTIME (14h29 T2-T6) ────
-  // Quyết định realtime: Có nên mở vị thế để vào ATC hay không?
-  // Cảnh báo chốt lệnh trước 14h29 nếu thanh khoản cạn kiệt, tay to đóng bớt HĐ, ảm đạm
-  cron.schedule('29 14 * * 1-5', async () => {
-    if (!isWeekday()) return;
-    if (isDuplicate('derivativesPreATC_1429')) return;
-    const now = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
-    console.log(`\n⚡ [Derivatives Pre-ATC 14h29] Cron triggered: ${now}`);
-    try {
-      await runPreATCJob();
-      jobLastSuccess['derivativesPreATC_1429'] = Date.now();
-    } catch (err) {
-      console.error('⚡ [Derivatives Pre-ATC 14h29] Lỗi:', err.message);
-      jobLastError['derivativesPreATC_1429'] = { time: Date.now(), message: err.message };
-    }
-  }, { scheduled: true, timezone: config.timezone });
-  console.log('   ⚡ Derivatives Pre-ATC (Vào ATC hay không?): 14:29 (T2-T6)');
-
-  // ─── SCHEDULE: DERIVATIVES POST-ATC / OVERNIGHT (14h44 T2-T6) ─
-  // Quyết định realtime: Có nên giữ vị thế qua đêm vào ATO hay đóng chốt lời/lỗ luôn?
-  // Cảnh báo đóng hết (Flat) nếu thanh khoản cạn kiệt, thị trường ảm đạm, tay to không găm vị thế
-  cron.schedule('44 14 * * 1-5', async () => {
-    if (!isWeekday()) return;
-    if (isDuplicate('derivativesPostATC_1444')) return;
-    const now = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
-    console.log(`\n🌙 [Derivatives Post-ATC 14h44] Cron triggered: ${now}`);
-    try {
-      await runPostATCJob();
-      jobLastSuccess['derivativesPostATC_1444'] = Date.now();
-    } catch (err) {
-      console.error('🌙 [Derivatives Post-ATC 14h44] Lỗi:', err.message);
-      jobLastError['derivativesPostATC_1444'] = { time: Date.now(), message: err.message };
-    }
-  }, { scheduled: true, timezone: config.timezone });
-  console.log('   🌙 Derivatives Post-ATC (Cầm qua đêm hay Đóng?): 14:44 (T2-T6)');
-
-  // ─── SCHEDULE: DERIVATIVES OI & TAY TO TRACKER (14h47 T2-T6 - Sơ bộ sau ATC) ─
-  // Báo cáo sơ bộ vị thế 3 phe, Khối ngoại chốt phiên, bảng 5 phiên ngay sau khi đóng cửa ATC 2 phút
-  cron.schedule('47 14 * * 1-5', async () => {
-    if (!isWeekday()) return;
-    if (isDuplicate('derivativesOI_afternoon_1447')) return;
-    const now = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
-    console.log(`\n📊 [Derivatives OI Afternoon 14h47] Cron triggered: ${now}`);
-    try {
-      await runDerivativesOIJob('afternoon');
-      jobLastSuccess['derivativesOI_afternoon_1447'] = Date.now();
-    } catch (err) {
-      console.error('📊 [Derivatives OI Afternoon 14h47] Lỗi:', err.message);
-      jobLastError['derivativesOI_afternoon_1447'] = { time: Date.now(), message: err.message };
-    }
-  }, { scheduled: true, timezone: config.timezone });
-  console.log('   📊 Derivatives OI Sơ bộ sau ATC: 14:47 (T2-T6)');
-
-  // ─── SCHEDULE: DERIVATIVES OI & TAY TO TRACKER (19h35 T2-T6) ─
-  // Báo cáo vị thế qua đêm Khối ngoại, Tự doanh, Tổng OI 5 ngày gần nhất
-  cron.schedule('35 19 * * 1-5', async () => {
-    if (!isWeekday()) return;
-    if (isDuplicate('derivativesOI_evening')) return;
-    const now = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
-    console.log(`\n📊 [Derivatives OI Evening 19h35] Cron triggered: ${now}`);
-    try {
-      await runDerivativesOIJob('evening');
-      jobLastSuccess['derivativesOI_evening'] = Date.now();
-    } catch (err) {
-      console.error('📊 [Derivatives OI Evening] Lỗi:', err.message);
-      jobLastError['derivativesOI_evening'] = { time: Date.now(), message: err.message };
-    }
-  }, { scheduled: true, timezone: config.timezone });
-  console.log('   📊 Derivatives OI & Tay To Tracker: 19:35 (T2-T6)');
-
-  // ─── SCHEDULE: EVENING PLAN — CHIẾN LƯỢC PHIÊN TIẾP THEO (19h50, T2-CN) ───
-  // Bắn noti chiến lược cho ngày tiếp theo: Multi-TF S/R, Smart Money, OI, Trend Prediction
-  // T2-CN (0,1,2,3,4 = CN-T5) — chỉ chạy ngày có giao dịch hoặc ngày trước ngày giao dịch
-  cron.schedule('50 19 * * 0-4', async () => {
-    if (!isCurrentInstanceActive()) return;
-    if (isDuplicate('eveningPlan_1950')) return;
-    const now = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
-    console.log(`\n🌙 [Evening Plan 19h50] Cron triggered: ${now}`);
-    try {
-      await runEveningPlanJob();
-      jobLastSuccess['eveningPlan_1950'] = Date.now();
-    } catch (err) {
-      console.error('🌙 [Evening Plan 19h50] Lỗi:', err.message);
-      jobLastError['eveningPlan_1950'] = { time: Date.now(), message: err.message };
-    }
-  }, { scheduled: true, timezone: config.timezone });
-  console.log('   🌙 Evening Plan (Chiến lược phiên tiếp): 19:50 (T2-CN)');
-
-  // ─── SCHEDULE: INTRADAY SIGNAL — TÍN HIỆU REALTIME 15P/NOTI ───────────
-  // Sáng: 9:15 → 11:30 (mỗi 15 phút = 10 noti)
-  // Chiều: 13:00 → 14:25 (mỗi 15 phút = 6 noti)
-  const intradayMorningSchedules = [
-    { cron: '10 9 * * 1-5',  label: '09:10' },
-    { cron: '15 9 * * 1-5',  label: '09:15' },
-    { cron: '20 9 * * 1-5',  label: '09:20' },
-    { cron: '25 9 * * 1-5',  label: '09:25' },
-    { cron: '30 9 * * 1-5',  label: '09:30' },
-    { cron: '35 9 * * 1-5',  label: '09:35' },
-    { cron: '40 9 * * 1-5',  label: '09:40' },
-    { cron: '45 9 * * 1-5',  label: '09:45' },
-    { cron: '50 9 * * 1-5',  label: '09:50' },
-    { cron: '55 9 * * 1-5',  label: '09:55' },
-    { cron: '0 10 * * 1-5',  label: '10:00' },
-    { cron: '5 10 * * 1-5',  label: '10:05' },
-    { cron: '10 10 * * 1-5', label: '10:10' },
-    { cron: '15 10 * * 1-5', label: '10:15' },
-    { cron: '20 10 * * 1-5', label: '10:20' },
-    { cron: '25 10 * * 1-5', label: '10:25' },
-    { cron: '30 10 * * 1-5', label: '10:30' },
-    { cron: '35 10 * * 1-5', label: '10:35' },
-    { cron: '40 10 * * 1-5', label: '10:40' },
-    { cron: '45 10 * * 1-5', label: '10:45' },
-    { cron: '50 10 * * 1-5', label: '10:50' },
-    { cron: '55 10 * * 1-5', label: '10:55' },
-    { cron: '0 11 * * 1-5',  label: '11:00' },
-    { cron: '5 11 * * 1-5',  label: '11:05' },
-    { cron: '10 11 * * 1-5', label: '11:10' },
-    { cron: '15 11 * * 1-5', label: '11:15' },
-    { cron: '20 11 * * 1-5', label: '11:20' },
-    { cron: '25 11 * * 1-5', label: '11:25' },
-    { cron: '30 11 * * 1-5', label: '11:30' },
+  const derivSchedules = [
+    { cron: '22 9 * * 1-5', fn: () => runAIDerivativesJob('morning'), key: 'aiDerivMorning' },
+    { cron: '22 10 * * 1-5', fn: () => runAIDerivativesJob('midmorning'), key: 'aiDerivMid' },
+    { cron: '50 13 * * 1-5', fn: () => runAIDerivativesJob('afternoon'), key: 'aiDerivAfter' },
+    { cron: '25 14 * * 1-5', fn: runMarginCutoffJob, key: 'derivMargin1425' },
+    { cron: '29 14 * * 1-5', fn: runPreATCJob, key: 'derivPreATC' },
+    { cron: '44 14 * * 1-5', fn: runPostATCJob, key: 'derivPostATC' },
+    { cron: '47 14 * * 1-5', fn: () => runDerivativesOIJob('afternoon'), key: 'derivOIAfter' },
+    { cron: '35 19 * * 1-5', fn: () => runDerivativesOIJob('evening'), key: 'derivOIEve' },
+    { cron: '50 19 * * 0-4', fn: runEveningPlanJob, key: 'eveningPlan1950', skipWeekdayCheck: true },
   ];
-  const intradayAfternoonSchedules = [
-    { cron: '5 13 * * 1-5',  label: '13:05' },
-    { cron: '10 13 * * 1-5', label: '13:10' },
-    { cron: '15 13 * * 1-5', label: '13:15' },
-    { cron: '20 13 * * 1-5', label: '13:20' },
-    { cron: '25 13 * * 1-5', label: '13:25' },
-    { cron: '30 13 * * 1-5', label: '13:30' },
-    { cron: '35 13 * * 1-5', label: '13:35' },
-    { cron: '40 13 * * 1-5', label: '13:40' },
-    { cron: '45 13 * * 1-5', label: '13:45' },
-    { cron: '50 13 * * 1-5', label: '13:50' },
-    { cron: '55 13 * * 1-5', label: '13:55' },
-    { cron: '0 14 * * 1-5',  label: '14:00' },
-    { cron: '5 14 * * 1-5',  label: '14:05' },
-    { cron: '10 14 * * 1-5', label: '14:10' },
-    { cron: '15 14 * * 1-5', label: '14:15' },
-    { cron: '20 14 * * 1-5', label: '14:20' },
-  ];
-
-  for (const schedule of [...intradayMorningSchedules, ...intradayAfternoonSchedules]) {
-    cron.schedule(schedule.cron, async () => {
+  for (const job of derivSchedules) {
+    cron.schedule(job.cron, async () => {
       if (!isCurrentInstanceActive()) return;
-      if (!isWeekday()) return;
-      console.log(`\n⚡ [Intraday Signal ${schedule.label}] Cron triggered`);
+      if (!job.skipWeekdayCheck && !isWeekday()) return;
+      if (isDuplicate(job.key)) return;
       try {
-        await runIntradaySignalJob();
-        jobLastSuccess[`intradaySignal_${schedule.label}`] = Date.now();
+        await job.fn();
+        jobLastSuccess[job.key] = Date.now();
       } catch (err) {
-        console.error(`⚡ [Intraday Signal ${schedule.label}] Lỗi:`, err.message);
+        jobLastError[job.key] = { time: Date.now(), message: err.message };
       }
     }, { scheduled: true, timezone: config.timezone });
   }
-  console.log('   ⚡ Intraday Signal (5p/lần): Sáng 09:10→11:30 (29 noti) | Chiều 13:05→14:20 (16 noti)');
 
-  // Reset intraday signal state mỗi sáng 9:00
-  cron.schedule('0 9 * * 1-5', () => {
-    if (!isCurrentInstanceActive()) return;
-    resetIntradayState();
-    console.log('   🔄 Intraday Signal state reset');
-  }, { scheduled: true, timezone: config.timezone });
+  // Intraday VN30F 5p/lần
+  const intradaySlots = [];
+  for (let m = 10; m <= 55; m += 5) intradaySlots.push(`${m} 9 * * 1-5`);
+  for (let m = 0; m <= 55; m += 5) intradaySlots.push(`${m} 10 * * 1-5`);
+  for (let m = 0; m <= 30; m += 5) intradaySlots.push(`${m} 11 * * 1-5`);
+  for (let m = 5; m <= 55; m += 5) intradaySlots.push(`${m} 13 * * 1-5`);
+  for (let m = 0; m <= 20; m += 5) intradaySlots.push(`${m} 14 * * 1-5`);
 
-  // ─── HEARTBEAT: Gửi "đang sống" mỗi ngày 9:00 T2-T6 ───────
-  // DISABLED: Bỏ tin nhắn heartbeat hàng ngày theo yêu cầu của user
-  /*
-  cron.schedule('0 9 * * 1-5', async () => {
-    try {
-      const now = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
-      const uptime = Math.floor((Date.now() - startedAt.getTime()) / 1000);
-      const uptimeStr = `${Math.floor(uptime / 3600)}h ${Math.floor((uptime % 3600) / 60)}m`;
+  for (const expr of intradaySlots) {
+    cron.schedule(expr, async () => {
+      if (!isCurrentInstanceActive() || !isWeekday()) return;
+      try { await runIntradaySignalJob(); } catch (e) { /* ignore */ }
+    }, { scheduled: true, timezone: config.timezone });
+  }
 
-      // Tổng hợp trạng thái jobs
-      let jobStatus = '';
-      const jobs = ['stockJob', 'afterCloseJob', 'aiJob', 'dailyGlobalSummaryJob', 'weeklyJob'];
-      const jobNames = ['Báo giá', 'AI Cuối phiên', 'AI Report', 'TTCK+Vàng', 'Weekly'];
-      for (let i = 0; i < jobs.length; i++) {
-        const last = jobLastSuccess[jobs[i]];
-        const err = jobLastError[jobs[i]];
-        if (last) {
-          const ago = Math.round((Date.now() - last) / 3600000);
-          jobStatus += `   ✅ ${jobNames[i]}: ${ago}h trước\n`;
-        } else if (err) {
-          jobStatus += `   ❌ ${jobNames[i]}: LỖI - ${err.message.substring(0, 50)}\n`;
-        } else {
-          jobStatus += `   ⏳ ${jobNames[i]}: chưa chạy\n`;
-        }
-      }
-
-      await sendTelegramMessage(
-        `💓 <b>HEARTBEAT - Bot đang hoạt động</b>\n` +
-        `...`
-      );
-      console.log('💓 Heartbeat sent');
-    } catch (e) {
-      console.error('💓 Heartbeat error:', e.message);
-    }
-  }, { scheduled: true, timezone: config.timezone });
-  */
-
-  // ─── HTTP HEALTH SERVER (Render.com keep-alive) ────────
+  // ─── 7. HTTP HEALTH SERVER ───────────────────────────────────
   const PORT = process.env.PORT || 3000;
   const server = http.createServer((req, res) => {
     const uptime = Math.floor((Date.now() - startedAt.getTime()) / 1000);
-    const uptimeStr = `${Math.floor(uptime / 3600)}h ${Math.floor((uptime % 3600) / 60)}m ${uptime % 60}s`;
-    const vnNow = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
-
-    const isActive = isCurrentInstanceActive();
-    const currentDay = new Date(new Date().toLocaleString('en-US', { timeZone: config.timezone })).getDate();
-
     if (req.url === '/health') {
-      // Health check endpoint cho cron-job.org / UptimeRobot
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         status: 'ok',
-        bot: `VN Stock Bot v${config.version}`,
-        instanceStatus: isActive ? 'active' : 'standby',
-        activeDays: config.activeDays,
-        currentDay: currentDay,
-        uptime: uptimeStr,
+        bot: `AI Stock Hunter T+ v${STOCK_HUNTER_CONFIG.schemaVersion}`,
+        mode: STOCK_HUNTER_CONFIG.mode,
+        active: isCurrentInstanceActive(),
         uptimeSeconds: uptime,
-        serverTime: vnNow,
-        startedAt: startedAt.toISOString(),
-        stocks: config.stockSymbols.length,
-        stockSymbols: config.stockSymbols,
-        interactive: config.enableInteractiveBot && isActive,
-        jobs: {
-          lastSuccess: Object.fromEntries(
-            Object.entries(jobLastSuccess).map(([k, v]) => [k, new Date(v).toISOString()])
-          ),
-          lastError: Object.fromEntries(
-            Object.entries(jobLastError).map(([k, v]) => [k, { time: new Date(v.time).toISOString(), message: v.message }])
-          ),
-        },
+        universeSize: config.stockSymbols.length,
+        lastSuccessCount: Object.keys(jobLastSuccess).length,
+        lastErrorCount: Object.keys(jobLastError).length,
       }));
       return;
     }
-
-    // Status page (trang chủ)
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-    res.end(`
-      <!DOCTYPE html>
-      <html lang="vi">
-      <head>
-        <meta charset="UTF-8">
-        <title>VN Stock Bot v${config.version}</title>
-        <style>
-          body { font-family: 'Segoe UI', sans-serif; background: #0f0f23; color: #e0e0e0; 
-                 display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
-          .card { background: #1a1a2e; border-radius: 16px; padding: 40px; max-width: 500px;
-                  box-shadow: 0 8px 32px rgba(0,0,0,0.4); border: 1px solid #333; }
-          h1 { color: #00d4ff; margin-top: 0; }
-          .status { font-size: 18px; }
-          .info { margin: 8px 0; color: #bbb; }
-          .badge-active { display: inline-block; background: #00ff88; color: #000; padding: 4px 12px;
-                   border-radius: 12px; font-weight: bold; font-size: 14px; }
-          .badge-standby { display: inline-block; background: #ffaa00; color: #000; padding: 4px 12px;
-                   border-radius: 12px; font-weight: bold; font-size: 14px; }
-        </style>
-      </head>
-      <body>
-        <div class="card">
-          <h1>🇻🇳 VN Stock Bot</h1>
-          <p class="status">
-            <span class="${isActive ? 'badge-active' : 'badge-standby'}">● ${isActive ? 'ACTIVE (Đang chạy)' : 'STANDBY (Chờ xoay tua)'}</span>
-            v${config.version}
-          </p>
-          <p class="info">📅 Ngày hoạt động: <b>${config.activeDays}</b> (Hôm nay: Ngày ${currentDay})</p>
-          <p class="info">⏱ Uptime: ${uptimeStr}</p>
-          <p class="info">🕐 Server: ${vnNow}</p>
-          <p class="info">📊 Theo dõi: ${config.stockSymbols.length} mã CP</p>
-          <p class="info">📋 Schedule: ${config.cronSchedule}</p>
-          <p class="info">🤖 AI Report: ${config.cronAiSchedule}</p>
-          <p class="info">💬 Interactive: ${config.enableInteractiveBot && isActive ? 'ON' : 'OFF'}</p>
-          <p class="info">💰 Chi phí: $0 (100% FREE)</p>
-          <hr style="border-color:#333">
-          <p style="color:#666; font-size:12px">Health check: <a href="/health" style="color:#00d4ff">/health</a></p>
-        </div>
-      </body>
-      </html>
-    `);
+    res.end(`<h3>VN Stock Bot — AI Stock Hunter T+ v${STOCK_HUNTER_CONFIG.schemaVersion}</h3><p>Mode: ${STOCK_HUNTER_CONFIG.mode} | Uptime: ${uptime}s</p>`);
   });
 
   server.listen(PORT, '0.0.0.0', () => {
-    console.log(`\n🌐 Health server listening on port ${PORT}`);
-    console.log(`   📍 Status page: http://localhost:${PORT}/`);
-    console.log(`   💓 Health check: http://localhost:${PORT}/health`);
+    console.log(`🌐 Health server listening on port ${PORT}`);
   });
-
-  // ─── SELF-PING: Chống Render Free Tier ngủ (tự ping mỗi 8 phút) ──
-  const RENDER_URL = process.env.RENDER_EXTERNAL_URL || process.env.RENDER_SERVICE_URL || process.env.PING_URL;
-  if (RENDER_URL || process.env.RENDER || process.env.NODE_ENV === 'production') {
-    const axios = require('axios');
-    const pingUrl = RENDER_URL 
-      ? `${RENDER_URL.replace(/\/+$/, '')}/health` 
-      : `http://localhost:${PORT}/health`;
-    const PING_INTERVAL = 8 * 60 * 1000; // 8 phút (chống Render ngủ đông sau 15p)
-    
-    setInterval(() => {
-      axios.get(pingUrl, { timeout: 15000 }).then((res) => {
-        console.log(`🏓 Self-ping: ${res.status} OK (${new Date().toLocaleTimeString('vi-VN', { timeZone: config.timezone })})`);
-      }).catch((err) => {
-        console.log(`🏓 Self-ping failed: ${err.message}`);
-      });
-    }, PING_INTERVAL);
-    
-    console.log(`   🏓 Self-ping: ${pingUrl} (mỗi 8 phút)`);
-  }
-
-  console.log('\n' + '─'.repeat(55));
-  console.log(`🟢 VN Stock Bot v${config.version} đang chạy!`);
-  console.log('');
-  console.log('   📊 Báo giá Cơ sở: DUY NHẤT 15h01 Kết phiên (' + config.cronCloseSchedule + `)`);
-  console.log('   📊 Kết phiên:   ' + config.cronCloseSchedule + ` (${config.timezone})`);
-  console.log('   🧠 AI Cuối phiên:' + config.cronAfterCloseSchedule + ` (${config.timezone})`);
-  console.log('   🤖 AI Report:   ' + config.cronAiSchedule + ` (${config.timezone})`);
-  console.log('   🌍 TTCK+Vàng:   ' + config.cronGlobalSchedule + ` (${config.timezone}) [MỖI NGÀY]`);
-  console.log('   📅 Weekly:      ' + config.cronWeeklySchedule + ` (${config.timezone})`);
-  console.log('   💬 Interactive: ' + (config.enableInteractiveBot ? 'ON (polling)' : 'OFF'));
-  console.log('   🌐 Health:      http://localhost:' + PORT + '/health');
-  console.log('   📅 Báo giá/AI: Thứ 2 → Thứ 6 | TTCK+Vàng: Mỗi ngày');
-  console.log('   🔒 Dedup lock:  4 phút (chống double message)');
-  console.log('   🔮 VN30F v7.0:  Senior Trader AI Agent (Context, Trap Shield v6.0, VSA, Pro Notifier)');
-  console.log('   🌙 Evening Plan: 19:50 (T2-CN, chiến lược ngày tiếp theo)');
-  console.log('   ⚡ Intraday Signal: 15p/noti | Sáng 09:15→11:30 | Chiều 13:00→14:25');
-  console.log('   💡 Nhấn Ctrl+C để dừng');
-  console.log('─'.repeat(55) + '\n');
 }
 
-// ─── GRACEFUL SHUTDOWN ────────────────────────────────────
-
-process.on('SIGINT', () => {
-  console.log('\n👋 Bot đang dừng...');
+function shutdown() {
+  if (guardianTimer) clearInterval(guardianTimer);
   stopBotHandler();
-  stopAlertMonitor();
-  stopVolumeScalper();
-  console.log('👋 Bot đã dừng. Hẹn gặp lại!');
-  process.exit(0);
-});
-
-process.on('SIGTERM', () => {
-  console.log('\n👋 Bot đang dừng (SIGTERM)...');
-  stopBotHandler();
-  stopAlertMonitor();
   stopVolumeScalper();
   process.exit(0);
-});
+}
 
-// Prevent crash on unhandled promise rejections
-process.on('unhandledRejection', (reason) => {
-  console.error('💥 Unhandled rejection:', reason);
-});
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
 
-// Prevent crash on uncaught exceptions
-process.on('uncaughtException', (err) => {
-  console.error('💥 Uncaught exception (prevented crash):', err?.stack || err?.message || err);
-});
-
-// Run!
-main().catch(err => {
-  console.error('💥 Fatal error:', err);
+main().catch((err) => {
+  console.error('💥 Fatal startup error:', err);
   process.exit(1);
 });

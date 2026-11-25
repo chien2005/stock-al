@@ -730,6 +730,21 @@ function buildDailyGlobalSummaryMessage(indices, goldData, now) {
   return msg;
 }
 
+async function runDailyGlobalSummaryReport() {
+  const { config } = require('./config');
+  const { sendTelegramMessage } = require('./telegramService');
+  const now = new Date().toLocaleString('vi-VN', { timeZone: config.timezone });
+  console.log('\n🌍 BÁO CÁO TTCK QUỐC TẾ + GIÁ VÀNG HÀNG NGÀY...');
+  try {
+    const [indices, goldData] = await Promise.all([fetchGlobalIndicesSimple(), fetchGoldPrices()]);
+    const msg = buildDailyGlobalSummaryMessage(indices, goldData, now);
+    await sendTelegramMessage(msg);
+    console.log('   ✅ Đã gửi báo cáo TTCK quốc tế + giá vàng');
+  } catch (error) {
+    console.error('   ❌ Lỗi báo cáo TTCK quốc tế + vàng:', error.message);
+  }
+}
+
 module.exports = {
   fetchAllGlobalData,
   fetchGlobalIndices,
@@ -739,6 +754,7 @@ module.exports = {
   fetchGlobalIndicesSimple,
   fetchGoldPrices,
   buildDailyGlobalSummaryMessage,
+  runDailyGlobalSummaryReport,
   GLOBAL_INDICES,
   SECTOR_ETFS,
 };
