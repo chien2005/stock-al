@@ -32,6 +32,8 @@ class AutonomousDayManager {
     this.profitGuard = null;
     this.closedTrades = [];
     this.consecutiveLosses = 0;     // Đếm số lệnh lỗ liên tiếp
+    this.maxConsecutiveLosses = 2;  // Cúp cầu dao sau 2 lệnh thua liên tiếp
+    this.haltDurationMs = 30 * 60 * 1000; // Thời gian cúp cầu dao (30 phút)
     this.haltUntil = 0;             // Thời điểm hết hạn cúp cầu dao tạm thời
     this.isHalted = false;          // Cầu dao khẩn cấp hết ngày
   }
