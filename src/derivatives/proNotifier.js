@@ -495,7 +495,10 @@ function formatFomoWarning(params) {
   msg += `━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
   msg += `📊 Nến ${candle.time}: ${candle.isGreen ? '🟢' : '🔴'} Vol <b>${candle.volume.toLocaleString()} HĐ</b>\n`;
-  msg += `• Biên độ thân nến: ${candle.body.toFixed(1)}đ | Râu trên: ${candle.upperWick.toFixed(1)}đ | Râu dưới: ${candle.lowerWick.toFixed(1)}đ\n\n`;
+  const body = (candle.body !== undefined ? candle.body : Math.abs(candle.close - candle.open)) || 0;
+  const upperWick = (candle.upperWick !== undefined ? candle.upperWick : (candle.high - Math.max(candle.open, candle.close))) || 0;
+  const lowerWick = (candle.lowerWick !== undefined ? candle.lowerWick : (Math.min(candle.open, candle.close) - candle.low)) || 0;
+  msg += `• Biên độ thân nến: ${body.toFixed(1)}đ | Râu trên: ${upperWick.toFixed(1)}đ | Râu dưới: ${lowerWick.toFixed(1)}đ\n\n`;
 
   msg += `⚠️ <b>TẠI SAO CẤM ĐU LỆNH:</b>\n`;
   msg += `• Trong môi trường thanh khoản thấp, vol vọt lên đột biến thường là nến chốt lời của tay to hoặc bẫy quét thanh khoản đỉnh/đáy (Liquidity Sweep)!\n`;

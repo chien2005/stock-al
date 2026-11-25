@@ -969,8 +969,8 @@ async function processNewCandle(candle, allCandles, oiData, extraData = {}) {
       return;
     }
 
-    // Chặn Anti-Climax Chasing (Vol > 2.5x MA20 — Smart Money đã ăn cỗ xong)
-    if (predictiveAnalysis?.antiClimaxBlock) {
+    // Chặn Anti-Climax Chasing khi không có tín hiệu đón đầu đảo chiều (Smart Money đã ăn cỗ xong)
+    if (predictiveAnalysis?.antiClimaxBlock && !predictiveAnalysis?.signal) {
       console.log(`   🚫 [Scalper] ${predictiveAnalysis.reason}`);
       return;
     }
@@ -1034,8 +1034,8 @@ async function processNewCandle(candle, allCandles, oiData, extraData = {}) {
       return;
     }
 
-    // B. Lọc Bollinger Bands (Cấm đuổi đỉnh/đáy)
-    if (bb) {
+    // B. Lọc Bollinger Bands (Cấm đuổi đỉnh/đáy cho lệnh Momentum, KHÔNG chặn Tín hiệu đón đầu Spring/Upthrust)
+    if (bb && !isPredictiveTrigger) {
       if (candle.isGreen && candle.close > bb.upper) {
         console.log(`   🚫 [Scalper] Chặn LONG ${candle.time}: Giá ${candle.close} > BB Upper ${bb.upper}`);
         if (now - _state.lastNotiTime > NOTI_COOLDOWN_MS) {
@@ -1054,8 +1054,8 @@ async function processNewCandle(candle, allCandles, oiData, extraData = {}) {
       }
     }
 
-    // C. Lọc MA9 & MA26 Trend
-    if (ma9_26Analysis) {
+    // C. Lọc MA9 & MA26 Trend (Chỉ áp dụng cho lệnh Momentum đuổi sóng, KHÔNG chặn Tín hiệu đón đầu đảo chiều)
+    if (ma9_26Analysis && !isPredictiveTrigger) {
       if (candle.isGreen && ma9_26Analysis.isDowntrend && ma26 && candle.close < ma26) {
         console.log(`   🚫 [Scalper] Chặn LONG ${candle.time}: Ngược xu hướng MA9 < MA26 (Downtrend)`);
         return;

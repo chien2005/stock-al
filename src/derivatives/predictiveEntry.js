@@ -70,22 +70,11 @@ function analyzePredictiveEntry({
   
   const safeVolMA20 = volMA20 || 2000;
   const volRatio = candle.volume / safeVolMA20;
-  
-  // ═══════════════════════════════════════════════════════════
-  // ANTI-CLIMAX CHASING FILTER — Hard block
-  // ═══════════════════════════════════════════════════════════
-  if (volRatio > PREDICTIVE_THRESHOLDS.antiClimaxVolRatio) {
-    return {
-      signal: null,
-      antiClimaxBlock: true,
-      reason: `🚫 ANTI-CLIMAX: Vol ${candle.volume.toLocaleString()} HĐ = ${(volRatio * 100).toFixed(0)}% MA20 (>${(PREDICTIVE_THRESHOLDS.antiClimaxVolRatio * 100)}%). CẤM vào mới — Smart Money đã ăn xong.`,
-    };
-  }
 
   // Collect key levels
   const keyLevels = _extractKeyLevels(marketStructureData);
   
-  // Run all 4 signal detectors
+  // Run all 4 signal detectors (Spring, Upthrust, Quiet Accumulation, Exhaustion)
   const signals = [];
   
   const spring = _detectSpring(candle, allCandles, flowData, keyLevels, safeVolMA20);
@@ -99,36 +88,59 @@ function analyzePredictiveEntry({
   
   const exhaustion = _detectExhaustion(candle, allCandles, flowData, safeVolMA20);
   if (exhaustion) signals.push(exhaustion);
-  
-  if (signals.length === 0) return null;
-  
-  // Pick highest confidence signal
-  signals.sort((a, b) => b.confidence - a.confidence);
-  const bestSignal = signals[0];
-  
-  // Dominance direction check
-  if (dominanceResult) {
-    const dirCheck = _checkDominanceAlignment(bestSignal.direction, dominanceResult);
-    if (!dirCheck.allowed) {
-      return {
-        signal: null,
-        dominanceBlock: true,
-        reason: dirCheck.reason,
-        rejectedSignal: bestSignal,
-      };
+
+  // NẾU CÓ TÍN HIỆU ĐÓN ĐẦU (SPRING, UPTHRUST, EXHAUSTION, QUIET ACCUMULATION):
+  // Đây là các thế đánh đảo chiều / gom hàng chuẩn Wyckoff & VSA tại các vùng thanh khoản cực trị.
+  // Tuyệt đối KHÔNG chặn bằng Anti-Climax vì nến đảo chiều cao trào cần có volume hấp thụ!
+  if (signals.length > 0) {
+    signals.sort((a, b) => b.confidence - a.confidence);
+    const bestSignal = signals[0];
+    
+    // Dominance direction check
+    if (dominanceResult) {
+      const dirCheck = _checkDominanceAlignment(bestSignal.direction, dominanceResult);
+      if (!dirCheck.allowed) {
+        return {
+          signal: null,
+          dominanceBlock: true,
+          antiClimaxBlock: false,
+          reason: dirCheck.reason,
+          rejectedSignal: bestSignal,
+        };
+      }
+      if (dirCheck.aligned) {
+        bestSignal.confidence = Math.min(95, bestSignal.confidence + 10);
+        bestSignal.alignmentBonus = true;
+      }
     }
-    // Bonus confidence if aligned with dominance
-    if (dirCheck.aligned) {
-      bestSignal.confidence = Math.min(95, bestSignal.confidence + 10);
-      bestSignal.alignmentBonus = true;
-    }
+
+    return {
+      signal: bestSignal,
+      antiClimaxBlock: false,
+      dominanceBlock: false,
+      allSignals: signals,
+    };
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // ANTI-CLIMAX CHASING FILTER — Chặn ĐUỔI LỆNH (MOMENTUM CHASE)
+  // Chỉ kích hoạt khi KHÔNG có setup đón đầu và nổ vol cực đại (>3200 HĐ hoặc >2.8x MA20)
+  // ═══════════════════════════════════════════════════════════
+  const isExtremeClimax = (candle.volume >= 3200 && volRatio > 2.2) || volRatio > 3.0;
+  if (isExtremeClimax) {
+    return {
+      signal: null,
+      antiClimaxBlock: true,
+      dominanceBlock: false,
+      reason: `🚫 ANTI-CLIMAX: Vol ${candle.volume.toLocaleString()} HĐ = ${(volRatio * 100).toFixed(0)}% MA20 (>${(PREDICTIVE_THRESHOLDS.antiClimaxVolRatio * 100)}%). CẤM đuổi lệnh theo đà — Smart Money đã ăn cỗ xong.`,
+    };
   }
 
   return {
-    signal: bestSignal,
+    signal: null,
     antiClimaxBlock: false,
     dominanceBlock: false,
-    allSignals: signals,
+    allSignals: [],
   };
 }
 

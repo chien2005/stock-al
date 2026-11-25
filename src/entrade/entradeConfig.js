@@ -34,14 +34,14 @@ const entradeConfig = {
 
   // Thông tin định danh tài khoản Entrade
   credentials: {
-    username: process.env.ENTRADE_USERNAME || '',
-    password: process.env.ENTRADE_PASSWORD || '',
+    username: (process.env.ENTRADE_USERNAME || 'pdchien97@gmail.com').toString().trim().replace(/^['"]|['"]$/g, ''),
+    password: (process.env.ENTRADE_PASSWORD || '200597Cc$').toString().trim().replace(/^['"]|['"]$/g, ''),
     investorId: process.env.ENTRADE_INVESTOR_ID ? parseInt(process.env.ENTRADE_INVESTOR_ID) : 1000072805,
     investorAccountIdDemo: 1000076317,
     investorAccountIdLive: 1000069866,
     bankMarginPortfolioId: 34, // Gói ký quỹ phái sinh Entrade
     ownerName: 'Phạm Đức Chiến',
-    chatIdTradingDemo: '-5509642518',
+    chatIdTradingDemo: process.env.TELEGRAM_CHAT_ID_TRADING_DEMO || '-5509642518',
   },
 
   // Quy tắc Quản trị rủi ro & Khóa Lợi Nhuận Thép (Profit Lock Guard)

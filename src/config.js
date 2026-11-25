@@ -27,9 +27,9 @@ const config = {
     botTokenAI3: process.env.TELEGRAM_BOT_TOKEN_AI3, // AI 3: Chuyên gia Flash
     botTokenAI4: process.env.TELEGRAM_BOT_TOKEN_AI4, // AI 4: AI Phản biện
     chatId: process.env.TELEGRAM_CHAT_ID,
-    chatIdDerivatives: process.env.TELEGRAM_CHAT_ID_PS || process.env.TELEGRAM_CHAT_ID, // Nhóm Ps cũ (tạm tắt)
-    chatIdTradingDemo: '-5509642518', // Nhóm Trading Demo mới
-    disableLegacyPsNoti: true, // Tạm thời tắt toàn bộ noti phái sinh cũ sang nhóm Ps
+    chatIdDerivatives: process.env.TELEGRAM_CHAT_ID_PS || process.env.TELEGRAM_CHAT_ID, // Nhóm Phái sinh
+    chatIdTradingDemo: process.env.TELEGRAM_CHAT_ID_TRADING_DEMO || '-5509642518', // Nhóm Trading Demo
+    disableLegacyPsNoti: process.env.DISABLE_LEGACY_PS_NOTI === 'true', // Mặc định false (bật thông báo tín hiệu)
   },
 
   // Google Gemini Keys - ALL FREE (fallback khi OpenRouter lỗi)
