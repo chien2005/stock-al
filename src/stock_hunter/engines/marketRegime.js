@@ -141,19 +141,18 @@ function classifyMarketRegime({
   );
 
   // Tính Liquidity Ratio theo cùng thời điểm (Time-of-day normalized, Test F03)
-  const histValues = vnindexBars.slice(-21, -1).map(b => b.matchedValueVnd || (b.close * b.volume));
-  const medHoseVal = median(histValues.filter(v => v > 0));
+  // Lưu ý: VNINDEX history có `close` là điểm số (không phải VND), nên phải so khớp `volumeShares` với median `volume` của VNINDEX!
+  const histVols = vnindexBars.slice(-21, -1).map(b => b.volume).filter(v => v > 0);
+  const medVniVol = median(histVols);
   const elapsedWeight = getSessionElapsedWeight(asOf);
   let liquidityRatio = null;
-  if (medHoseVal && medHoseVal > 0) {
-    if (marketLiquidity && Number.isFinite(marketLiquidity.hoseMatchedValueVnd) && marketLiquidity.hoseMatchedValueVnd > 0) {
-      const expectedAtTime = medHoseVal * elapsedWeight;
-      liquidityRatio = parseFloat((marketLiquidity.hoseMatchedValueVnd / expectedAtTime).toFixed(2));
-    } else if (lastClosedVni.volume > 0) {
-      const medVol = median(vnindexBars.slice(-21, -1).map(b => b.volume));
-      if (medVol > 0) {
-        liquidityRatio = parseFloat(((lastClosedVni.volume / elapsedWeight) / medVol).toFixed(2));
-      }
+  if (medVniVol && medVniVol > 0) {
+    const currentVniVol = (vnindexLive && Number.isFinite(vnindexLive.volumeShares) && vnindexLive.volumeShares > 0)
+      ? vnindexLive.volumeShares
+      : lastClosedVni.volume;
+    if (currentVniVol > 0) {
+      const expectedAtTime = medVniVol * elapsedWeight;
+      liquidityRatio = parseFloat((currentVniVol / expectedAtTime).toFixed(2));
     }
   }
   const liquidityLabel = classifyLiquidityLabel(liquidityRatio);
