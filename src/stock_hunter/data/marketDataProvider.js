@@ -484,7 +484,7 @@ async function fetchMarketIndicesSnapshot() {
         ? parseFloat((((idxPoint - refPoint) / refPoint) * 100).toFixed(2))
         : parseFloat(item.changePercent || 0);
       const valBil = parseFloat(item.value || 0) / 1000; // tỷ VND
-      const volShares = parseInt(item.vol || 0, 10) * 10;
+      const volShares = parseInt(item.vol || 0, 10); // getlistindexdetail trả về vol đơn vị cổ phiếu
 
       const entry = {
         index: idxPoint,
