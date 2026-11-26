@@ -24,6 +24,7 @@ const {
   runFastPositionGuardian,
   refreshPreMarketCache,
   STOCK_HUNTER_CONFIG,
+  SEED_INSTRUMENTS,
 } = require('./stock_hunter');
 const {
   runAIDerivativesJob,
@@ -91,7 +92,7 @@ async function main() {
       await sendTelegramMessage(
         `🟢 <b>AI Stock Hunter T+ v${STOCK_HUNTER_CONFIG.schemaVersion} đã khởi động!</b>\n` +
         `🕐 ${startupTime}\n` +
-        `📊 Universe: ${config.stockSymbols.length} mã | Chế độ: <b>${STOCK_HUNTER_CONFIG.mode.toUpperCase()}</b>\n` +
+        `📊 Universe: ${SEED_INSTRUMENTS.length} mã | Chế độ: <b>${STOCK_HUNTER_CONFIG.mode.toUpperCase()}</b>\n` +
         `⏰ Báo cáo chính: ${STOCK_HUNTER_CONFIG.market.reports.join(' | ')}\n` +
         `🛡️ Fast Position Guardian: mỗi 45s trong phiên`
       );
@@ -282,7 +283,30 @@ async function main() {
   server.listen(PORT, '0.0.0.0', () => {
     console.log(`🌐 Health server listening on port ${PORT}`);
   });
+
+  // ─── 8. SELF-PING KEEP-ALIVE (Chống Render Free Tier ngủ đông sau 15p) ──
+  const RENDER_URL = process.env.RENDER_EXTERNAL_URL || process.env.RENDER_SERVICE_URL || process.env.PING_URL || 'https://vn-stock-bot.onrender.com';
+  if (process.env.RENDER || process.env.NODE_ENV === 'production' || process.env.RENDER_EXTERNAL_URL) {
+    const axios = require('axios');
+    const pingUrl = `${RENDER_URL.replace(/\/+$/, '')}/health`;
+    setInterval(() => {
+      axios.get(pingUrl, { timeout: 15000 }).then((res) => {
+        console.log(`🏓 Self-ping: ${res.status} OK (${new Date().toLocaleTimeString('vi-VN', { timeZone: config.timezone })})`);
+      }).catch((err) => {
+        console.log(`🏓 Self-ping failed (${pingUrl}): ${err.message}`);
+      });
+    }, 8 * 60 * 1000);
+    console.log(`🏓 Self-ping keep-alive active: ${pingUrl} (mỗi 8 phút)`);
+  }
 }
+
+process.on('unhandledRejection', (reason) => {
+  console.error('💥 Unhandled rejection (prevented crash):', reason);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('💥 Uncaught exception (prevented crash):', err?.stack || err?.message || err);
+});
 
 function shutdown() {
   if (guardianTimer) clearInterval(guardianTimer);

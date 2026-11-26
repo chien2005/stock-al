@@ -59,8 +59,10 @@ function evaluateStrategies({
     const nearSupportOrMA20 = distToSupport <= 0.035 || (curBar && curBar.low <= ma20 * 1.015);
     const hasSupplyTest = cues.includes('SUCCESSFUL_SUPPLY_TEST') || cues.includes('HEALTHY_PULLBACK_LOW_VOL');
     const hasDemandTrigger = supplyDemand.state === 'DEMAND_CONFIRMED' || supplyDemand.state === 'DEMAND_CANDIDATE';
+    const goodClv = (curM?.clv ?? 0) >= 0.58;
+    const s01Count = [nearSupportOrMA20, hasSupplyTest, hasDemandTrigger, goodClv].filter(Boolean).length;
 
-    if (nearSupportOrMA20 && hasSupplyTest && hasDemandTrigger && (curM?.clv ?? 0) >= 0.58) {
+    if (nearSupportOrMA20 && (s01Count >= 3 || (hasSupplyTest && hasDemandTrigger && goodClv))) {
       const invalidationLevel = Math.min(
         zones.nearestSupport?.low || ma20 * 0.98,
         curBar?.low || price * 0.97
@@ -97,10 +99,11 @@ function evaluateStrategies({
   ) {
     const brokeOut = price > priorHigh15;
     const goodClose = (curM?.clv ?? 0) >= 0.68 && (curM?.upperWickRatio ?? 1) <= 0.32;
+    const acceptableClose = (curM?.clv ?? 0) >= 0.55 && (curM?.upperWickRatio ?? 1) <= 0.40;
     const volConfirmed = (d.rvolPartial ?? 0) >= 1.4 || (feature.m15?.rvol15 ?? 0) >= 1.5;
     const tooFarFromBase = (price - priorHigh15) > atrD * STOCK_HUNTER_CONFIG.strategies.maxEntryChaseAtr;
 
-    if (brokeOut && goodClose && volConfirmed) {
+    if (brokeOut && ((goodClose && volConfirmed) || (acceptableClose && (goodClose || volConfirmed)))) {
       // Test S04: Thanh khoản thị trường LOW/DRY hoặc UPTREND_WEAK -> Không blanket mua vượt đỉnh, chuyển WATCH_RETEST
       if (liqLabel === 'LOW' || liqLabel === 'DRY' || regime === 'UPTREND_WEAK') {
         candidates.push({

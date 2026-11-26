@@ -103,20 +103,6 @@ async function sendTelegramMessage(message) {
 }
 
 async function sendDerivativesMessage(message) {
-  const isEveningReport = message && (
-    message.includes('BÁO CÁO OI') ||
-    message.includes('EVENING PLAN') ||
-    message.includes('KẾ HOẠCH TÁC CHIẾN') ||
-    message.includes('CHÍNH THỨC VSDC') ||
-    message.includes('19h35') ||
-    message.includes('19h50') ||
-    message.includes('TAY TO')
-  );
-
-  if (config.telegram.disableLegacyPsNoti && !isEveningReport) {
-    console.log('🔇 [MUTE] Thông báo tín hiệu trong phiên nhóm Phái sinh cũ đã tạm tắt.');
-    return false;
-  }
   try {
     const chatId = config.telegram.chatIdDerivatives || config.telegram.chatId;
     await sendToChat(chatId, message);

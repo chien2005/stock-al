@@ -14,7 +14,7 @@ const EntradeClient = require('./entradeClient');
 const ProfitLockGuard = require('./profitLockGuard');
 const entradeConfig = require('./entradeConfig');
 const { config } = require('../config');
-const axios = require('axios');
+const { sendToChat } = require('../telegramService');
 
 class AutonomousDayManager {
   constructor(options = {}) {
@@ -43,17 +43,12 @@ class AutonomousDayManager {
    */
   async sendNoti(htmlText) {
     console.log(`[Telegram Noti]:\n${htmlText.replace(/<[^>]+>/g, '')}\n`);
-    if (!this.telegramToken || !this.chatId) return;
+    if (!config.telegram.botToken || !this.chatId) return;
 
     try {
-      await axios.post(`https://api.telegram.org/bot${this.telegramToken}/sendMessage`, {
-        chat_id: this.chatId,
-        text: htmlText,
-        parse_mode: 'HTML',
-        disable_web_page_preview: true
-      });
+      await sendToChat(this.chatId, htmlText);
     } catch (e) {
-      console.warn(`[Telegram] Lỗi gửi tin nhắn:`, e.response?.data?.description || e.message);
+      console.warn(`[Telegram] Lỗi gửi tin nhắn (Trading Demo):`, e.response?.data?.description || e.message);
     }
   }
 

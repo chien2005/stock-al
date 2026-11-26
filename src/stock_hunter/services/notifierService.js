@@ -156,28 +156,32 @@ function formatMainScanReport(result, label = null) {
 
   // ── 1. KHUYẾN NGHỊ MUA / THEO DÕI PHIÊN KẾ ──
   if (result.buySignals && result.buySignals.length > 0) {
-    const title = isPostClose ? '🔵 THEO DÕI PHIÊN KẾ TIẾP:' : '🟢 KHUYẾN NGHỊ MUA MỚI (Đạt chuẩn Cung - Cầu):';
+    const title = isPostClose ? '🔵 THEO DÕI PHIÊN KẾ TIẾP (Đạt từ 70% tiêu chí):' : '🟢 KHUYẾN NGHỊ MUA MỚI T+ (Đạt từ 70% tiêu chí):';
     lines.push(`<b>${title}</b>`);
-    for (const sig of result.buySignals) {
+    for (const sig of result.buySignals.slice(0, 10)) {
       const p = sig.tradePlan;
       const confVi = sig.confidence === 'HIGH' ? 'Cao' : sig.confidence === 'MEDIUM' ? 'Trung bình' : 'Thấp';
       const reasonsVi = translateReasons(sig.reasonCodes.slice(0, 4)).join(', ');
+      const critPct = sig.criteriaPct ?? 100;
+      const missingStr = (sig.missingCriteria && sig.missingCriteria.length > 0)
+        ? ` — Còn thiếu: ${sig.missingCriteria.slice(0, 3).join(', ')}`
+        : ' — Đạt chuẩn toàn diện';
       lines.push(
-        `• <b>[${sig.sector}] ${sig.symbol}</b> | Điểm: <b>${sig.score}/100</b> (Độ tin cậy: ${confVi})\n` +
+        `• <b>[${sig.sector}] ${sig.symbol}</b> | Điểm: <b>${sig.score}/100</b> (Đạt <b>${critPct}%</b> tiêu chí${missingStr}) | Tin cậy: ${confVi}\n` +
         `  Vùng mua: <b>${fmtK(p.entryZone.min)} – ${fmtK(p.entryZone.max)}</b> | Cắt lỗ: <b>${fmtK(p.stopVnd)}</b> (-${p.stopDistancePct}%) | Mục tiêu: <b>${fmtK(p.tpRef1)}</b> (Tỷ lệ lời/lỗ ${p.rrNet})\n` +
         `  Khối lượng gợi ý: <b>${sig.recommendedQty} cp</b> (~${(sig.estimatedCashRequiredVnd / 1e6).toFixed(1)}tr | Rủi ro ${sig.riskPctOfNav}% vốn)\n` +
-        `  Lý do: ${reasonsVi} (KL gấp ${sig.rvolD ?? 'N/A'}x TB)`
+        `  Lý do đạt: ${reasonsVi} (KL gấp ${sig.rvolD ?? 'N/A'}x TB)`
       );
     }
   } else {
-    lines.push(`⚪ <b>MUA MỚI: KHÔNG CÓ KÈO ĐẠT CHUẨN</b> — Chưa mã nào thỏa mãn đồng thời Cung-Cầu và tỷ lệ lời/lỗ an toàn.`);
+    lines.push(`⚪ <b>MUA MỚI: KHÔNG CÓ KÈO ĐẠT CHUẨN (>= 70% tiêu chí)</b> — Chưa mã nào thỏa mãn đồng thời an toàn Cung-Cầu và tỷ lệ lời/lỗ.`);
   }
   lines.push('');
 
   // ── 2. DANH SÁCH CHỜ ĐIỂM VÀO ──
   if (result.watchList && result.watchList.length > 0) {
-    lines.push(`<b>🟡 DANH SÁCH CHỜ ĐIỂM VÀO:</b>`);
-    for (const w of result.watchList.slice(0, 4)) {
+    lines.push(`<b>🟡 DANH SÁCH CHỜ ĐIỂM VÀO (Tối đa 10 mã):</b>`);
+    for (const w of result.watchList.slice(0, 10)) {
       const reasonsVi = translateReasons(w.reasonCodes.slice(0, 2)).join(', ');
       lines.push(`• <b>${w.symbol}</b> (${w.sector}): ${w.strategyName} — ${reasonsVi}`);
     }
@@ -186,8 +190,8 @@ function formatMainScanReport(result, label = null) {
 
   // ── 3. SĂN ĐÁY ĐẶC BIỆT ──
   if (result.specialWatchList && result.specialWatchList.length > 0) {
-    lines.push(`<b>👀 SĂN ĐÁY ĐẶC BIỆT (Chỉ quan sát — Chưa mua nếu chưa xác nhận Đáy 2):</b>`);
-    for (const sw of result.specialWatchList.slice(0, 4)) {
+    lines.push(`<b>👀 SĂN ĐÁY ĐẶC BIỆT (Tối đa 10 mã — Chỉ quan sát, chưa mua nếu chưa xác nhận Đáy 2):</b>`);
+    for (const sw of result.specialWatchList.slice(0, 10)) {
       const stVi = SPECIAL_WATCH_LABELS[sw.state] || sw.state;
       lines.push(`• <b>${sw.symbol}</b> — ${stVi} | Giảm từ đỉnh: ${sw.drawdown60D ?? 'N/A'}% | RSI: ${sw.rsi14 ?? 'N/A'} | Đáy hoảng loạn: ${fmtK(sw.climaxLow)} | Mốc cần vượt: ${fmtK(sw.reclaimLevel)}`);
     }
@@ -196,8 +200,8 @@ function formatMainScanReport(result, label = null) {
 
   // ── 4. TOP TRÁNH XA ──
   if (result.avoidList && result.avoidList.length > 0) {
-    lines.push(`<b>🚫 DANH SÁCH TRÁNH XA:</b>`);
-    for (const av of result.avoidList.slice(0, 5)) {
+    lines.push(`<b>🚫 DANH SÁCH TRÁNH XA (Tối đa 10 mã):</b>`);
+    for (const av of result.avoidList.slice(0, 10)) {
       const codeVi = AVOID_LABELS[av.primaryCode] || av.primaryCode;
       lines.push(`• <b>${av.symbol}</b> — ${codeVi}: ${av.detail}`);
     }

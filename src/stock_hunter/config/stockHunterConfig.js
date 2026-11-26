@@ -79,9 +79,10 @@ const STOCK_HUNTER_CONFIG = {
   },
 
   strategies: {
-    buyScoreMin: 80,
-    watchScoreMin: 65,
-    reversalScoreMin: 85,
+    buyScoreMin: 70,
+    minCriteriaPct: 70,
+    watchScoreMin: 60,
+    reversalScoreMin: 80,
     minRrNet: 1.5,
     reversalMinRrNet: 2.0,
     minRoomPct: 0.03,
@@ -105,10 +106,10 @@ const STOCK_HUNTER_CONFIG = {
   },
 
   notifications: {
-    topBuy: 3,
-    topWatch: 5,
-    topSpecialWatch: 5,
-    topAvoid: 5,
+    topBuy: 10,
+    topWatch: 10,
+    topSpecialWatch: 10,
+    topAvoid: 10,
     alertReminderMinutes: 15,
     buyDuplicateCooldownMinutes: 60,
   },

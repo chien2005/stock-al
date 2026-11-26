@@ -84,6 +84,68 @@ function scoreCandidate({ setup, tradePlan, marketRegime, sectorState, zones, su
 }
 
 /**
+ * Đánh giá bộ 10 tiêu chí mua T+ (linh hoạt >= 70% tiêu chí vẫn khuyến nghị, ghi rõ % & lý do thiếu)
+ */
+function evaluateBuyCriteria({ setup, tradePlan, marketRegime, sectorState, zones, supplyDemand, feature, scoreTotal }) {
+  const d = feature?.daily || {};
+  const curM = d.currentMetrics;
+  const checks = [
+    {
+      passed: ['UPTREND_STRONG', 'UPTREND_WEAK', 'RECOVERY', 'RANGE_WIDE'].includes(marketRegime?.regime),
+      missingLabel: `Bối cảnh TT chưa thuận lợi (${marketRegime?.regime || 'UNKNOWN'})`,
+    },
+    {
+      passed: (sectorState && ['LEADING', 'IMPROVING'].includes(sectorState.state)) || (feature?.rs20 || 0) > 0,
+      missingLabel: 'Dòng tiền ngành chưa dẫn dắt',
+    },
+    {
+      passed: zones?.structure === 'HH_HL' || (Boolean(d.ma20) && feature?.currentPrice >= d.ma20 * 0.99),
+      missingLabel: 'Cấu trúc giá ngày chưa tạo đỉnh đáy cao dần',
+    },
+    {
+      passed: feature?.weekly?.trend === 'UP' || (feature?.weekly?.trend !== 'DOWN'),
+      missingLabel: 'Xu hướng khung Tuần chưa đồng thuận tăng',
+    },
+    {
+      passed: supplyDemand?.state === 'DEMAND_CONFIRMED' || (supplyDemand?.demandScore || 0) >= 18,
+      missingLabel: 'Lực cầu chưa xác nhận bùng nổ',
+    },
+    {
+      passed: (supplyDemand?.rvolD ?? 0) >= 1.2 || (supplyDemand?.rvol15 ?? 0) >= 1.3 || (supplyDemand?.cues || []).includes('SUCCESSFUL_SUPPLY_TEST'),
+      missingLabel: 'Thanh khoản chưa đạt ngưỡng xác nhận (>= 1.2x TB)',
+    },
+    {
+      passed: (curM?.clv ?? 0) >= 0.58 && (curM?.upperWickRatio ?? 1) <= 0.35,
+      missingLabel: 'Nến đóng cửa chưa thực sự khỏe / có râu trên',
+    },
+    {
+      passed: Boolean(tradePlan?.valid) && (tradePlan?.rrNet || 0) >= 1.5,
+      missingLabel: 'Tỷ lệ Lời/Lỗ (R:R) dưới 1.5',
+    },
+    {
+      passed: Boolean(feature?.m15) && ((supplyDemand?.rvol15 ?? 0) >= 1.0 || (supplyDemand?.clv15 ?? 0) >= 0.5),
+      missingLabel: 'Khung 15 phút chưa đồng thuận lực cầu',
+    },
+    {
+      passed: (scoreTotal || 0) >= 70,
+      missingLabel: 'Điểm AI tổng hợp dưới 70',
+    },
+  ];
+
+  const passedCount = checks.filter(c => c.passed).length;
+  const totalCount = checks.length;
+  const criteriaPct = Math.round((passedCount / totalCount) * 100);
+  const missingCriteria = checks.filter(c => !c.passed).map(c => c.missingLabel);
+
+  return {
+    criteriaPct,
+    passedCount,
+    totalCount,
+    missingCriteria,
+  };
+}
+
+/**
  * Chạy toàn bộ pipeline quét & ra quyết định tại thời điểm `asOf`
  */
 function runDecisionPipeline({
@@ -335,7 +397,19 @@ function runDecisionPipeline({
       });
 
       const minScore = setup.isReversal ? cfg.strategies.reversalScoreMin : cfg.strategies.buyScoreMin;
-      if (scored.total >= minScore) {
+      const minCriteriaPct = cfg.strategies.minCriteriaPct ?? 70;
+      const criteriaEval = evaluateBuyCriteria({
+        setup,
+        tradePlan: plan,
+        marketRegime,
+        sectorState,
+        zones,
+        supplyDemand: sd,
+        feature: feat,
+        scoreTotal: scored.total,
+      });
+
+      if (scored.total >= minScore && criteriaEval.criteriaPct >= minCriteriaPct) {
         const action = isSessionOpenContinuous
           ? 'BUY_ZONE'
           : (currentSessionHOSE === 'ATO' || currentSessionHOSE === 'LUNCH_BREAK' ? 'WATCH' : 'NEXT_SESSION_WATCH');
@@ -352,7 +426,11 @@ function runDecisionPipeline({
           isReversal: !!setup.isReversal,
           score: scored.total,
           scoreBreakdown: scored.breakdown,
-          confidence: feat.m15 ? (marketRegime.confidence === 'HIGH' ? 'HIGH' : 'MEDIUM') : 'MEDIUM',
+          criteriaPct: criteriaEval.criteriaPct,
+          passedCriteriaCount: criteriaEval.passedCount,
+          totalCriteriaCount: criteriaEval.totalCount,
+          missingCriteria: criteriaEval.missingCriteria,
+          confidence: criteriaEval.criteriaPct >= 90 && feat.m15 ? 'HIGH' : (criteriaEval.criteriaPct >= 80 ? 'MEDIUM' : 'MEDIUM'),
           tradePlan: plan,
           medianVol20: feat.daily.medianVol20,
           priceVnd: feat.currentPrice,

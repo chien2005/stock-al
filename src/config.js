@@ -29,7 +29,7 @@ const config = {
     chatId: process.env.TELEGRAM_CHAT_ID,
     chatIdDerivatives: process.env.TELEGRAM_CHAT_ID_PS || process.env.TELEGRAM_CHAT_ID, // Nhóm Phái sinh
     chatIdTradingDemo: process.env.TELEGRAM_CHAT_ID_TRADING_DEMO || '-5509642518', // Nhóm Trading Demo
-    disableLegacyPsNoti: process.env.DISABLE_LEGACY_PS_NOTI === 'true', // Mặc định false (bật thông báo tín hiệu)
+    disableLegacyPsNoti: false, // Luôn bật toàn bộ thông báo Phái sinh (không mute)
   },
 
   // Google Gemini Keys - ALL FREE (fallback khi OpenRouter lỗi)
