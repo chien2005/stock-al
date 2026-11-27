@@ -1,5 +1,5 @@
 {
-  "lastUpdated": "2026-11-21T11:27:55.744Z",
+  "lastUpdated": "2026-11-26T13:29:59.532Z",
   "history": [
     {
       "date": "16/10/2026",
@@ -257,6 +257,51 @@
       "positionState": "SHORT_ACCUMULATION",
       "isExpiryDay": false,
       "isPreExpiryDay": false
+    },
+    {
+      "date": "23/11/2026",
+      "totalOI": 27657,
+      "f1mOI": 25410,
+      "oiChange": 0,
+      "f1mPrice": 1780.2,
+      "vn30Price": 1786.84,
+      "basis": -6.64,
+      "volume": 185882,
+      "positionState": "NEUTRAL"
+    },
+    {
+      "date": "24/11/2026",
+      "totalOI": 27657,
+      "f1mOI": 25410,
+      "oiChange": 0,
+      "f1mPrice": 1780.2,
+      "vn30Price": 1786.84,
+      "basis": -6.64,
+      "volume": 185882,
+      "positionState": "NEUTRAL"
+    },
+    {
+      "date": "25/11/2026",
+      "totalOI": 27657,
+      "f1mOI": 25410,
+      "oiChange": 0,
+      "f1mPrice": 1780.2,
+      "vn30Price": 1786.84,
+      "basis": -6.64,
+      "volume": 185882,
+      "positionState": "NEUTRAL"
+    },
+    {
+      "date": "26/11/2026",
+      "totalOI": 38836,
+      "f1mOI": 38017,
+      "oiChange": 11179,
+      "f1mPrice": 1733.5,
+      "vn30Price": 1728.88,
+      "basis": 4.62,
+      "volume": 185882,
+      "positionState": "NEUTRAL",
+      "isExpiryDay": false
     }
   ]
 }

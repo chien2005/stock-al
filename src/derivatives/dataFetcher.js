@@ -312,57 +312,64 @@ async function fetchRealtimeIndicesSnapshot() {
   return _indexSnapshotCache.data || null;
 }
 
-// ─── FETCH REALTIME FUTURES PRICE ────────────────────────────
+// ─── FETCH REALTIME FUTURES PRICE (FIX-01 & FIX-02) ───────────
 async function fetchRealtimeFuturesPrice(chartCode = 'VN30F1M') {
   const isF2 = chartCode === 'VN30F2M';
   const priceKey = isF2 ? 'f2m' : 'f1m';
   const prevKey = isF2 ? 'f2mPrev' : 'f1mPrev';
+  const now = Date.now();
+
+  // Dynamic contract resolution (FIX-02)
+  let sym = isF2 ? _activeDerivSymbolF2 : _activeDerivSymbol;
+  try {
+    const { resolveActiveContracts } = require('./data/contractResolver');
+    const contracts = await resolveActiveContracts();
+    if (contracts && contracts.resolved) {
+      if (isF2 && contracts.f2m?.symbol) {
+        _activeDerivSymbolF2 = contracts.f2m.symbol;
+        sym = _activeDerivSymbolF2;
+      } else if (!isF2 && contracts.f1m?.symbol) {
+        _activeDerivSymbol = contracts.f1m.symbol;
+        sym = _activeDerivSymbol;
+      }
+    }
+  } catch (e) {
+    // contractResolver fallback
+  }
 
   // Ưu tiên 1: Snapshot phái sinh realtime từ VPS (nhanh, chính xác từng giây)
-  try {
-    if ((!_activeDerivSymbol || (isF2 && !_activeDerivSymbolF2)) || Date.now() - _lastMapFetchedAt > 3600000) {
-      try {
-        const mapRes = await axios.get(VPS_PS_LIST_MAP, { headers: HEADERS, timeout: 3000 });
-        if (Array.isArray(mapRes.data) && mapRes.data.length > 0) {
-          const f1mItem = mapRes.data.find(d => (d.CHART_CODE || '') === 'VN30F1M');
-          if (f1mItem) {
-            _activeDerivSymbol = f1mItem.SYMBOL;
-          }
-          const f2mItem = mapRes.data.find(d => (d.CHART_CODE || '') === 'VN30F2M');
-          if (f2mItem) {
-            _activeDerivSymbolF2 = f2mItem.SYMBOL;
-          }
-          _lastMapFetchedAt = Date.now();
-        }
-      } catch (e) {}
-    }
-    const sym = isF2 ? (_activeDerivSymbolF2 || '41I1GC000') : (_activeDerivSymbol || '41I1GB000');
-    const res = await axios.get(`${VPS_PS_SNAPSHOT}/${sym}`, { headers: HEADERS, timeout: 3000 });
-    if (res.data && Array.isArray(res.data) && res.data.length > 0 && res.data[0].lastPrice) {
-      const d = res.data[0];
-      const p = parseFloat(d.lastPrice);
-      const r = d.r ? parseFloat(d.r) : (d.closePrice ? parseFloat(d.closePrice) : p);
-      _lastKnownPrices[priceKey] = p;
-      _lastKnownPrices[prevKey] = r;
-      _lastKnownPrices.updatedAt = Date.now();
-      return {
-        price: p,
-        prevPrice: r,
-        high: d.highPrice ? parseFloat(d.highPrice) : p,
-        low: d.lowPrice ? parseFloat(d.lowPrice) : p,
-        lot: parseInt(d.lot || '0'),
-        lastVolume: parseInt(d.lastVolume || '0'),
-        symbol: d.sym,
-      };
-    }
-  } catch (e) { /* fail silently, fallback to history */ }
+  if (sym) {
+    try {
+      const res = await axios.get(`${VPS_PS_SNAPSHOT}/${sym}`, { headers: HEADERS, timeout: 3000 });
+      if (res.data && Array.isArray(res.data) && res.data.length > 0 && res.data[0].lastPrice) {
+        const d = res.data[0];
+        const p = parseFloat(d.lastPrice);
+        const r = d.r ? parseFloat(d.r) : (d.closePrice ? parseFloat(d.closePrice) : p);
+        _lastKnownPrices[priceKey] = p;
+        _lastKnownPrices[prevKey] = r;
+        _lastKnownPrices.updatedAt = now;
+        return {
+          price: p,
+          prevPrice: r,
+          high: d.highPrice ? parseFloat(d.highPrice) : p,
+          low: d.lowPrice ? parseFloat(d.lowPrice) : p,
+          lot: parseInt(d.lot || '0', 10),
+          lastVolume: parseInt(d.lastVolume || '0', 10),
+          symbol: d.sym || sym,
+          source: 'VPS_SNAPSHOT',
+          receivedTs: now,
+          isCached: false,
+        };
+      }
+    } catch (e) { /* fail silently, fallback to history */ }
+  }
 
   // Ưu tiên 2: TradingView history feed
   try {
-    const now = Math.floor(Date.now() / 1000);
-    const from = now - 86400 * 2;
+    const nowSec = Math.floor(now / 1000);
+    const fromSec = nowSec - 86400 * 2;
     const res = await axios.get(
-      `${VPS_HISTORY_URL}?symbol=${chartCode}&resolution=1&from=${from}&to=${now}`,
+      `${VPS_HISTORY_URL}?symbol=${chartCode}&resolution=1&from=${fromSec}&to=${nowSec}`,
       { headers: HEADERS, timeout: 5000 }
     );
     if (res.data && res.data.c && res.data.c.length > 0) {
@@ -371,12 +378,18 @@ async function fetchRealtimeFuturesPrice(chartCode = 'VN30F1M') {
       const r = c.length > 1 ? c[c.length - 2] : p;
       _lastKnownPrices[priceKey] = p;
       _lastKnownPrices[prevKey] = r;
-      _lastKnownPrices.updatedAt = Date.now();
+      _lastKnownPrices.updatedAt = now;
       return {
         price: p,
         prevPrice: r,
         high: Math.max(...c.slice(-60)),
         low: Math.min(...c.slice(-60)),
+        lot: 0,
+        lastVolume: 0,
+        symbol: sym || chartCode,
+        source: 'VPS_HISTORY',
+        receivedTs: now,
+        isCached: false,
       };
     }
   } catch (e) { /* fail silently */ }
@@ -388,7 +401,18 @@ async function fetchRealtimeFuturesPrice(chartCode = 'VN30F1M') {
     const r = c.length > 1 ? c[c.length - 2] : p;
     _lastKnownPrices.f1m = p;
     _lastKnownPrices.f1mPrev = r;
-    return { price: p, prevPrice: r, high: p, low: p };
+    return {
+      price: p,
+      prevPrice: r,
+      high: p,
+      low: p,
+      lot: 0,
+      lastVolume: 0,
+      symbol: sym || chartCode,
+      source: 'INTRADAY_CACHE',
+      receivedTs: now,
+      isCached: true,
+    };
   }
 
   // Ưu tiên 4: In-memory cache bảo vệ tuyệt đối không bao giờ trả về null/N/A
@@ -397,6 +421,11 @@ async function fetchRealtimeFuturesPrice(chartCode = 'VN30F1M') {
     prevPrice: _lastKnownPrices[prevKey],
     high: _lastKnownPrices[priceKey],
     low: _lastKnownPrices[priceKey],
+    lot: 0,
+    lastVolume: 0,
+    symbol: sym || chartCode,
+    source: 'IN_MEMORY_FALLBACK',
+    receivedTs: _lastKnownPrices.updatedAt || now,
     isCached: true,
   };
 }

@@ -1,12 +1,14 @@
 {
   "name": "vn-stock-telegram-bot",
-  "version": "8.2.0",
-  "description": "Vietnam Stock Bot - Senior Trader AI Engine v8.2 & Derivatives Scalper 24/7",
+  "version": "10.0.0",
+  "description": "Vietnam Stock Bot - AI Stock Hunter T+ & VN30F Proactive Intelligence V10.0",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
     "test": "node scripts/verify_production.js",
+    "test:v10": "node --test tests/derivatives-alert/unit/*.test.js tests/derivatives-alert/integration/*.test.js",
+    "test:all": "node scripts/test_stock_hunter.js && node scripts/verify_production.js && npm run test:v10",
     "build": "echo 'Build OK'"
   },
   "keywords": [

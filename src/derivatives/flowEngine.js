@@ -10,8 +10,8 @@
 const { config } = require('../config');
 
 /**
- * Phân tích Flow (Delta, CVD, Aggression) từ data intraday 1 phút
- * Delta = Aggressive Buy - Aggressive Sell (ước tính từ close vs open)
+ * Phân tích Flow (Delta/CVD proxy) từ data intraday 1 phút
+ * [FIX-05]: L0/L1 Signed-Volume Proxy (ước tính từ Close vs Open), không phải L2 aggressive order tape.
  */
 function analyzeFlow(intradayData) {
   if (!intradayData || !intradayData.c || intradayData.c.length < 5) {
@@ -90,6 +90,7 @@ function analyzeFlow(intradayData) {
   }
 
   return {
+    isProxy: true, // [FIX-05] Marked as signed-volume proxy
     delta: {
       current: deltaPerBar.length > 0 ? deltaPerBar[deltaPerBar.length - 1] : 0,
       cumulative: cvd,
@@ -114,56 +115,64 @@ function analyzeFlow(intradayData) {
 }
 
 /**
- * Phát hiện Sell/Buy Absorption
- * Absorption = Volume bán/mua lớn nhưng giá KHÔNG đi tiếp theo hướng đó
+ * [FIX-06]: Phát hiện Sell/Buy Absorption Candidate
+ * So sánh 3-bar sum volume vs baseline trung bình 3 bar (không bao gồm cluster kiểm tra).
+ * Kiểm tra đầy đủ nến trong cụm.
  */
 function detectAbsorption(intradayData) {
   if (!intradayData || !intradayData.c || intradayData.c.length < 15) {
     return { detected: null, level: null, confidence: 0 };
   }
 
-  const { o, c, v, h, l, t } = intradayData;
-  const todayStart = _getTodayStartTs(t);
-
-  // Lấy 15 nến gần nhất
+  const { o, c, v, h, l } = intradayData;
   const start = Math.max(0, c.length - 15);
   const recentCloses = c.slice(start);
   const recentVols = v ? v.slice(start) : [];
   const recentOpens = o ? o.slice(start) : recentCloses;
   const recentLows = l ? l.slice(start) : recentCloses;
-
-  const avgVol = recentVols.length > 0 ? recentVols.reduce((s, x) => s + x, 0) / recentVols.length : 1;
+  const recentHighs = h ? h.slice(start) : recentCloses;
 
   // Check các nhóm 3 bar gần đây
   for (let i = recentCloses.length - 3; i >= recentCloses.length - 9 && i >= 0; i -= 3) {
     if (i + 2 >= recentCloses.length) continue;
 
-    const barVols = recentVols.slice(i, i + 3);
-    const totalVol = barVols.reduce((s, x) => s + x, 0);
+    // Baseline tính từ các bar trước cụm 3 bar này
+    const priorVols = recentVols.slice(0, i);
+    const baselineAvg = priorVols.length > 0
+      ? priorVols.reduce((s, x) => s + x, 0) / priorVols.length
+      : (recentVols.reduce((s, x) => s + x, 0) / recentVols.length);
+
+    const clusterVols = recentVols.slice(i, i + 3);
+    const totalClusterVol = clusterVols.reduce((s, x) => s + x, 0);
+    const expectedClusterVol = baselineAvg * 3;
+    const volRatio = expectedClusterVol > 0 ? totalClusterVol / expectedClusterVol : 1;
+
     const priceMove = recentCloses[i + 2] - recentCloses[i];
 
-    // Sell Absorption: Volume bán cao nhưng giá giữ/tăng nhẹ
-    const isSellBars = recentCloses.slice(i, i + 3).every((c, j) => j === 0 || c <= recentOpens[i + j]);
-    if (isSellBars && totalVol > avgVol * 2 && priceMove > -1.5) {
+    // Sell Absorption: Cụm 3 nến áp lực bán (tất cả c <= o), vol cao (>= 1.5x baseline) nhưng giá không giảm sâu (> -1.5đ)
+    const isSellBars = [0, 1, 2].every(j => recentCloses[i + j] <= recentOpens[i + j]);
+    if (isSellBars && volRatio >= 1.5 && priceMove > -1.5) {
       const absorptionLevel = Math.min(...recentLows.slice(i, i + 3));
       return {
-        detected: 'SELL_ABSORPTION',
+        detected: 'SELL_ABSORPTION_CANDIDATE',
         level: parseFloat(absorptionLevel.toFixed(1)),
-        confidence: Math.min(85, 50 + (totalVol / avgVol) * 10),
-        description: `Lực bán mạnh tại ${absorptionLevel.toFixed(1)} nhưng giá không giảm → CẦU đang hấp thụ`,
+        confidence: Math.min(85, Math.round(50 + volRatio * 15)),
+        volRatio: parseFloat(volRatio.toFixed(2)),
+        description: `Lực bán lớn tại ${absorptionLevel.toFixed(1)} nhưng giá không giảm sâu (${priceMove.toFixed(1)}đ, Vol x${volRatio.toFixed(2)}) → CẦU hấp thụ tiềm năng`,
         actionTip: `Có lực đỡ gom hàng quanh ${absorptionLevel.toFixed(1)} → Không Short đuổi ở vùng này`,
       };
     }
 
-    // Buy Absorption: Volume mua cao nhưng giá giữ/giảm nhẹ
-    const isBuyBars = recentCloses.slice(i, i + 3).every((c, j) => j === 0 || c >= recentOpens[i + j]);
-    if (isBuyBars && totalVol > avgVol * 2 && priceMove < 1.5) {
-      const absorptionLevel = Math.max(...recentCloses.slice(i, i + 3));
+    // Buy Absorption: Cụm 3 nến nỗ lực mua (tất cả c >= o), vol cao (>= 1.5x baseline) nhưng giá không bứt phá (< 1.5đ)
+    const isBuyBars = [0, 1, 2].every(j => recentCloses[i + j] >= recentOpens[i + j]);
+    if (isBuyBars && volRatio >= 1.5 && priceMove < 1.5) {
+      const absorptionLevel = Math.max(...recentHighs.slice(i, i + 3));
       return {
-        detected: 'BUY_ABSORPTION',
+        detected: 'BUY_ABSORPTION_CANDIDATE',
         level: parseFloat(absorptionLevel.toFixed(1)),
-        confidence: Math.min(85, 50 + (totalVol / avgVol) * 10),
-        description: `Lực mua mạnh tại ${absorptionLevel.toFixed(1)} nhưng giá không tăng → CUNG đang đè`,
+        confidence: Math.min(85, Math.round(50 + volRatio * 15)),
+        volRatio: parseFloat(volRatio.toFixed(2)),
+        description: `Lực mua lớn tại ${absorptionLevel.toFixed(1)} nhưng giá không bứt phá (${priceMove.toFixed(1)}đ, Vol x${volRatio.toFixed(2)}) → CUNG đè tiềm năng`,
         actionTip: `Có lực đè bán chặn quanh ${absorptionLevel.toFixed(1)} → Không Long đuổi ở vùng này`,
       };
     }
@@ -382,12 +391,25 @@ function analyzeMultiTFSupplyDemand(intradayData) {
     };
   }
 
-  // Helper tạo nến đa khung từ mảng 1p
-  function resampleCandles(bars, period) {
-    if (period === 1) return bars;
+  // [FIX-07]: Helper tạo nến đa khung từ mảng 1p theo timestamp calendar, không cross ranh giới phiên
+  function resampleCandles(bars, periodMinutes) {
+    if (periodMinutes === 1) return bars;
+    const periodSeconds = periodMinutes * 60;
+    const buckets = new Map();
+
+    for (const b of bars) {
+      const t = b.t || 0;
+      // Key theo mốc thời gian chẵn của period
+      const bucketTs = Math.floor(t / periodSeconds) * periodSeconds;
+
+      if (!buckets.has(bucketTs)) {
+        buckets.set(bucketTs, []);
+      }
+      buckets.get(bucketTs).push(b);
+    }
+
     const candles = [];
-    for (let i = 0; i < bars.length; i += period) {
-      const chunk = bars.slice(i, i + period);
+    for (const [bucketTs, chunk] of buckets.entries()) {
       if (chunk.length === 0) continue;
       candles.push({
         o: chunk[0].o,
@@ -397,6 +419,8 @@ function analyzeMultiTFSupplyDemand(intradayData) {
         v: chunk.reduce((s, b) => s + b.v, 0),
         delta: chunk.reduce((s, b) => s + (b.c > b.o ? b.v : (b.c < b.o ? -b.v : 0)), 0),
         t: chunk[chunk.length - 1].t,
+        bucketTs,
+        barCount: chunk.length,
       });
     }
     return candles;

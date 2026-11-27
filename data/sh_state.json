@@ -1,0 +1,2393 @@
+{
+  "schemaVersion": "2.0",
+  "updatedAt": "2026-11-26T13:30:33.536Z",
+  "marketRegime": {
+    "asOf": "2026-11-26T13:30:19.215Z",
+    "regime": "PANIC",
+    "baseRegime": "PANIC",
+    "candidateRegime": "PANIC",
+    "liquidityLabel": "HIGH",
+    "liquidityRatio": 1.57,
+    "exposureCap": 0,
+    "confidence": "HIGH",
+    "concentrationFlag": false,
+    "breadth": {
+      "validCount": 131,
+      "expectedCount": 131,
+      "coverage": 1,
+      "advancing": 6,
+      "declining": 117,
+      "unchanged": 8,
+      "advanceRatio": 0.049,
+      "pctAboveMA20": 7.6,
+      "pctAboveMA50": 13,
+      "limitDownCount": 8,
+      "medianReturnPct": -2.72
+    },
+    "vnindex": {
+      "index": 1629.68,
+      "changePct": -3.42,
+      "ma20": 1723.85,
+      "ma50": 1743.76,
+      "slopeMA20": -0.96,
+      "atr14": 23.8,
+      "range20Pct": 6.19
+    },
+    "marketLiquidity": {
+      "receivedAt": "2026-11-26T13:30:19.617Z",
+      "vnindex": {
+        "index": 1629.68,
+        "refIndex": 1687.45,
+        "changePct": -3.42,
+        "valueBil": 16043.668462,
+        "volumeShares": 809475639,
+        "advances": null,
+        "declines": null,
+        "noChanges": null
+      },
+      "hnxindex": {
+        "index": 226.57,
+        "refIndex": 227.46,
+        "changePct": -0.39,
+        "valueBil": 841.080666,
+        "volumeShares": 65010234,
+        "advances": null,
+        "declines": null,
+        "noChanges": null
+      },
+      "upcomindex": {
+        "index": 118.44,
+        "refIndex": 119.82,
+        "changePct": -1.15,
+        "valueBil": 684.1437099999999,
+        "volumeShares": 41766773,
+        "advances": null,
+        "declines": null,
+        "noChanges": null
+      },
+      "hoseMatchedValueVnd": 16043668462000,
+      "hosePutThroughValueVnd": null,
+      "totalValueBil": 17568.892838
+    },
+    "reasonCodes": [
+      "SYSTEMIC_SELLOFF_PANIC"
+    ],
+    "pendingTransition": null
+  },
+  "specialWatchBySymbol": {
+    "VCB": {
+      "symbol": "VCB",
+      "state": "B7_FAILED",
+      "detectedDate": "2026-11-25",
+      "b2EnteredDate": null,
+      "climaxLow": 50000,
+      "reclaimLevel": 53675,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -18.57,
+      "rsi14": 24.15,
+      "cues": [
+        "SUPPLY_PRESSURE_15M"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-25",
+          "state": "B1_OVERSOLD_WATCH",
+          "price": 50000,
+          "note": "DD=-18.57% RSI=24.15"
+        },
+        {
+          "date": "2026-11-26",
+          "state": "B7_FAILED",
+          "price": 48950,
+          "note": "BROKE_CLIMAX_LOW"
+        }
+      ],
+      "cooldownUntilDate": "2026-11-26",
+      "failedReason": "BROKE_CLIMAX_LOW"
+    },
+    "BID": {
+      "symbol": "BID",
+      "state": "B7_FAILED",
+      "detectedDate": "2026-11-25",
+      "b2EnteredDate": null,
+      "climaxLow": 29800,
+      "reclaimLevel": 31965,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -21.27,
+      "rsi14": 25.7,
+      "cues": [
+        "HEALTHY_PULLBACK_LOW_VOL"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-25",
+          "state": "B1_OVERSOLD_WATCH",
+          "price": 29800,
+          "note": "DD=-21.27% RSI=25.7"
+        },
+        {
+          "date": "2026-11-26",
+          "state": "B7_FAILED",
+          "price": 29100,
+          "note": "BROKE_CLIMAX_LOW"
+        }
+      ],
+      "cooldownUntilDate": "2026-11-26",
+      "failedReason": "BROKE_CLIMAX_LOW"
+    },
+    "MBB": {
+      "symbol": "MBB",
+      "state": "B7_FAILED",
+      "detectedDate": "2026-11-25",
+      "b2EnteredDate": null,
+      "climaxLow": 18000,
+      "reclaimLevel": 19113,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -14.62,
+      "rsi14": 27.53,
+      "cues": [
+        "SUPPLY_PRESSURE_D"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-25",
+          "state": "B1_OVERSOLD_WATCH",
+          "price": 18100,
+          "note": "DD=-14.62% RSI=27.53"
+        },
+        {
+          "date": "2026-11-26",
+          "state": "B7_FAILED",
+          "price": 17700,
+          "note": "BROKE_CLIMAX_LOW"
+        }
+      ],
+      "cooldownUntilDate": "2026-11-26",
+      "failedReason": "BROKE_CLIMAX_LOW"
+    },
+    "VPB": {
+      "symbol": "VPB",
+      "state": "B7_FAILED",
+      "detectedDate": "2026-11-25",
+      "b2EnteredDate": null,
+      "climaxLow": 20250,
+      "reclaimLevel": null,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -18.84,
+      "rsi14": 29.71,
+      "cues": [],
+      "historyLog": [
+        {
+          "date": "2026-11-25",
+          "state": "B0_FALLING_KNIFE",
+          "price": 20250,
+          "note": "Đang rơi tự do, cấm mua"
+        },
+        {
+          "date": "2026-11-26",
+          "state": "B1_OVERSOLD_WATCH",
+          "price": 19700,
+          "note": "Giảm áp lực rơi tự do"
+        },
+        {
+          "date": "2026-11-26",
+          "state": "B7_FAILED",
+          "price": 19700,
+          "note": "BROKE_CLIMAX_LOW"
+        }
+      ],
+      "cooldownUntilDate": "2026-11-26",
+      "failedReason": "BROKE_CLIMAX_LOW"
+    },
+    "SHB": {
+      "symbol": "SHB",
+      "state": "B7_FAILED",
+      "detectedDate": "2026-11-25",
+      "b2EnteredDate": null,
+      "climaxLow": 10300,
+      "reclaimLevel": 10698,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -15.92,
+      "rsi14": 42.15,
+      "cues": [],
+      "historyLog": [
+        {
+          "date": "2026-11-25",
+          "state": "B1_OVERSOLD_WATCH",
+          "price": 10300,
+          "note": "DD=-15.92% RSI=42.15"
+        },
+        {
+          "date": "2026-11-26",
+          "state": "B7_FAILED",
+          "price": 10100,
+          "note": "BROKE_CLIMAX_LOW"
+        }
+      ],
+      "cooldownUntilDate": "2026-11-26",
+      "failedReason": "BROKE_CLIMAX_LOW"
+    },
+    "LPB": {
+      "symbol": "LPB",
+      "state": "B7_FAILED",
+      "detectedDate": "2026-11-25",
+      "b2EnteredDate": null,
+      "climaxLow": 34000,
+      "reclaimLevel": 35938,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -32.57,
+      "rsi14": 35.15,
+      "cues": [
+        "SUPPLY_PRESSURE_15M",
+        "HEALTHY_PULLBACK_LOW_VOL",
+        "SUPPLY_PRESSURE_D",
+        "FAILED_BREAKOUT"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-25",
+          "state": "B1_OVERSOLD_WATCH",
+          "price": 34050,
+          "note": "DD=-32.57% RSI=35.15"
+        },
+        {
+          "date": "2026-11-26",
+          "state": "B7_FAILED",
+          "price": 32000,
+          "note": "BROKE_CLIMAX_LOW"
+        }
+      ],
+      "cooldownUntilDate": "2026-11-26",
+      "failedReason": "BROKE_CLIMAX_LOW"
+    },
+    "SSB": {
+      "symbol": "SSB",
+      "state": "B1_OVERSOLD_WATCH",
+      "detectedDate": "2026-11-25",
+      "b2EnteredDate": null,
+      "climaxLow": 14750,
+      "reclaimLevel": 15138,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -39.92,
+      "rsi14": 39.64,
+      "cues": [
+        "SUCCESSFUL_SUPPLY_TEST"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-25",
+          "state": "B1_OVERSOLD_WATCH",
+          "price": 14900,
+          "note": "DD=-39.92% RSI=39.64"
+        }
+      ],
+      "cooldownUntilDate": null
+    },
+    "VND": {
+      "symbol": "VND",
+      "state": "B7_FAILED",
+      "detectedDate": "2026-11-25",
+      "b2EnteredDate": null,
+      "climaxLow": 14000,
+      "reclaimLevel": 14113,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -17.89,
+      "rsi14": 53.91,
+      "cues": [
+        "SUPPLY_PRESSURE_15M",
+        "SUPPLY_PRESSURE_D",
+        "FAILED_BREAKOUT"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-25",
+          "state": "B1_OVERSOLD_WATCH",
+          "price": 14000,
+          "note": "DD=-17.89% RSI=53.91"
+        },
+        {
+          "date": "2026-11-26",
+          "state": "B7_FAILED",
+          "price": 13350,
+          "note": "BROKE_CLIMAX_LOW"
+        }
+      ],
+      "cooldownUntilDate": "2026-11-26",
+      "failedReason": "BROKE_CLIMAX_LOW"
+    },
+    "VCI": {
+      "symbol": "VCI",
+      "state": "B1_OVERSOLD_WATCH",
+      "detectedDate": "2026-11-25",
+      "b2EnteredDate": null,
+      "climaxLow": 18400,
+      "reclaimLevel": 19343,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -20.52,
+      "rsi14": 42.26,
+      "cues": [
+        "HEALTHY_PULLBACK_LOW_VOL"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-25",
+          "state": "B1_OVERSOLD_WATCH",
+          "price": 18400,
+          "note": "DD=-20.52% RSI=42.26"
+        }
+      ],
+      "cooldownUntilDate": null
+    },
+    "SHS": {
+      "symbol": "SHS",
+      "state": "B7_FAILED",
+      "detectedDate": "2026-11-25",
+      "b2EnteredDate": null,
+      "climaxLow": 12900,
+      "reclaimLevel": 13005,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -17.07,
+      "rsi14": 57.1,
+      "cues": [
+        "SUPPLY_PRESSURE_D",
+        "FAILED_BREAKOUT"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-25",
+          "state": "B1_OVERSOLD_WATCH",
+          "price": 12900,
+          "note": "DD=-17.07% RSI=57.1"
+        },
+        {
+          "date": "2026-11-26",
+          "state": "B7_FAILED",
+          "price": 12400,
+          "note": "BROKE_CLIMAX_LOW"
+        }
+      ],
+      "cooldownUntilDate": "2026-11-26",
+      "failedReason": "BROKE_CLIMAX_LOW"
+    },
+    "MBS": {
+      "symbol": "MBS",
+      "state": "B7_FAILED",
+      "detectedDate": "2026-11-25",
+      "b2EnteredDate": null,
+      "climaxLow": 15100,
+      "reclaimLevel": 15710,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -17.03,
+      "rsi14": 45.52,
+      "cues": [
+        "HEALTHY_PULLBACK_LOW_VOL",
+        "SUPPLY_PRESSURE_D"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-25",
+          "state": "B1_OVERSOLD_WATCH",
+          "price": 15100,
+          "note": "DD=-17.03% RSI=45.52"
+        },
+        {
+          "date": "2026-11-26",
+          "state": "B7_FAILED",
+          "price": 14500,
+          "note": "BROKE_CLIMAX_LOW"
+        }
+      ],
+      "cooldownUntilDate": "2026-11-26",
+      "failedReason": "BROKE_CLIMAX_LOW"
+    },
+    "ORS": {
+      "symbol": "ORS",
+      "state": "B3_STABILIZING",
+      "detectedDate": "2026-11-25",
+      "b2EnteredDate": "2026-11-26",
+      "climaxLow": 12600,
+      "reclaimLevel": 14238,
+      "stabilizeBarsCount": 1,
+      "higherLowPrice": 12600,
+      "drawdown60D": -18.75,
+      "rsi14": 40.82,
+      "cues": [
+        "DEMAND_FOLLOW_THROUGH_15M",
+        "HEALTHY_PULLBACK_LOW_VOL",
+        "SUCCESSFUL_SUPPLY_TEST",
+        "FAILED_BREAKDOWN_SPRING"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-25",
+          "state": "B1_OVERSOLD_WATCH",
+          "price": 13000,
+          "note": "DD=-18.75% RSI=40.82"
+        },
+        {
+          "date": "2026-11-26",
+          "state": "B2_CLIMAX_OR_SPRING",
+          "price": 13000,
+          "note": "DEMAND_FOLLOW_THROUGH_15M,HEALTHY_PULLBACK_LOW_VOL,SUCCESSFUL_SUPPLY_TEST,FAILED_BREAKDOWN_SPRING"
+        },
+        {
+          "date": "2026-11-26",
+          "state": "B3_STABILIZING",
+          "price": 13000,
+          "note": "Ngừng tạo đáy mới"
+        }
+      ],
+      "cooldownUntilDate": null
+    },
+    "VIX": {
+      "symbol": "VIX",
+      "state": "B7_FAILED",
+      "detectedDate": "2026-11-25",
+      "b2EnteredDate": null,
+      "climaxLow": 12300,
+      "reclaimLevel": 12698,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -16.04,
+      "rsi14": 49.72,
+      "cues": [
+        "SUPPLY_PRESSURE_15M",
+        "SUPPLY_PRESSURE_D"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-25",
+          "state": "B1_OVERSOLD_WATCH",
+          "price": 12300,
+          "note": "DD=-16.04% RSI=49.72"
+        },
+        {
+          "date": "2026-11-26",
+          "state": "B7_FAILED",
+          "price": 11900,
+          "note": "BROKE_CLIMAX_LOW"
+        }
+      ],
+      "cooldownUntilDate": "2026-11-26",
+      "failedReason": "BROKE_CLIMAX_LOW"
+    },
+    "BVH": {
+      "symbol": "BVH",
+      "state": "B7_FAILED",
+      "detectedDate": "2026-11-25",
+      "b2EnteredDate": null,
+      "climaxLow": 56900,
+      "reclaimLevel": 63720,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -27.97,
+      "rsi14": 26.05,
+      "cues": [
+        "HEALTHY_PULLBACK_LOW_VOL",
+        "FAILED_BREAKOUT"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-25",
+          "state": "B1_OVERSOLD_WATCH",
+          "price": 56900,
+          "note": "DD=-27.97% RSI=26.05"
+        },
+        {
+          "date": "2026-11-26",
+          "state": "B7_FAILED",
+          "price": 53900,
+          "note": "BROKE_CLIMAX_LOW"
+        }
+      ],
+      "cooldownUntilDate": "2026-11-26",
+      "failedReason": "BROKE_CLIMAX_LOW"
+    },
+    "VHM": {
+      "symbol": "VHM",
+      "state": "B7_FAILED",
+      "detectedDate": "2026-11-25",
+      "b2EnteredDate": null,
+      "climaxLow": 60700,
+      "reclaimLevel": 62065,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -23.14,
+      "rsi14": 45.13,
+      "cues": [
+        "HEALTHY_PULLBACK_LOW_VOL",
+        "FAILED_BREAKOUT"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-25",
+          "state": "B1_OVERSOLD_WATCH",
+          "price": 61100,
+          "note": "DD=-23.14% RSI=45.13"
+        },
+        {
+          "date": "2026-11-26",
+          "state": "B7_FAILED",
+          "price": 59000,
+          "note": "BROKE_CLIMAX_LOW"
+        }
+      ],
+      "cooldownUntilDate": "2026-11-26",
+      "failedReason": "BROKE_CLIMAX_LOW"
+    },
+    "VRE": {
+      "symbol": "VRE",
+      "state": "B1_OVERSOLD_WATCH",
+      "detectedDate": "2026-11-25",
+      "b2EnteredDate": null,
+      "climaxLow": 23250,
+      "reclaimLevel": 23898,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -16.1,
+      "rsi14": 42.74,
+      "cues": [
+        "SUPPLY_PRESSURE_15M"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-25",
+          "state": "B1_OVERSOLD_WATCH",
+          "price": 23450,
+          "note": "DD=-16.1% RSI=42.74"
+        }
+      ],
+      "cooldownUntilDate": null
+    },
+    "NVL": {
+      "symbol": "NVL",
+      "state": "B7_FAILED",
+      "detectedDate": "2026-11-25",
+      "b2EnteredDate": null,
+      "climaxLow": 9500,
+      "reclaimLevel": 10379,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -28.58,
+      "rsi14": 31.91,
+      "cues": [
+        "SUPPLY_PRESSURE_15M",
+        "SUPPLY_PRESSURE_D",
+        "FAILED_BREAKOUT"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-25",
+          "state": "B1_OVERSOLD_WATCH",
+          "price": 9500,
+          "note": "DD=-28.58% RSI=31.91"
+        },
+        {
+          "date": "2026-11-26",
+          "state": "B7_FAILED",
+          "price": 8850,
+          "note": "BROKE_CLIMAX_LOW"
+        }
+      ],
+      "cooldownUntilDate": "2026-11-26",
+      "failedReason": "BROKE_CLIMAX_LOW"
+    },
+    "CEO": {
+      "symbol": "CEO",
+      "state": "B7_FAILED",
+      "detectedDate": "2026-11-25",
+      "b2EnteredDate": null,
+      "climaxLow": 11000,
+      "reclaimLevel": 11750,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -19.71,
+      "rsi14": 46.37,
+      "cues": [
+        "HEALTHY_PULLBACK_LOW_VOL",
+        "SUPPLY_PRESSURE_D"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-25",
+          "state": "B1_OVERSOLD_WATCH",
+          "price": 11000,
+          "note": "DD=-19.71% RSI=46.37"
+        },
+        {
+          "date": "2026-11-26",
+          "state": "B7_FAILED",
+          "price": 10400,
+          "note": "BROKE_CLIMAX_LOW"
+        }
+      ],
+      "cooldownUntilDate": "2026-11-26",
+      "failedReason": "BROKE_CLIMAX_LOW"
+    },
+    "PNJ": {
+      "symbol": "PNJ",
+      "state": "B7_FAILED",
+      "detectedDate": "2026-11-25",
+      "b2EnteredDate": null,
+      "climaxLow": 12400,
+      "reclaimLevel": 14843,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -70.4,
+      "rsi14": 21.15,
+      "cues": [],
+      "historyLog": [
+        {
+          "date": "2026-11-25",
+          "state": "B1_OVERSOLD_WATCH",
+          "price": 12800,
+          "note": "DD=-70.4% RSI=21.15"
+        },
+        {
+          "date": "2026-11-26",
+          "state": "B7_FAILED",
+          "price": 12100,
+          "note": "BROKE_CLIMAX_LOW"
+        }
+      ],
+      "cooldownUntilDate": "2026-11-26",
+      "failedReason": "BROKE_CLIMAX_LOW"
+    },
+    "DGW": {
+      "symbol": "DGW",
+      "state": "B7_FAILED",
+      "detectedDate": "2026-11-25",
+      "b2EnteredDate": null,
+      "climaxLow": 38700,
+      "reclaimLevel": 40028,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -20.45,
+      "rsi14": 37.14,
+      "cues": [
+        "SUPPLY_PRESSURE_15M",
+        "HEALTHY_PULLBACK_LOW_VOL",
+        "SUPPLY_PRESSURE_D",
+        "SELLING_CLIMAX_CANDIDATE",
+        "SUPPLY_AT_RESISTANCE",
+        "FAILED_BREAKOUT"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-25",
+          "state": "B1_OVERSOLD_WATCH",
+          "price": 38900,
+          "note": "DD=-20.45% RSI=37.14"
+        },
+        {
+          "date": "2026-11-26",
+          "state": "B7_FAILED",
+          "price": 36200,
+          "note": "LIMIT_DOWN_LOCKED"
+        }
+      ],
+      "cooldownUntilDate": "2026-11-26",
+      "failedReason": "LIMIT_DOWN_LOCKED"
+    },
+    "FPT": {
+      "symbol": "FPT",
+      "state": "B7_FAILED",
+      "detectedDate": "2026-11-25",
+      "b2EnteredDate": null,
+      "climaxLow": 46050,
+      "reclaimLevel": 50393,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -32.28,
+      "rsi14": 30.95,
+      "cues": [
+        "SUPPLY_PRESSURE_15M"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-25",
+          "state": "B1_OVERSOLD_WATCH",
+          "price": 46050,
+          "note": "DD=-32.28% RSI=30.95"
+        },
+        {
+          "date": "2026-11-26",
+          "state": "B7_FAILED",
+          "price": 44500,
+          "note": "BROKE_CLIMAX_LOW"
+        }
+      ],
+      "cooldownUntilDate": "2026-11-26",
+      "failedReason": "BROKE_CLIMAX_LOW"
+    },
+    "GAS": {
+      "symbol": "GAS",
+      "state": "B7_FAILED",
+      "detectedDate": "2026-11-25",
+      "b2EnteredDate": "2026-11-25",
+      "climaxLow": 68600,
+      "reclaimLevel": 73770,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -23.1,
+      "rsi14": 31.89,
+      "cues": [
+        "HEALTHY_PULLBACK_LOW_VOL",
+        "SUPPLY_PRESSURE_D"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-25",
+          "state": "B1_OVERSOLD_WATCH",
+          "price": 69500,
+          "note": "DD=-23.1% RSI=31.89"
+        },
+        {
+          "date": "2026-11-25",
+          "state": "B2_CLIMAX_OR_SPRING",
+          "price": 69500,
+          "note": "DEMAND_IMPULSE_15M,FAILED_BREAKDOWN_SPRING"
+        },
+        {
+          "date": "2026-11-26",
+          "state": "B7_FAILED",
+          "price": 68000,
+          "note": "BROKE_CLIMAX_LOW"
+        }
+      ],
+      "cooldownUntilDate": "2026-11-26",
+      "failedReason": "BROKE_CLIMAX_LOW"
+    },
+    "PLX": {
+      "symbol": "PLX",
+      "state": "B7_FAILED",
+      "detectedDate": "2026-11-25",
+      "b2EnteredDate": null,
+      "climaxLow": 30250,
+      "reclaimLevel": 32938,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -23.42,
+      "rsi14": 27.26,
+      "cues": [
+        "SUPPLY_PRESSURE_15M",
+        "HEALTHY_PULLBACK_LOW_VOL",
+        "SUPPLY_PRESSURE_D"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-25",
+          "state": "B1_OVERSOLD_WATCH",
+          "price": 30250,
+          "note": "DD=-23.42% RSI=27.26"
+        },
+        {
+          "date": "2026-11-26",
+          "state": "B7_FAILED",
+          "price": 29200,
+          "note": "BROKE_CLIMAX_LOW"
+        }
+      ],
+      "cooldownUntilDate": "2026-11-26",
+      "failedReason": "BROKE_CLIMAX_LOW"
+    },
+    "PVD": {
+      "symbol": "PVD",
+      "state": "B7_FAILED",
+      "detectedDate": "2026-11-25",
+      "b2EnteredDate": null,
+      "climaxLow": 15900,
+      "reclaimLevel": 17020,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -22.06,
+      "rsi14": 39.15,
+      "cues": [
+        "HEALTHY_PULLBACK_LOW_VOL",
+        "FAILED_BREAKOUT"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-25",
+          "state": "B1_OVERSOLD_WATCH",
+          "price": 15900,
+          "note": "DD=-22.06% RSI=39.15"
+        },
+        {
+          "date": "2026-11-26",
+          "state": "B7_FAILED",
+          "price": 15500,
+          "note": "BROKE_CLIMAX_LOW"
+        }
+      ],
+      "cooldownUntilDate": "2026-11-26",
+      "failedReason": "BROKE_CLIMAX_LOW"
+    },
+    "PVS": {
+      "symbol": "PVS",
+      "state": "B7_FAILED",
+      "detectedDate": "2026-11-25",
+      "b2EnteredDate": null,
+      "climaxLow": 26000,
+      "reclaimLevel": null,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -25.78,
+      "rsi14": 26.49,
+      "cues": [
+        "SUPPLY_PRESSURE_D",
+        "FAILED_BREAKOUT"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-25",
+          "state": "B0_FALLING_KNIFE",
+          "price": 26200,
+          "note": "Đang rơi tự do, cấm mua"
+        },
+        {
+          "date": "2026-11-26",
+          "state": "B7_FAILED",
+          "price": 25000,
+          "note": "BROKE_CLIMAX_LOW"
+        }
+      ],
+      "cooldownUntilDate": "2026-11-26",
+      "failedReason": "BROKE_CLIMAX_LOW"
+    },
+    "BSR": {
+      "symbol": "BSR",
+      "state": "B7_FAILED",
+      "detectedDate": "2026-11-25",
+      "b2EnteredDate": null,
+      "climaxLow": 23000,
+      "reclaimLevel": 25873,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -31.24,
+      "rsi14": 22.86,
+      "cues": [
+        "FAILED_BREAKOUT"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-25",
+          "state": "B1_OVERSOLD_WATCH",
+          "price": 23000,
+          "note": "DD=-31.24% RSI=22.86"
+        },
+        {
+          "date": "2026-11-26",
+          "state": "B7_FAILED",
+          "price": 22550,
+          "note": "BROKE_CLIMAX_LOW"
+        }
+      ],
+      "cooldownUntilDate": "2026-11-26",
+      "failedReason": "BROKE_CLIMAX_LOW"
+    },
+    "PVT": {
+      "symbol": "PVT",
+      "state": "B7_FAILED",
+      "detectedDate": "2026-11-25",
+      "b2EnteredDate": null,
+      "climaxLow": 18300,
+      "reclaimLevel": 20595,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -30.17,
+      "rsi14": 29.22,
+      "cues": [
+        "HEALTHY_PULLBACK_LOW_VOL"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-25",
+          "state": "B1_OVERSOLD_WATCH",
+          "price": 18400,
+          "note": "DD=-30.17% RSI=29.22"
+        },
+        {
+          "date": "2026-11-26",
+          "state": "B7_FAILED",
+          "price": 17900,
+          "note": "BROKE_CLIMAX_LOW"
+        }
+      ],
+      "cooldownUntilDate": "2026-11-26",
+      "failedReason": "BROKE_CLIMAX_LOW"
+    },
+    "VSC": {
+      "symbol": "VSC",
+      "state": "B7_FAILED",
+      "detectedDate": "2026-11-25",
+      "b2EnteredDate": null,
+      "climaxLow": 12950,
+      "reclaimLevel": 13430,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -16.45,
+      "rsi14": 44.97,
+      "cues": [
+        "SUPPLY_PRESSURE_15M",
+        "HEALTHY_PULLBACK_LOW_VOL",
+        "SUPPLY_PRESSURE_D",
+        "FAILED_BREAKOUT"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-25",
+          "state": "B1_OVERSOLD_WATCH",
+          "price": 12950,
+          "note": "DD=-16.45% RSI=44.97"
+        },
+        {
+          "date": "2026-11-26",
+          "state": "B7_FAILED",
+          "price": 12050,
+          "note": "BROKE_CLIMAX_LOW"
+        }
+      ],
+      "cooldownUntilDate": "2026-11-26",
+      "failedReason": "BROKE_CLIMAX_LOW"
+    },
+    "DPM": {
+      "symbol": "DPM",
+      "state": "B7_FAILED",
+      "detectedDate": "2026-11-25",
+      "b2EnteredDate": null,
+      "climaxLow": 18000,
+      "reclaimLevel": 19555,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -24.21,
+      "rsi14": 24.7,
+      "cues": [
+        "SUPPLY_PRESSURE_D",
+        "SUPPLY_AT_RESISTANCE"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-25",
+          "state": "B1_OVERSOLD_WATCH",
+          "price": 18000,
+          "note": "DD=-24.21% RSI=24.7"
+        },
+        {
+          "date": "2026-11-26",
+          "state": "B7_FAILED",
+          "price": 17400,
+          "note": "BROKE_CLIMAX_LOW"
+        }
+      ],
+      "cooldownUntilDate": "2026-11-26",
+      "failedReason": "BROKE_CLIMAX_LOW"
+    },
+    "GVR": {
+      "symbol": "GVR",
+      "state": "B7_FAILED",
+      "detectedDate": "2026-11-25",
+      "b2EnteredDate": null,
+      "climaxLow": 27550,
+      "reclaimLevel": 29172,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -19.82,
+      "rsi14": 36.66,
+      "cues": [
+        "SUPPLY_PRESSURE_15M",
+        "HEALTHY_PULLBACK_LOW_VOL"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-25",
+          "state": "B1_OVERSOLD_WATCH",
+          "price": 27600,
+          "note": "DD=-19.82% RSI=36.66"
+        },
+        {
+          "date": "2026-11-26",
+          "state": "B7_FAILED",
+          "price": 26500,
+          "note": "BROKE_CLIMAX_LOW"
+        }
+      ],
+      "cooldownUntilDate": "2026-11-26",
+      "failedReason": "BROKE_CLIMAX_LOW"
+    },
+    "FTS": {
+      "symbol": "FTS",
+      "state": "B7_FAILED",
+      "detectedDate": "2026-11-25",
+      "b2EnteredDate": null,
+      "climaxLow": 18400,
+      "reclaimLevel": 18968,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -20,
+      "rsi14": 47.26,
+      "cues": [],
+      "historyLog": [
+        {
+          "date": "2026-11-25",
+          "state": "B1_OVERSOLD_WATCH",
+          "price": 18400,
+          "note": "DD=-20% RSI=47.26"
+        },
+        {
+          "date": "2026-11-26",
+          "state": "B7_FAILED",
+          "price": 17700,
+          "note": "BROKE_CLIMAX_LOW"
+        }
+      ],
+      "cooldownUntilDate": "2026-11-26",
+      "failedReason": "BROKE_CLIMAX_LOW"
+    },
+    "VDS": {
+      "symbol": "VDS",
+      "state": "B7_FAILED",
+      "detectedDate": "2026-11-25",
+      "b2EnteredDate": null,
+      "climaxLow": 9160,
+      "reclaimLevel": 9518,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -18.74,
+      "rsi14": 44.22,
+      "cues": [
+        "SUPPLY_PRESSURE_D"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-25",
+          "state": "B1_OVERSOLD_WATCH",
+          "price": 9160,
+          "note": "DD=-18.74% RSI=44.22"
+        },
+        {
+          "date": "2026-11-26",
+          "state": "B7_FAILED",
+          "price": 8650,
+          "note": "BROKE_CLIMAX_LOW"
+        }
+      ],
+      "cooldownUntilDate": "2026-11-26",
+      "failedReason": "BROKE_CLIMAX_LOW"
+    },
+    "TVS": {
+      "symbol": "TVS",
+      "state": "B1_OVERSOLD_WATCH",
+      "detectedDate": "2026-11-25",
+      "b2EnteredDate": null,
+      "climaxLow": 10600,
+      "reclaimLevel": null,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -33.54,
+      "rsi14": 19.36,
+      "cues": [],
+      "historyLog": [
+        {
+          "date": "2026-11-25",
+          "state": "B0_FALLING_KNIFE",
+          "price": 10600,
+          "note": "Đang rơi tự do, cấm mua"
+        },
+        {
+          "date": "2026-11-26",
+          "state": "B1_OVERSOLD_WATCH",
+          "price": 10450,
+          "note": "Giảm áp lực rơi tự do"
+        }
+      ],
+      "cooldownUntilDate": null
+    },
+    "BCM": {
+      "symbol": "BCM",
+      "state": "B7_FAILED",
+      "detectedDate": "2026-11-25",
+      "b2EnteredDate": null,
+      "climaxLow": 35900,
+      "reclaimLevel": 37715,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -20.99,
+      "rsi14": 36.66,
+      "cues": [
+        "HEALTHY_PULLBACK_LOW_VOL",
+        "SUPPLY_PRESSURE_D"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-25",
+          "state": "B1_OVERSOLD_WATCH",
+          "price": 35950,
+          "note": "DD=-20.99% RSI=36.66"
+        },
+        {
+          "date": "2026-11-26",
+          "state": "B7_FAILED",
+          "price": 33700,
+          "note": "BROKE_CLIMAX_LOW"
+        }
+      ],
+      "cooldownUntilDate": "2026-11-26",
+      "failedReason": "BROKE_CLIMAX_LOW"
+    },
+    "VGC": {
+      "symbol": "VGC",
+      "state": "B7_FAILED",
+      "detectedDate": "2026-11-25",
+      "b2EnteredDate": null,
+      "climaxLow": 38050,
+      "reclaimLevel": 40320,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -20.06,
+      "rsi14": 37.85,
+      "cues": [
+        "HEALTHY_PULLBACK_LOW_VOL",
+        "SUPPLY_PRESSURE_D",
+        "FAILED_BREAKOUT"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-25",
+          "state": "B1_OVERSOLD_WATCH",
+          "price": 38050,
+          "note": "DD=-20.06% RSI=37.85"
+        },
+        {
+          "date": "2026-11-26",
+          "state": "B7_FAILED",
+          "price": 36750,
+          "note": "BROKE_CLIMAX_LOW"
+        }
+      ],
+      "cooldownUntilDate": "2026-11-26",
+      "failedReason": "BROKE_CLIMAX_LOW"
+    },
+    "TIP": {
+      "symbol": "TIP",
+      "state": "B7_FAILED",
+      "detectedDate": "2026-11-25",
+      "b2EnteredDate": null,
+      "climaxLow": 15000,
+      "reclaimLevel": 15555,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -10.09,
+      "rsi14": 26.26,
+      "cues": [
+        "SUPPLY_PRESSURE_D",
+        "SELLING_CLIMAX_CANDIDATE"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-25",
+          "state": "B1_OVERSOLD_WATCH",
+          "price": 15150,
+          "note": "DD=-10.09% RSI=26.26"
+        },
+        {
+          "date": "2026-11-26",
+          "state": "B7_FAILED",
+          "price": 14500,
+          "note": "BROKE_CLIMAX_LOW"
+        }
+      ],
+      "cooldownUntilDate": "2026-11-26",
+      "failedReason": "BROKE_CLIMAX_LOW"
+    },
+    "D2D": {
+      "symbol": "D2D",
+      "state": "B1_OVERSOLD_WATCH",
+      "detectedDate": "2026-11-25",
+      "b2EnteredDate": null,
+      "climaxLow": 19450,
+      "reclaimLevel": 20415,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -23.82,
+      "rsi14": 21.8,
+      "cues": [],
+      "historyLog": [
+        {
+          "date": "2026-11-25",
+          "state": "B1_OVERSOLD_WATCH",
+          "price": 19500,
+          "note": "DD=-23.82% RSI=21.8"
+        }
+      ],
+      "cooldownUntilDate": null
+    },
+    "PAN": {
+      "symbol": "PAN",
+      "state": "B7_FAILED",
+      "detectedDate": "2026-11-25",
+      "b2EnteredDate": null,
+      "climaxLow": 15250,
+      "reclaimLevel": 16960,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -22.81,
+      "rsi14": 25.8,
+      "cues": [
+        "SUPPLY_PRESSURE_D"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-25",
+          "state": "B1_OVERSOLD_WATCH",
+          "price": 15400,
+          "note": "DD=-22.81% RSI=25.8"
+        },
+        {
+          "date": "2026-11-26",
+          "state": "B7_FAILED",
+          "price": 14700,
+          "note": "BROKE_CLIMAX_LOW"
+        }
+      ],
+      "cooldownUntilDate": "2026-11-26",
+      "failedReason": "BROKE_CLIMAX_LOW"
+    },
+    "ANV": {
+      "symbol": "ANV",
+      "state": "B7_FAILED",
+      "detectedDate": "2026-11-25",
+      "b2EnteredDate": null,
+      "climaxLow": 15600,
+      "reclaimLevel": 16875,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -15.48,
+      "rsi14": 34.98,
+      "cues": [
+        "HEALTHY_PULLBACK_LOW_VOL",
+        "FAILED_BREAKOUT"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-25",
+          "state": "B1_OVERSOLD_WATCH",
+          "price": 15750,
+          "note": "DD=-15.48% RSI=34.98"
+        },
+        {
+          "date": "2026-11-26",
+          "state": "B7_FAILED",
+          "price": 14950,
+          "note": "BROKE_CLIMAX_LOW"
+        }
+      ],
+      "cooldownUntilDate": "2026-11-26",
+      "failedReason": "BROKE_CLIMAX_LOW"
+    },
+    "PET": {
+      "symbol": "PET",
+      "state": "B7_FAILED",
+      "detectedDate": "2026-11-25",
+      "b2EnteredDate": null,
+      "climaxLow": 48100,
+      "reclaimLevel": 50033,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -16.38,
+      "rsi14": 45.6,
+      "cues": [
+        "SUPPLY_PRESSURE_15M"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-25",
+          "state": "B1_OVERSOLD_WATCH",
+          "price": 48500,
+          "note": "DD=-16.38% RSI=45.6"
+        },
+        {
+          "date": "2026-11-26",
+          "state": "B7_FAILED",
+          "price": 46000,
+          "note": "BROKE_CLIMAX_LOW"
+        }
+      ],
+      "cooldownUntilDate": "2026-11-26",
+      "failedReason": "BROKE_CLIMAX_LOW"
+    },
+    "HAX": {
+      "symbol": "HAX",
+      "state": "B1_OVERSOLD_WATCH",
+      "detectedDate": "2026-11-25",
+      "b2EnteredDate": null,
+      "climaxLow": 7740,
+      "reclaimLevel": 8215,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -15.69,
+      "rsi14": 31.99,
+      "cues": [
+        "EFFORT_NO_RESULT_STALL"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-25",
+          "state": "B1_OVERSOLD_WATCH",
+          "price": 7790,
+          "note": "DD=-15.69% RSI=31.99"
+        }
+      ],
+      "cooldownUntilDate": null
+    },
+    "CMG": {
+      "symbol": "CMG",
+      "state": "B7_FAILED",
+      "detectedDate": "2026-11-25",
+      "b2EnteredDate": null,
+      "climaxLow": 16650,
+      "reclaimLevel": 17695,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -32.93,
+      "rsi14": 28.56,
+      "cues": [
+        "SUPPLY_PRESSURE_D"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-25",
+          "state": "B1_OVERSOLD_WATCH",
+          "price": 16700,
+          "note": "DD=-32.93% RSI=28.56"
+        },
+        {
+          "date": "2026-11-26",
+          "state": "B7_FAILED",
+          "price": 15900,
+          "note": "BROKE_CLIMAX_LOW"
+        }
+      ],
+      "cooldownUntilDate": "2026-11-26",
+      "failedReason": "BROKE_CLIMAX_LOW"
+    },
+    "CTR": {
+      "symbol": "CTR",
+      "state": "B7_FAILED",
+      "detectedDate": "2026-11-25",
+      "b2EnteredDate": null,
+      "climaxLow": 58600,
+      "reclaimLevel": 63545,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -24.19,
+      "rsi14": 36.37,
+      "cues": [
+        "SUPPLY_PRESSURE_15M",
+        "SUPPLY_PRESSURE_D"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-25",
+          "state": "B1_OVERSOLD_WATCH",
+          "price": 58600,
+          "note": "DD=-24.19% RSI=36.37"
+        },
+        {
+          "date": "2026-11-26",
+          "state": "B7_FAILED",
+          "price": 56900,
+          "note": "BROKE_CLIMAX_LOW"
+        }
+      ],
+      "cooldownUntilDate": "2026-11-26",
+      "failedReason": "BROKE_CLIMAX_LOW"
+    },
+    "ELC": {
+      "symbol": "ELC",
+      "state": "B1_OVERSOLD_WATCH",
+      "detectedDate": "2026-11-25",
+      "b2EnteredDate": null,
+      "climaxLow": 9660,
+      "reclaimLevel": 10556,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -29.38,
+      "rsi14": 36.12,
+      "cues": [
+        "SUPPLY_PRESSURE_15M"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-25",
+          "state": "B1_OVERSOLD_WATCH",
+          "price": 9900,
+          "note": "DD=-29.38% RSI=36.12"
+        }
+      ],
+      "cooldownUntilDate": null
+    },
+    "PVB": {
+      "symbol": "PVB",
+      "state": "B7_FAILED",
+      "detectedDate": "2026-11-25",
+      "b2EnteredDate": null,
+      "climaxLow": 16400,
+      "reclaimLevel": 18081,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -25.13,
+      "rsi14": 28.49,
+      "cues": [
+        "HEALTHY_PULLBACK_LOW_VOL"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-25",
+          "state": "B1_OVERSOLD_WATCH",
+          "price": 16800,
+          "note": "DD=-25.13% RSI=28.49"
+        },
+        {
+          "date": "2026-11-26",
+          "state": "B7_FAILED",
+          "price": 16000,
+          "note": "BROKE_CLIMAX_LOW"
+        }
+      ],
+      "cooldownUntilDate": "2026-11-26",
+      "failedReason": "BROKE_CLIMAX_LOW"
+    },
+    "PVC": {
+      "symbol": "PVC",
+      "state": "B7_FAILED",
+      "detectedDate": "2026-11-25",
+      "b2EnteredDate": null,
+      "climaxLow": 9600,
+      "reclaimLevel": 10725,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -30.22,
+      "rsi14": 22.56,
+      "cues": [
+        "FAILED_BREAKOUT"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-25",
+          "state": "B1_OVERSOLD_WATCH",
+          "price": 9700,
+          "note": "DD=-30.22% RSI=22.56"
+        },
+        {
+          "date": "2026-11-26",
+          "state": "B7_FAILED",
+          "price": 9400,
+          "note": "BROKE_CLIMAX_LOW"
+        }
+      ],
+      "cooldownUntilDate": "2026-11-26",
+      "failedReason": "BROKE_CLIMAX_LOW"
+    },
+    "VOS": {
+      "symbol": "VOS",
+      "state": "B7_FAILED",
+      "detectedDate": "2026-11-25",
+      "b2EnteredDate": null,
+      "climaxLow": 10200,
+      "reclaimLevel": 10760,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -20.93,
+      "rsi14": 39.58,
+      "cues": [
+        "SUPPLY_PRESSURE_15M",
+        "SUPPLY_PRESSURE_D"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-25",
+          "state": "B1_OVERSOLD_WATCH",
+          "price": 10200,
+          "note": "DD=-20.93% RSI=39.58"
+        },
+        {
+          "date": "2026-11-26",
+          "state": "B7_FAILED",
+          "price": 9990,
+          "note": "BROKE_CLIMAX_LOW"
+        }
+      ],
+      "cooldownUntilDate": "2026-11-26",
+      "failedReason": "BROKE_CLIMAX_LOW"
+    },
+    "VTO": {
+      "symbol": "VTO",
+      "state": "B1_OVERSOLD_WATCH",
+      "detectedDate": "2026-11-25",
+      "b2EnteredDate": null,
+      "climaxLow": 10150,
+      "reclaimLevel": 10333,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -16.39,
+      "rsi14": 42.18,
+      "cues": [
+        "SUPPLY_PRESSURE_15M",
+        "HEALTHY_PULLBACK_LOW_VOL"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-25",
+          "state": "B1_OVERSOLD_WATCH",
+          "price": 10200,
+          "note": "DD=-16.39% RSI=42.18"
+        }
+      ],
+      "cooldownUntilDate": null
+    },
+    "HT1": {
+      "symbol": "HT1",
+      "state": "B3_STABILIZING",
+      "detectedDate": "2026-11-25",
+      "b2EnteredDate": "2026-11-25",
+      "climaxLow": 11900,
+      "reclaimLevel": 13150,
+      "stabilizeBarsCount": 6,
+      "higherLowPrice": 12000,
+      "drawdown60D": -12.32,
+      "rsi14": 38.75,
+      "cues": [
+        "DEMAND_FOLLOW_THROUGH_15M",
+        "HEALTHY_PULLBACK_LOW_VOL"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-25",
+          "state": "B2_CLIMAX_OR_SPRING",
+          "price": 12450,
+          "note": "HEALTHY_PULLBACK_LOW_VOL,SUCCESSFUL_SUPPLY_TEST,FAILED_BREAKDOWN_SPRING"
+        },
+        {
+          "date": "2026-11-25",
+          "state": "B3_STABILIZING",
+          "price": 12450,
+          "note": "Ngừng tạo đáy mới"
+        }
+      ],
+      "cooldownUntilDate": null
+    },
+    "DGC": {
+      "symbol": "DGC",
+      "state": "B7_FAILED",
+      "detectedDate": "2026-11-25",
+      "b2EnteredDate": null,
+      "climaxLow": 30750,
+      "reclaimLevel": 32575,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -22.13,
+      "rsi14": 27.34,
+      "cues": [],
+      "historyLog": [
+        {
+          "date": "2026-11-25",
+          "state": "B1_OVERSOLD_WATCH",
+          "price": 30950,
+          "note": "DD=-22.13% RSI=27.34"
+        },
+        {
+          "date": "2026-11-26",
+          "state": "B7_FAILED",
+          "price": 30100,
+          "note": "BROKE_CLIMAX_LOW"
+        }
+      ],
+      "cooldownUntilDate": "2026-11-26",
+      "failedReason": "BROKE_CLIMAX_LOW"
+    },
+    "PHR": {
+      "symbol": "PHR",
+      "state": "B2_CLIMAX_OR_SPRING",
+      "detectedDate": "2026-11-25",
+      "b2EnteredDate": "2026-11-26",
+      "climaxLow": 26500,
+      "reclaimLevel": 29560,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -19.65,
+      "rsi14": 29.91,
+      "cues": [
+        "SUCCESSFUL_SUPPLY_TEST",
+        "FAILED_BREAKDOWN_SPRING",
+        "SELLING_CLIMAX_CANDIDATE"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-25",
+          "state": "B1_OVERSOLD_WATCH",
+          "price": 27800,
+          "note": "DD=-19.65% RSI=29.91"
+        },
+        {
+          "date": "2026-11-26",
+          "state": "B2_CLIMAX_OR_SPRING",
+          "price": 27450,
+          "note": "SUCCESSFUL_SUPPLY_TEST,FAILED_BREAKDOWN_SPRING,SELLING_CLIMAX_CANDIDATE"
+        }
+      ],
+      "cooldownUntilDate": null
+    },
+    "IMP": {
+      "symbol": "IMP",
+      "state": "B3_STABILIZING",
+      "detectedDate": "2026-11-25",
+      "b2EnteredDate": "2026-11-25",
+      "climaxLow": 32000,
+      "reclaimLevel": 35750,
+      "stabilizeBarsCount": 2,
+      "higherLowPrice": 32300,
+      "drawdown60D": -22.26,
+      "rsi14": 30.93,
+      "cues": [],
+      "historyLog": [
+        {
+          "date": "2026-11-25",
+          "state": "B2_CLIMAX_OR_SPRING",
+          "price": 32300,
+          "note": "SUPPLY_PRESSURE_D,SELLING_CLIMAX_CANDIDATE"
+        },
+        {
+          "date": "2026-11-26",
+          "state": "B3_STABILIZING",
+          "price": 32300,
+          "note": "Ngừng tạo đáy mới"
+        }
+      ],
+      "cooldownUntilDate": null
+    },
+    "DBD": {
+      "symbol": "DBD",
+      "state": "B3_STABILIZING",
+      "detectedDate": "2026-11-25",
+      "b2EnteredDate": "2026-11-25",
+      "climaxLow": 39050,
+      "reclaimLevel": 45500,
+      "stabilizeBarsCount": 6,
+      "higherLowPrice": 39050,
+      "drawdown60D": -13.39,
+      "rsi14": 21.34,
+      "cues": [],
+      "historyLog": [
+        {
+          "date": "2026-11-25",
+          "state": "B2_CLIMAX_OR_SPRING",
+          "price": 42350,
+          "note": "SUCCESSFUL_SUPPLY_TEST,SELLING_CLIMAX_CANDIDATE"
+        },
+        {
+          "date": "2026-11-25",
+          "state": "B3_STABILIZING",
+          "price": 42350,
+          "note": "Ngừng tạo đáy mới"
+        }
+      ],
+      "cooldownUntilDate": null
+    },
+    "KDC": {
+      "symbol": "KDC",
+      "state": "B3_STABILIZING",
+      "detectedDate": "2026-11-25",
+      "b2EnteredDate": "2026-11-25",
+      "climaxLow": 49350,
+      "reclaimLevel": 50400,
+      "stabilizeBarsCount": 2,
+      "higherLowPrice": 49450,
+      "drawdown60D": -4.76,
+      "rsi14": 34.26,
+      "cues": [
+        "SUCCESSFUL_SUPPLY_TEST"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-25",
+          "state": "B2_CLIMAX_OR_SPRING",
+          "price": 50000,
+          "note": "DEMAND_FOLLOW_THROUGH_15M,SUCCESSFUL_SUPPLY_TEST,FAILED_BREAKDOWN_SPRING"
+        },
+        {
+          "date": "2026-11-26",
+          "state": "B3_STABILIZING",
+          "price": 50000,
+          "note": "Ngừng tạo đáy mới"
+        }
+      ],
+      "cooldownUntilDate": null
+    },
+    "GEG": {
+      "symbol": "GEG",
+      "state": "B2_CLIMAX_OR_SPRING",
+      "detectedDate": "2026-11-25",
+      "b2EnteredDate": "2026-11-25",
+      "climaxLow": 11300,
+      "reclaimLevel": 11950,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -11.63,
+      "rsi14": 35.67,
+      "cues": [
+        "FAILED_BREAKDOWN_SPRING"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-25",
+          "state": "B2_CLIMAX_OR_SPRING",
+          "price": 11400,
+          "note": "SUPPLY_PRESSURE_15M,SUCCESSFUL_SUPPLY_TEST,FAILED_BREAKDOWN_SPRING"
+        }
+      ],
+      "cooldownUntilDate": null
+    },
+    "EIB": {
+      "symbol": "EIB",
+      "state": "B0_FALLING_KNIFE",
+      "detectedDate": "2026-11-26",
+      "b2EnteredDate": null,
+      "climaxLow": 14750,
+      "reclaimLevel": null,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -18.51,
+      "rsi14": 39.49,
+      "cues": [
+        "SUPPLY_PRESSURE_15M",
+        "SUPPLY_PRESSURE_D"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-26",
+          "state": "B0_FALLING_KNIFE",
+          "price": 14750,
+          "note": "Đang rơi tự do, cấm mua"
+        }
+      ],
+      "cooldownUntilDate": null
+    },
+    "HCM": {
+      "symbol": "HCM",
+      "state": "B1_OVERSOLD_WATCH",
+      "detectedDate": "2026-11-26",
+      "b2EnteredDate": null,
+      "climaxLow": 22250,
+      "reclaimLevel": 23265,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -17.74,
+      "rsi14": 41.31,
+      "cues": [],
+      "historyLog": [
+        {
+          "date": "2026-11-26",
+          "state": "B1_OVERSOLD_WATCH",
+          "price": 22250,
+          "note": "DD=-17.74% RSI=41.31"
+        }
+      ],
+      "cooldownUntilDate": null
+    },
+    "KDH": {
+      "symbol": "KDH",
+      "state": "B1_OVERSOLD_WATCH",
+      "detectedDate": "2026-11-26",
+      "b2EnteredDate": null,
+      "climaxLow": 13950,
+      "reclaimLevel": 14890,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -16.3,
+      "rsi14": 49.84,
+      "cues": [
+        "SUPPLY_PRESSURE_15M",
+        "HEALTHY_PULLBACK_LOW_VOL",
+        "SUPPLY_PRESSURE_D",
+        "FAILED_BREAKOUT"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-26",
+          "state": "B1_OVERSOLD_WATCH",
+          "price": 14000,
+          "note": "DD=-16.3% RSI=49.84"
+        }
+      ],
+      "cooldownUntilDate": null
+    },
+    "DXG": {
+      "symbol": "DXG",
+      "state": "B1_OVERSOLD_WATCH",
+      "detectedDate": "2026-11-26",
+      "b2EnteredDate": null,
+      "climaxLow": 10150,
+      "reclaimLevel": 10727,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -16.46,
+      "rsi14": 44.86,
+      "cues": [
+        "HEALTHY_PULLBACK_LOW_VOL",
+        "SUPPLY_PRESSURE_D",
+        "FAILED_BREAKOUT"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-26",
+          "state": "B1_OVERSOLD_WATCH",
+          "price": 10150,
+          "note": "DD=-16.46% RSI=44.86"
+        }
+      ],
+      "cooldownUntilDate": null
+    },
+    "MWG": {
+      "symbol": "MWG",
+      "state": "B2_CLIMAX_OR_SPRING",
+      "detectedDate": "2026-11-26",
+      "b2EnteredDate": "2026-11-26",
+      "climaxLow": 67000,
+      "reclaimLevel": 76100,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -13.32,
+      "rsi14": 33.74,
+      "cues": [
+        "SUPPLY_PRESSURE_15M",
+        "SUPPLY_PRESSURE_D",
+        "SELLING_CLIMAX_CANDIDATE",
+        "SUPPLY_AT_RESISTANCE",
+        "FAILED_BREAKOUT"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-26",
+          "state": "B2_CLIMAX_OR_SPRING",
+          "price": 67000,
+          "note": "SUPPLY_PRESSURE_15M,SUPPLY_PRESSURE_D,SELLING_CLIMAX_CANDIDATE,SUPPLY_AT_RESISTANCE,FAILED_BREAKOUT"
+        }
+      ],
+      "cooldownUntilDate": null
+    },
+    "VCG": {
+      "symbol": "VCG",
+      "state": "B1_OVERSOLD_WATCH",
+      "detectedDate": "2026-11-26",
+      "b2EnteredDate": null,
+      "climaxLow": 13500,
+      "reclaimLevel": 15103,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -15.22,
+      "rsi14": 37.37,
+      "cues": [
+        "SUPPLY_PRESSURE_15M",
+        "HEALTHY_PULLBACK_LOW_VOL"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-26",
+          "state": "B1_OVERSOLD_WATCH",
+          "price": 13650,
+          "note": "DD=-15.22% RSI=37.37"
+        }
+      ],
+      "cooldownUntilDate": null
+    },
+    "DCM": {
+      "symbol": "DCM",
+      "state": "B1_OVERSOLD_WATCH",
+      "detectedDate": "2026-11-26",
+      "b2EnteredDate": null,
+      "climaxLow": 29100,
+      "reclaimLevel": 31430,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -17.55,
+      "rsi14": 39.9,
+      "cues": [
+        "HEALTHY_PULLBACK_LOW_VOL"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-26",
+          "state": "B1_OVERSOLD_WATCH",
+          "price": 29600,
+          "note": "DD=-17.55% RSI=39.9"
+        }
+      ],
+      "cooldownUntilDate": null
+    },
+    "BVB": {
+      "symbol": "BVB",
+      "state": "B3_STABILIZING",
+      "detectedDate": "2026-11-26",
+      "b2EnteredDate": "2026-11-26",
+      "climaxLow": 9850,
+      "reclaimLevel": 10650,
+      "stabilizeBarsCount": 1,
+      "higherLowPrice": 9850,
+      "drawdown60D": -14.71,
+      "rsi14": 34.79,
+      "cues": [
+        "SUCCESSFUL_SUPPLY_TEST",
+        "FAILED_BREAKDOWN_SPRING"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-26",
+          "state": "B2_CLIMAX_OR_SPRING",
+          "price": 10050,
+          "note": "SUCCESSFUL_SUPPLY_TEST,FAILED_BREAKDOWN_SPRING"
+        },
+        {
+          "date": "2026-11-26",
+          "state": "B3_STABILIZING",
+          "price": 10050,
+          "note": "Ngừng tạo đáy mới"
+        }
+      ],
+      "cooldownUntilDate": null
+    },
+    "BSI": {
+      "symbol": "BSI",
+      "state": "B0_FALLING_KNIFE",
+      "detectedDate": "2026-11-26",
+      "b2EnteredDate": null,
+      "climaxLow": 24650,
+      "reclaimLevel": null,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -16.39,
+      "rsi14": 42.37,
+      "cues": [
+        "SUPPLY_PRESSURE_D"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-26",
+          "state": "B0_FALLING_KNIFE",
+          "price": 25000,
+          "note": "Đang rơi tự do, cấm mua"
+        }
+      ],
+      "cooldownUntilDate": null
+    },
+    "PVI": {
+      "symbol": "PVI",
+      "state": "B1_OVERSOLD_WATCH",
+      "detectedDate": "2026-11-26",
+      "b2EnteredDate": null,
+      "climaxLow": 56500,
+      "reclaimLevel": 60875,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -13.88,
+      "rsi14": 24.67,
+      "cues": [],
+      "historyLog": [
+        {
+          "date": "2026-11-26",
+          "state": "B1_OVERSOLD_WATCH",
+          "price": 57700,
+          "note": "DD=-13.88% RSI=24.67"
+        }
+      ],
+      "cooldownUntilDate": null
+    },
+    "MIG": {
+      "symbol": "MIG",
+      "state": "B2_CLIMAX_OR_SPRING",
+      "detectedDate": "2026-11-26",
+      "b2EnteredDate": "2026-11-26",
+      "climaxLow": 14100,
+      "reclaimLevel": 15300,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -12.87,
+      "rsi14": 47.71,
+      "cues": [
+        "FAILED_BREAKDOWN_SPRING"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-26",
+          "state": "B2_CLIMAX_OR_SPRING",
+          "price": 14550,
+          "note": "FAILED_BREAKDOWN_SPRING"
+        }
+      ],
+      "cooldownUntilDate": null
+    },
+    "NLG": {
+      "symbol": "NLG",
+      "state": "B7_FAILED",
+      "detectedDate": "2026-11-26",
+      "b2EnteredDate": null,
+      "climaxLow": 21850,
+      "reclaimLevel": 23090,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -15.8,
+      "rsi14": 53.03,
+      "cues": [
+        "SUPPLY_PRESSURE_D",
+        "FAILED_BREAKOUT"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-26",
+          "state": "B1_OVERSOLD_WATCH",
+          "price": 21850,
+          "note": "DD=-15.8% RSI=53.03"
+        },
+        {
+          "date": "2026-11-26",
+          "state": "B7_FAILED",
+          "price": 21850,
+          "note": "LIMIT_DOWN_LOCKED"
+        }
+      ],
+      "cooldownUntilDate": "2026-11-26",
+      "failedReason": "LIMIT_DOWN_LOCKED"
+    },
+    "PDR": {
+      "symbol": "PDR",
+      "state": "B2_CLIMAX_OR_SPRING",
+      "detectedDate": "2026-11-26",
+      "b2EnteredDate": "2026-11-26",
+      "climaxLow": 10300,
+      "reclaimLevel": 12150,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -13.44,
+      "rsi14": 37.74,
+      "cues": [
+        "SUPPLY_PRESSURE_15M",
+        "SUCCESSFUL_SUPPLY_TEST",
+        "FAILED_BREAKDOWN_SPRING"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-26",
+          "state": "B2_CLIMAX_OR_SPRING",
+          "price": 10950,
+          "note": "SUPPLY_PRESSURE_15M,SUCCESSFUL_SUPPLY_TEST,FAILED_BREAKDOWN_SPRING"
+        }
+      ],
+      "cooldownUntilDate": null
+    },
+    "HDC": {
+      "symbol": "HDC",
+      "state": "B7_FAILED",
+      "detectedDate": "2026-11-26",
+      "b2EnteredDate": null,
+      "climaxLow": 11150,
+      "reclaimLevel": 12495,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -18.01,
+      "rsi14": 46.24,
+      "cues": [
+        "SUPPLY_PRESSURE_D",
+        "FAILED_BREAKOUT"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-26",
+          "state": "B1_OVERSOLD_WATCH",
+          "price": 11150,
+          "note": "DD=-18.01% RSI=46.24"
+        },
+        {
+          "date": "2026-11-26",
+          "state": "B7_FAILED",
+          "price": 11150,
+          "note": "LIMIT_DOWN_LOCKED"
+        }
+      ],
+      "cooldownUntilDate": "2026-11-26",
+      "failedReason": "LIMIT_DOWN_LOCKED"
+    },
+    "SZC": {
+      "symbol": "SZC",
+      "state": "B1_OVERSOLD_WATCH",
+      "detectedDate": "2026-11-26",
+      "b2EnteredDate": null,
+      "climaxLow": 17400,
+      "reclaimLevel": 19808,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -19.07,
+      "rsi14": 41.46,
+      "cues": [
+        "SUPPLY_PRESSURE_15M",
+        "SUPPLY_PRESSURE_D",
+        "FAILED_BREAKOUT"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-26",
+          "state": "B1_OVERSOLD_WATCH",
+          "price": 17400,
+          "note": "DD=-19.07% RSI=41.46"
+        }
+      ],
+      "cooldownUntilDate": null
+    },
+    "LHG": {
+      "symbol": "LHG",
+      "state": "B3_STABILIZING",
+      "detectedDate": "2026-11-26",
+      "b2EnteredDate": "2026-11-26",
+      "climaxLow": 24750,
+      "reclaimLevel": 27100,
+      "stabilizeBarsCount": 1,
+      "higherLowPrice": 25400,
+      "drawdown60D": -6.02,
+      "rsi14": 30.55,
+      "cues": [
+        "SUCCESSFUL_SUPPLY_TEST",
+        "FAILED_BREAKDOWN_SPRING"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-26",
+          "state": "B2_CLIMAX_OR_SPRING",
+          "price": 25750,
+          "note": "SUCCESSFUL_SUPPLY_TEST,FAILED_BREAKDOWN_SPRING"
+        },
+        {
+          "date": "2026-11-26",
+          "state": "B3_STABILIZING",
+          "price": 25750,
+          "note": "Ngừng tạo đáy mới"
+        }
+      ],
+      "cooldownUntilDate": null
+    },
+    "FMC": {
+      "symbol": "FMC",
+      "state": "B1_OVERSOLD_WATCH",
+      "detectedDate": "2026-11-26",
+      "b2EnteredDate": null,
+      "climaxLow": 31500,
+      "reclaimLevel": 34740,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -13.04,
+      "rsi14": 28.5,
+      "cues": [],
+      "historyLog": [
+        {
+          "date": "2026-11-26",
+          "state": "B1_OVERSOLD_WATCH",
+          "price": 32000,
+          "note": "DD=-13.04% RSI=28.5"
+        }
+      ],
+      "cooldownUntilDate": null
+    },
+    "GMD": {
+      "symbol": "GMD",
+      "state": "B7_FAILED",
+      "detectedDate": "2026-11-26",
+      "b2EnteredDate": "2026-11-26",
+      "climaxLow": 48850,
+      "reclaimLevel": 55000,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -15.63,
+      "rsi14": 49.7,
+      "cues": [
+        "SUPPLY_PRESSURE_D",
+        "SELLING_CLIMAX_CANDIDATE",
+        "FAILED_BREAKOUT"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-26",
+          "state": "B2_CLIMAX_OR_SPRING",
+          "price": 48850,
+          "note": "SUPPLY_PRESSURE_D,SELLING_CLIMAX_CANDIDATE,FAILED_BREAKOUT"
+        },
+        {
+          "date": "2026-11-26",
+          "state": "B7_FAILED",
+          "price": 48850,
+          "note": "LIMIT_DOWN_LOCKED"
+        }
+      ],
+      "cooldownUntilDate": "2026-11-26",
+      "failedReason": "LIMIT_DOWN_LOCKED"
+    },
+    "HAH": {
+      "symbol": "HAH",
+      "state": "B0_FALLING_KNIFE",
+      "detectedDate": "2026-11-26",
+      "b2EnteredDate": null,
+      "climaxLow": 44500,
+      "reclaimLevel": null,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -16.82,
+      "rsi14": 39.77,
+      "cues": [
+        "SUPPLY_PRESSURE_15M",
+        "SUPPLY_PRESSURE_D",
+        "FAILED_BREAKOUT"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-26",
+          "state": "B0_FALLING_KNIFE",
+          "price": 44500,
+          "note": "Đang rơi tự do, cấm mua"
+        }
+      ],
+      "cooldownUntilDate": null
+    },
+    "SCS": {
+      "symbol": "SCS",
+      "state": "B1_OVERSOLD_WATCH",
+      "detectedDate": "2026-11-26",
+      "b2EnteredDate": null,
+      "climaxLow": 38050,
+      "reclaimLevel": 39663,
+      "stabilizeBarsCount": 0,
+      "higherLowPrice": null,
+      "drawdown60D": -15.13,
+      "rsi14": 39.2,
+      "cues": [
+        "SUPPLY_PRESSURE_D"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-26",
+          "state": "B1_OVERSOLD_WATCH",
+          "price": 38150,
+          "note": "DD=-15.13% RSI=39.2"
+        }
+      ],
+      "cooldownUntilDate": null
+    },
+    "PC1": {
+      "symbol": "PC1",
+      "state": "B3_STABILIZING",
+      "detectedDate": "2026-11-26",
+      "b2EnteredDate": "2026-11-26",
+      "climaxLow": 15300,
+      "reclaimLevel": 17000,
+      "stabilizeBarsCount": 1,
+      "higherLowPrice": 15300,
+      "drawdown60D": -14.22,
+      "rsi14": 42.42,
+      "cues": [
+        "HEALTHY_PULLBACK_LOW_VOL",
+        "SUCCESSFUL_SUPPLY_TEST",
+        "FAILED_BREAKDOWN_SPRING",
+        "SELLING_CLIMAX_CANDIDATE"
+      ],
+      "historyLog": [
+        {
+          "date": "2026-11-26",
+          "state": "B2_CLIMAX_OR_SPRING",
+          "price": 16000,
+          "note": "HEALTHY_PULLBACK_LOW_VOL,SUCCESSFUL_SUPPLY_TEST,FAILED_BREAKDOWN_SPRING,SELLING_CLIMAX_CANDIDATE"
+        },
+        {
+          "date": "2026-11-26",
+          "state": "B3_STABILIZING",
+          "price": 16000,
+          "note": "Ngừng tạo đáy mới"
+        }
+      ],
+      "cooldownUntilDate": null
+    }
+  },
+  "supplyDemandBySymbol": {},
+  "sentOutbox": {},
+  "recentDecisions": [
+    {
+      "asOf": "2026-11-26T13:30:19.215Z",
+      "session": "CLOSED",
+      "overallAction": "NO_TRADE",
+      "regime": "PANIC",
+      "buyCount": 0,
+      "buySymbols": [],
+      "exitAlerts": []
+    },
+    {
+      "asOf": "2026-11-26T13:27:34.928Z",
+      "session": "CLOSED",
+      "overallAction": "NO_TRADE",
+      "regime": "PANIC",
+      "buyCount": 0,
+      "buySymbols": [],
+      "exitAlerts": []
+    },
+    {
+      "asOf": "2026-11-25T16:48:55.881Z",
+      "session": "CLOSED",
+      "overallAction": "NO_TRADE",
+      "regime": "DOWNTREND",
+      "buyCount": 0,
+      "buySymbols": [],
+      "exitAlerts": []
+    },
+    {
+      "asOf": "2026-11-25T16:18:12.725Z",
+      "session": "CLOSED",
+      "overallAction": "NO_TRADE",
+      "regime": "DOWNTREND",
+      "buyCount": 0,
+      "buySymbols": [],
+      "exitAlerts": []
+    },
+    {
+      "asOf": "2026-11-25T16:16:55.797Z",
+      "session": "CLOSED",
+      "overallAction": "NO_TRADE",
+      "regime": "DOWNTREND",
+      "buyCount": 0,
+      "buySymbols": [],
+      "exitAlerts": []
+    },
+    {
+      "asOf": "2026-11-25T16:15:35.007Z",
+      "session": "CLOSED",
+      "overallAction": "NO_TRADE",
+      "regime": "DOWNTREND",
+      "buyCount": 0,
+      "buySymbols": [],
+      "exitAlerts": []
+    },
+    {
+      "asOf": "2026-11-25T16:13:44.191Z",
+      "session": "CLOSED",
+      "overallAction": "NO_TRADE",
+      "regime": "DOWNTREND",
+      "buyCount": 0,
+      "buySymbols": [],
+      "exitAlerts": []
+    }
+  ]
+}

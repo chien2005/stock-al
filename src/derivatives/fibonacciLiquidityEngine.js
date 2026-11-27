@@ -15,71 +15,92 @@
 
 /**
  * 1. TÍNH TOÁN FIBONACCI ĐỘNG REALTIME
- * Dựa trên Swing High, Swing Low và Nến Biến Động Lớn (Impulse Wave)
+ * [FIX-10]: Lọc đúng session hôm nay. Thiếu swing rõ thì trả unavailable, không fake price ± 3.
  */
 function calculateDynamicFibonacci(m5Data, m1Data, currentPrice) {
   if (!m5Data || !m5Data.c || m5Data.c.length < 5) {
-    const base = currentPrice || 1840;
-    return _buildFallbackFibonacci(base);
+    return _buildFallbackFibonacci();
   }
 
-  const closes = m5Data.c;
-  const highs = m5Data.h || closes;
-  const lows = m5Data.l || closes;
-  const volumes = m5Data.v || [];
+  const { c, h, l, v, t } = m5Data;
+  const now = new Date();
+  const vnNowStr = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });
+
+  // Lọc nến của ngày hôm nay
+  const todayIndices = [];
+  if (t && t.length > 0) {
+    for (let i = 0; i < t.length; i++) {
+      const d = new Date(t[i] * 1000);
+      const dStr = d.toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });
+      if (dStr === vnNowStr) {
+        todayIndices.push(i);
+      }
+    }
+  } else {
+    // Nếu không có t, lấy tối đa 30 bars gần nhất
+    for (let i = Math.max(0, c.length - 30); i < c.length; i++) {
+      todayIndices.push(i);
+    }
+  }
+
+  if (todayIndices.length < 5) {
+    return _buildFallbackFibonacci();
+  }
+
+  const highs = todayIndices.map(i => (h ? h[i] : c[i]));
+  const lows = todayIndices.map(i => (l ? l[i] : c[i]));
+  const closes = todayIndices.map(i => c[i]);
   const len = closes.length;
 
-  // 1.1. Xác định biên độ toàn phiên (Session Range)
+  // 1.1. Xác định biên độ toàn phiên (Session Range) - Đúng ngày hôm nay
   const sessionHigh = Math.max(...highs);
   const sessionLow = Math.min(...lows);
 
-  // 1.2. Xác định nhịp sóng gần nhất (Recent 15-20 bars 5M = 1.5 - 2 tiếng gần nhất)
+  // 1.2. Xác định nhịp sóng gần nhất (Recent 15-20 bars 5M)
   const recentWindow = Math.min(20, len);
-  const recentCloses = closes.slice(-recentWindow);
   const recentHighs = highs.slice(-recentWindow);
   const recentLows = lows.slice(-recentWindow);
-  const recentVols = volumes.slice(-recentWindow);
 
   let swingHigh = Math.max(...recentHighs);
   let swingLow = Math.min(...recentLows);
 
-  // Nếu biên nhịp gần quá hẹp (< 4đ), mở rộng ra theo biên độ phiên
-  if (swingHigh - swingLow < 4.0) {
+  if (swingHigh - swingLow < 3.0) {
     swingHigh = sessionHigh;
     swingLow = sessionLow;
   }
   let range = +(swingHigh - swingLow).toFixed(1);
-  if (range < 3.0) range = 4.0; // Bảo đảm range tối thiểu
+  if (range < 2.0) {
+    // Không đủ biên độ swing để kẻ Fibo có nghĩa
+    return _buildFallbackFibonacci();
+  }
 
   // 1.3. Xác định hướng sóng chủ đạo (Wave Direction)
   const idxHigh = recentHighs.lastIndexOf(Math.max(...recentHighs));
   const idxLow = recentLows.lastIndexOf(Math.min(...recentLows));
-  const isDowntrendWave = idxHigh < idxLow; // Đỉnh xuất hiện trước, đáy xuất hiện sau -> Sóng đang rơi
+  const isDowntrendWave = idxHigh < idxLow;
 
-  // 1.4. Tính toán các mốc Fibonacci Retracement & Extension
-  // Retracement từ Swing High xuống Swing Low
+  // 1.4. Mốc Fibonacci Retracement & Extension
   const f0 = swingLow;
   const f236 = +(swingHigh - 0.236 * range).toFixed(1);
   const f382 = +(swingHigh - 0.382 * range).toFixed(1);
-  const f500 = +(swingHigh - 0.500 * range).toFixed(1); // Mốc cân bằng Equilibrium
-  const f618 = +(swingHigh - 0.618 * range).toFixed(1); // Golden Pocket
+  const f500 = +(swingHigh - 0.500 * range).toFixed(1);
+  const f618 = +(swingHigh - 0.618 * range).toFixed(1);
   const f786 = +(swingHigh - 0.786 * range).toFixed(1);
   const f100 = swingHigh;
 
-  // Extensions / Liquidity Expansion (Mở rộng quét cản / thủng đáy)
-  const fExtHigh1272 = +(swingHigh + 0.272 * range).toFixed(1); // Quét SL Short
-  const fExtHigh1618 = +(swingHigh + 0.618 * range).toFixed(1); // Golden Extension Up
-  const fExtLow1272 = +(swingLow - 0.272 * range).toFixed(1);   // Quét SL Long
-  const fExtLow1618 = +(swingLow - 0.618 * range).toFixed(1);   // Golden Extension Down
+  const fExtHigh1272 = +(swingHigh + 0.272 * range).toFixed(1);
+  const fExtHigh1618 = +(swingHigh + 0.618 * range).toFixed(1);
+  const fExtLow1272 = +(swingLow - 0.272 * range).toFixed(1);
+  const fExtLow1618 = +(swingLow - 0.618 * range).toFixed(1);
 
   return {
+    isAvailable: true,
     swingHigh,
     swingLow,
     sessionHigh,
     sessionLow,
     range,
     isDowntrendWave,
-    // Levels
     f0,
     f236,
     f382,
@@ -87,7 +108,6 @@ function calculateDynamicFibonacci(m5Data, m1Data, currentPrice) {
     f618,
     f786,
     f100,
-    // Extensions
     fExtHigh1272,
     fExtHigh1618,
     fExtLow1272,
@@ -95,28 +115,28 @@ function calculateDynamicFibonacci(m5Data, m1Data, currentPrice) {
   };
 }
 
-function _buildFallbackFibonacci(basePrice) {
-  const range = 6.0;
-  const swingHigh = basePrice + 3.0;
-  const swingLow = basePrice - 3.0;
+function _buildFallbackFibonacci() {
+  // [FIX-10]: Return unavailable instead of fake price ± 3
   return {
-    swingHigh,
-    swingLow,
-    sessionHigh: swingHigh,
-    sessionLow: swingLow,
-    range,
+    isAvailable: false,
+    reason: 'INSUFFICIENT_SWINGS',
+    swingHigh: null,
+    swingLow: null,
+    sessionHigh: null,
+    sessionLow: null,
+    range: 0,
     isDowntrendWave: false,
-    f0: swingLow,
-    f236: +(swingHigh - 0.236 * range).toFixed(1),
-    f382: +(swingHigh - 0.382 * range).toFixed(1),
-    f500: +(swingHigh - 0.500 * range).toFixed(1),
-    f618: +(swingHigh - 0.618 * range).toFixed(1),
-    f786: +(swingHigh - 0.786 * range).toFixed(1),
-    f100: swingHigh,
-    fExtHigh1272: +(swingHigh + 0.272 * range).toFixed(1),
-    fExtHigh1618: +(swingHigh + 0.618 * range).toFixed(1),
-    fExtLow1272: +(swingLow - 0.272 * range).toFixed(1),
-    fExtLow1618: +(swingLow - 0.618 * range).toFixed(1),
+    f0: null,
+    f236: null,
+    f382: null,
+    f500: null,
+    f618: null,
+    f786: null,
+    f100: null,
+    fExtHigh1272: null,
+    fExtHigh1618: null,
+    fExtLow1272: null,
+    fExtLow1618: null,
   };
 }
 
@@ -326,30 +346,52 @@ function analyzeVSAIntradayAction(m5Data, m1Data, currentPrice, oiData, contextI
     m1Last3Vol = m1v.slice(-3).reduce((s, v) => s + v, 0);
   }
 
-  // ─── CASE 1: ĐẠP ÉP THIẾU VOL / KIỆT BÁN (NO SUPPLY / BEAR TRAP) ────────
-  // Giá giật giảm >= 1.5đ nhưng Volume < 1.200 HĐ hoặc volRatio < 0.65
+  // ─── [FIX-12]: TÁCH LOW_VOLUME_DECLINE KHỎI BEAR TRAP ───────────────
+  // Giá giảm với volume thấp: chỉ coi là Bear Trap nếu có nến rút chân rõ hoặc chạm hỗ trợ bật lên
   if (candleMove <= -1.5 && (v0 < 1200 || volRatio < 0.65)) {
-    return {
-      alertType: 'NO_SUPPLY',
-      isTrap: true,
-      isNoSupply: true,
-      headline: `🔴 <b>GIÁ GIẬT GIẢM ${candleMove}đ NHƯNG CHỈ ${v0.toLocaleString('vi-VN')} HĐ ➔ ĐẠP THIẾU VOL / KIỆT BÁN!</b>`,
-      detail: `⚠️ <i>Lực ép bán không có thanh khoản tổ chức (Vol x${volRatio} TB). Đây là bẫy đạp gom / quét Stop Loss hoảng loạn. <b>CẤM SHORT ĐUỔI VÙNG ĐÁY!</b></i>`,
-      actionSignal: 'CANNOT_SHORT',
-    };
+    if (lowerWick >= 1.0 && lowerWick >= candleRange * 0.35) {
+      return {
+        alertType: 'NO_SUPPLY',
+        isTrap: true,
+        isNoSupply: true,
+        headline: `🔴 <b>GIÁ GIẬT GIẢM ${candleMove}đ NHƯNG CHỈ ${v0.toLocaleString('vi-VN')} HĐ ➔ ĐẠP THIẾU VOL / KIỆT BÁN!</b>`,
+        detail: `⚠️ <i>Lực ép bán không có thanh khoản tổ chức (Vol x${volRatio} TB, rút chân ${lowerWick}đ). Đây là bẫy đạp gom. <b>CẤM SHORT ĐUỔI VÙNG ĐÁY!</b></i>`,
+        actionSignal: 'CANNOT_SHORT',
+      };
+    } else {
+      return {
+        alertType: 'LOW_VOLUME_DECLINE',
+        isTrap: false,
+        isNoSupply: false,
+        headline: `📉 <b>GIÁ GIẢM THOAI THOẢI ${candleMove}đ VỚI THANH KHOẢN THẤP (${v0.toLocaleString('vi-VN')} HĐ)</b>`,
+        detail: `⚪ <i>Phe Mua vắng bóng, giá trôi chậm do thiếu cầu. Chưa có bằng chứng đảo chiều tăng ngay.</i>`,
+        actionSignal: 'OBSERVE',
+      };
+    }
   }
 
-  // ─── CASE 2: KÉO CỐ / LONG GIẢ / BULL TRAP (NO DEMAND) ─────────────────
-  // Giá tăng thốc lên cản nhưng Vol yếu (< 1.200 HĐ) hoặc râu trên rất dài (>= 40% range)
+  // ─── [FIX-12]: TÁCH LOW_VOLUME_RALLY KHỎI BULL TRAP ───────────────────
+  // Giá tăng với volume thấp: chỉ coi là Bull Trap nếu có râu trên dài hoặc cản đè mạnh
   if (candleMove >= 1.5 && (v0 < 1200 || (upperWick >= 1.0 && upperWick >= candleRange * 0.4))) {
-    return {
-      alertType: 'NO_DEMAND',
-      isTrap: true,
-      isNoDemand: true,
-      headline: `🟢 <b>KÉO THỐC ${candleMove >= 0 ? '+' : ''}${candleMove}đ NHƯNG THIẾU CẦU / RÂU TRÊN DÀI ➔ KÉO CỐ / LONG GIẢ!</b>`,
-      detail: `⚠️ <i>Nến rướn vol thấp (${v0.toLocaleString('vi-VN')} HĐ) hoặc bị đè râu trên (${upperWick}đ). Đây chỉ là nhịp hồi kỹ thuật, chưa phải trend. <b>CẤM ĐUA LONG GIÁ CAO!</b></i>`,
-      actionSignal: 'CANNOT_LONG',
-    };
+    if (upperWick >= 1.0 && upperWick >= candleRange * 0.4) {
+      return {
+        alertType: 'NO_DEMAND',
+        isTrap: true,
+        isNoDemand: true,
+        headline: `🟢 <b>KÉO THỐC ${candleMove >= 0 ? '+' : ''}${candleMove}đ NHƯNG RÂU TRÊN DÀI ➔ BẪY ĐÈ ĐỈNH!</b>`,
+        detail: `⚠️ <i>Nến rướn bị đè râu trên (${upperWick}đ). Lực bán chặn cản xuất hiện. <b>CẤM ĐUA LONG GIÁ CAO!</b></i>`,
+        actionSignal: 'CANNOT_LONG',
+      };
+    } else {
+      return {
+        alertType: 'LOW_VOLUME_RALLY',
+        isTrap: false,
+        isNoDemand: false,
+        headline: `📈 <b>GIÁ TĂNG DẦN ${candleMove >= 0 ? '+' : ''}${candleMove}đ VỚI VOL THẤP (${v0.toLocaleString('vi-VN')} HĐ)</b>`,
+        detail: `🟢 <i>Giá leo do thiếu cung bán chặn, cấu trúc đáy nâng dần. Chưa thể kết luận bull trap khi chưa có lực bán đảo chiều.</i>`,
+        actionSignal: 'OBSERVE',
+      };
+    }
   }
 
   // ─── CASE 3: NỔ VOL LIÊN TIẾP PHÁ CẢN ➔ SÓNG THẬT (TRUE EXPANSION) ─────

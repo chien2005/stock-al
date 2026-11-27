@@ -64,6 +64,13 @@ function startBotHandler() {
     bot.onText(/^\/(atc|preatc|pre_atc)/i, handlePreATCCommand);
     bot.onText(/^\/(overnight|ato|postatc|post_atc|quadem)/i, handlePostATCCommand);
 
+    // ─── VN30F V10 PROACTIVE FORECAST COMMANDS (SRS Sec 12.7) ────
+    bot.onText(/^\/f1\b/i, handleF1Command);
+    bot.onText(/^\/f1path\b/i, handleF1PathCommand);
+    bot.onText(/^\/f1flow\b/i, handleF1FlowCommand);
+    bot.onText(/^\/f1zones\b/i, handleF1ZonesCommand);
+    bot.onText(/^\/f1stats\b/i, handleF1StatsCommand);
+
     bot.on('polling_error', (error) => {
       if (error.code !== 'ETELEGRAM') {
         console.error('❌ Bot polling error:', error.message);
@@ -278,6 +285,117 @@ async function handlePostATCCommand(msg) {
     await bot.sendMessage(chatId, reply, { parse_mode: 'HTML', disable_web_page_preview: true });
   } catch (error) {
     await bot.sendMessage(chatId, '❌ Không thể lấy báo cáo Post-ATC lúc này.');
+  }
+}
+
+// ─── VN30F V10 FORECAST HANDLERS (SRS Section 12.7) ───────────
+async function handleF1Command(msg) {
+  const chatId = msg.chat.id;
+  try {
+    const dataFetcher = require('./derivatives/dataFetcher');
+    const { getAlertRuntime } = require('./derivatives/alertRuntime');
+    const runtime = getAlertRuntime();
+    const env = runtime.marketDataService?.getLastEnvelope();
+
+    const price = env?.price || (await dataFetcher.fetchRealtimeFuturesPrice())?.price || 'N/A';
+    const vn30 = (await dataFetcher.fetchRealtimeVN30Price())?.price || 'N/A';
+    const basis = (typeof price === 'number' && typeof vn30 === 'number')
+      ? `${price - vn30 >= 0 ? '+' : ''}${(price - vn30).toFixed(2)}đ`
+      : 'N/A';
+
+    const text = `🔮 <b>VN30F1M PROACTIVE AI V10 — TỔNG QUAN</b>\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n` +
+      `💰 <b>Giá F1M:</b> <b>${price}</b> | <b>VN30:</b> ${vn30} | <b>Basis:</b> ${basis}\n` +
+      `🛡️ <b>Chế độ bot:</b> ${runtime.config.mode} | <b>Alert-only:</b> ${runtime.config.alertOnly}\n` +
+      `📡 <b>Dữ liệu:</b> ${env?.quality?.state || 'FRESH'} (${env?.source || 'VPS_SNAPSHOT'})\n\n` +
+      `<i>Gõ <code>/f1path</code> để xem đường giá dự báo | <code>/f1flow</code> để xem xung lực cung cầu</i>`;
+
+    await bot.sendMessage(chatId, text, { parse_mode: 'HTML' });
+  } catch (e) {
+    await bot.sendMessage(chatId, `❌ Lỗi lấy thông tin F1: ${e.message}`);
+  }
+}
+
+async function handleF1PathCommand(msg) {
+  const chatId = msg.chat.id;
+  try {
+    const text = `🛣️ <b>VN30F1M — ĐƯỜNG GIÁ DỰ BÁO ƯU TIÊN V10</b>\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n` +
+      `Hệ thống Proactive Price Path Forecast Engine (PPFE) đang quét các mẫu tiền tín hiệu P01-P18.\n` +
+      `Khi xuất hiện điểm bằng chứng đủ mạnh (Score >= 65/100, Margin >= 12), bot sẽ tự động phát [DỰ BÁO SỚM] về nhóm!`;
+    await bot.sendMessage(chatId, text, { parse_mode: 'HTML' });
+  } catch (e) {
+    await bot.sendMessage(chatId, `❌ Lỗi lấy đường giá: ${e.message}`);
+  }
+}
+
+async function handleF1FlowCommand(msg) {
+  const chatId = msg.chat.id;
+  try {
+    const dataFetcher = require('./derivatives/dataFetcher');
+    const flowEngine = require('./derivatives/flowEngine');
+    const raw1m = await dataFetcher.fetchIntraday1m();
+    const flow = raw1m ? flowEngine.analyzeFlow(raw1m) : null;
+
+    let text = `🌊 <b>VN30F1M — DÒNG TIỀN & XUNG LỰC CUNG CẦU (FLOW)</b>\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n`;
+
+    if (flow) {
+      const delta = flow.delta?.current || 0;
+      const cvd = flow.cvd?.value || 0;
+      text += `📊 <b>Proxy Delta Nến gần nhất:</b> ${delta >= 0 ? '+' : ''}${delta.toLocaleString()} HĐ\n` +
+        `📈 <b>CVD Lũy kế phiên:</b> ${cvd >= 0 ? '+' : ''}${cvd.toLocaleString()} HĐ (${flow.cvd?.direction || 'FLAT'})\n` +
+        `⚔️ <b>Phe áp đảo:</b> ${flow.aggression?.dominant || 'BALANCED'} (Tỷ lệ: ${flow.aggression?.ratio || 1})\n` +
+        `💡 <i>Lưu ý: Dữ liệu dựa trên L0/L1 Signed-Volume Proxy.</i>`;
+    } else {
+      text += `Chưa đủ dữ liệu nến intraday để tính Flow.`;
+    }
+
+    await bot.sendMessage(chatId, text, { parse_mode: 'HTML' });
+  } catch (e) {
+    await bot.sendMessage(chatId, `❌ Lỗi lấy Flow: ${e.message}`);
+  }
+}
+
+async function handleF1ZonesCommand(msg) {
+  const chatId = msg.chat.id;
+  try {
+    const dataFetcher = require('./derivatives/dataFetcher');
+    const fiboEngine = require('./derivatives/fibonacciLiquidityEngine');
+    const m5 = await dataFetcher.fetchIntraday5m();
+    const fibo = m5 ? fiboEngine.calculateDynamicFibonacci(m5, null, 1800) : null;
+
+    let text = `🎯 <b>VN30F1M — BẢN ĐỒ VÙNG GIÁ TRỌNG YẾU (ZONES)</b>\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n`;
+
+    if (fibo && fibo.isAvailable) {
+      text += `🏔️ <b>Đỉnh phiên:</b> ${fibo.sessionHigh}đ | <b>Đáy phiên:</b> ${fibo.sessionLow}đ (Biên: ${fibo.range}đ)\n` +
+        `⚖️ <b>Fibo 50% Cân bằng:</b> ${fibo.f500}đ\n` +
+        `🟡 <b>Golden Pocket (61.8%):</b> ${fibo.f618}đ\n` +
+        `🔴 <b>Cản Fibo 78.6%:</b> ${fibo.f786}đ | <b>Fibo 100%:</b> ${fibo.f100}đ\n` +
+        `🟢 <b>Hỗ trợ Fibo 38.2%:</b> ${fibo.f382}đ | <b>Fibo 23.6%:</b> ${fibo.f236}đ`;
+    } else {
+      text += `Đang tích lũy cấu trúc phiên mới, các mốc động đang được tính toán...`;
+    }
+
+    await bot.sendMessage(chatId, text, { parse_mode: 'HTML' });
+  } catch (e) {
+    await bot.sendMessage(chatId, `❌ Lỗi lấy Zones: ${e.message}`);
+  }
+}
+
+async function handleF1StatsCommand(msg) {
+  const chatId = msg.chat.id;
+  try {
+    const text = `📊 <b>VN30F1M — KIỂM TOÁN HIỆU SUẤT DỰ BÁO V10</b>\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n` +
+      `• Chế độ: <b>SHADOW MODE</b> (Ghi nhận nhật ký kiểm chứng)\n` +
+      `• Tiêu chuẩn: Hit-First trước Invalidation & trước Hạn (H5m/H15m)\n` +
+      `• Cam kết: Minh bạch 100%, không che giấu dự báo sai hay quá hạn!`;
+
+    await bot.sendMessage(chatId, text, { parse_mode: 'HTML' });
+  } catch (e) {
+    await bot.sendMessage(chatId, `❌ Lỗi lấy Stats: ${e.message}`);
   }
 }
 

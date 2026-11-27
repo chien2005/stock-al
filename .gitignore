@@ -4,4 +4,6 @@ node_modules/
 dist/
 bot.log
 scratch/
+data/sh_cache_d.json
+data/sh_replay_log.jsonl
 

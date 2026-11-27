@@ -238,8 +238,15 @@ async function runIntradaySignalJob() {
   return intradaySignalEngine.runIntradaySignal();
 }
 
+// ─── V10.0 ALERT RUNTIME & PPFE ──────────────────────────────
+const { startDerivativeAlerts, stopDerivativeAlerts, getAlertRuntime } = require('./alertRuntime');
+
 // ─── EXPORTS ─────────────────────────────────────────────────
 module.exports = {
+  // VN30F V10.0 Proactive Price Path Forecast Engine (PPFE)
+  startDerivativeAlerts,
+  stopDerivativeAlerts,
+  getAlertRuntime,
   // Volume Scalper v5.0
   startVolumeScalper,
   stopVolumeScalper,

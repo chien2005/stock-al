@@ -38,6 +38,8 @@ const {
   runEveningPlanJob,
   runIntradaySignalJob,
   resetIntradayState,
+  startDerivativeAlerts,
+  stopDerivativeAlerts,
 } = require('./derivatives');
 
 const startedAt = new Date();
@@ -196,8 +198,9 @@ async function main() {
   syncActiveState();
   setInterval(syncActiveState, 5 * 60 * 1000);
 
-  // ─── 6. DERIVATIVES VN30F ENGINE (GIỮ NGUYÊN 100%) ───────────
+  // ─── 6. DERIVATIVES VN30F ENGINE (GIỮ NGUYÊN 100% + V10 PPFE) ──
   startVolumeScalper();
+  startDerivativeAlerts();
 
   cron.schedule('59 8 * * 1-5', async () => {
     if (!isCurrentInstanceActive() || !isWeekday()) return;
@@ -312,6 +315,7 @@ function shutdown() {
   if (guardianTimer) clearInterval(guardianTimer);
   stopBotHandler();
   stopVolumeScalper();
+  stopDerivativeAlerts();
   process.exit(0);
 }
 
